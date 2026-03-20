@@ -1,4 +1,5 @@
 import { formatClassificationTypeLabel } from "@/features/expenses/presentation";
+import type { ReportingViewMode } from "@/features/reporting/monthly-report";
 
 export function formatMonthInputValue(value: string) {
   return value.slice(0, 7);
@@ -26,6 +27,15 @@ export function formatSourceKind(value: "imported_transaction" | "one_time_manua
       return "Manual";
     case "recurring_generated":
       return "Recurring generated";
+  }
+}
+
+export function formatReportingModeLabel(value: ReportingViewMode) {
+  switch (value) {
+    case "payment_date":
+      return "Payment date";
+    case "allocated_period":
+      return "Adjusted period";
   }
 }
 

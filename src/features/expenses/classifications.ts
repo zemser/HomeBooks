@@ -8,6 +8,7 @@ import {
   workspaceMembers,
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
+import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 type SingleClassificationInput = {
@@ -188,6 +189,8 @@ export async function upsertTransactionClassification(
           ),
         );
     }
+
+    await syncTransactionExpenseEvents(context, [transaction.id], tx);
   });
 
   return {
@@ -233,31 +236,35 @@ export async function bulkClassifyTransactions(
 
   const now = new Date();
 
-  await db
-    .insert(transactionClassifications)
-    .values(
-      transactionIds.map((transactionId) => ({
-        transactionId,
-        classificationType: input.classificationType,
-        memberOwnerId,
-        category,
-        confidence: null,
-        decidedBy: "user" as const,
-        reviewedAt: now,
-      })),
-    )
-    .onConflictDoUpdate({
-      target: transactionClassifications.transactionId,
-      set: {
-        classificationType: input.classificationType,
-        memberOwnerId,
-        category,
-        confidence: null,
-        decidedBy: "user",
-        reviewedAt: now,
-        updatedAt: now,
-      },
-    });
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(transactionClassifications)
+      .values(
+        transactionIds.map((transactionId) => ({
+          transactionId,
+          classificationType: input.classificationType,
+          memberOwnerId,
+          category,
+          confidence: null,
+          decidedBy: "user" as const,
+          reviewedAt: now,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: transactionClassifications.transactionId,
+        set: {
+          classificationType: input.classificationType,
+          memberOwnerId,
+          category,
+          confidence: null,
+          decidedBy: "user",
+          reviewedAt: now,
+          updatedAt: now,
+        },
+      });
+
+    await syncTransactionExpenseEvents(context, transactionIds, tx);
+  });
 
   return {
     updatedCount: transactionIds.length,

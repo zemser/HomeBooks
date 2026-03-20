@@ -1,17 +1,26 @@
+import { syncExpenseEventsForRange } from "@/features/reporting/expense-events";
 import {
   getMonthlyReport,
   getRollingTwelveReport,
   getYearToDateReport,
+  normalizeMonthInput,
+  normalizeReportingModeInput,
   type ReportingMonthBucket,
   type ReportingPeriodSummary,
+  type ReportingViewMode,
 } from "@/features/reporting/monthly-report";
 import {
   formatClassificationTypeLabel,
   formatMonthInputValue,
   formatReportMoney,
   formatReportMonthLabel,
+  formatReportingModeLabel,
   formatSourceKind,
 } from "@/features/reporting/presentation";
+import {
+  buildRollingTwelveWindow,
+  buildYearToDateWindow,
+} from "@/features/reporting/periods";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 export const dynamic = "force-dynamic";
@@ -19,8 +28,17 @@ export const dynamic = "force-dynamic";
 type ReportsPageProps = {
   searchParams: Promise<{
     month?: string | string[];
+    mode?: string | string[];
   }>;
 };
+
+function getModeDescription(reportingMode: ReportingViewMode) {
+  if (reportingMode === "allocated_period") {
+    return "Adjusted-period reporting reads expense events and month allocations. Items without explicit coverage rules currently allocate into a single month.";
+  }
+
+  return "Payment-date reporting reads imported transaction dates and manual-entry event dates directly.";
+}
 
 function PeriodSummarySection({
   title,
@@ -102,11 +120,35 @@ function PeriodSummarySection({
 export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const params = await searchParams;
   const month = typeof params.month === "string" ? params.month : undefined;
+  const mode = typeof params.mode === "string" ? params.mode : undefined;
+  const selectedMonth = normalizeMonthInput(month);
+  const reportingMode = normalizeReportingModeInput(mode);
+  const selectedMonthDate = new Date(`${selectedMonth}T00:00:00.000Z`);
+  const yearToDateWindow = buildYearToDateWindow(selectedMonthDate);
+  const rollingWindow = buildRollingTwelveWindow(selectedMonthDate);
+  const syncStartMonth =
+    yearToDateWindow.periodStart < rollingWindow.periodStart
+      ? yearToDateWindow.periodStart
+      : rollingWindow.periodStart;
   const context = await resolveCurrentWorkspaceContext();
+
+  if (reportingMode === "allocated_period") {
+    await syncExpenseEventsForRange(context, {
+      startMonth: syncStartMonth,
+      endMonth: selectedMonth,
+    });
+  }
+
   const [report, yearToDate, rollingTwelve] = await Promise.all([
-    getMonthlyReport(context, { month }),
-    getYearToDateReport(context, { throughMonth: month }),
-    getRollingTwelveReport(context, { throughMonth: month }),
+    getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }),
+    getYearToDateReport(context, {
+      throughMonth: selectedMonth,
+      mode: reportingMode,
+    }),
+    getRollingTwelveReport(context, {
+      throughMonth: selectedMonth,
+      mode: reportingMode,
+    }),
   ]);
 
   return (
@@ -116,8 +158,8 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
           <span className="eyebrow">Reports</span>
           <h1>One month matters, but the story is in the trend.</h1>
           <p>
-            This reporting slice is backed by real classified imports plus manual and
-            recurring-generated entries, all normalized into the workspace currency.
+            Compare payment-date cash flow with adjusted-period allocations without
+            leaving the same report surface.
           </p>
         </section>
 
@@ -126,21 +168,32 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             <div>
               <h2>{formatReportMonthLabel(report.summary.selectedMonth)}</h2>
               <p className="muted-text">
-                Payment-date reporting only for now. Imported transactions use
-                `transactionDate`; manual entries use `eventDate`.
+                {formatReportingModeLabel(report.summary.reportingMode)} view.
+                {" "}
+                {getModeDescription(report.summary.reportingMode)}
               </p>
             </div>
-            <form className="field" method="GET">
-              <span>Selected month</span>
-              <div className="action-row">
+            <form className="inline-form" method="GET">
+              <label className="field">
+                <span>Selected month</span>
                 <input
                   className="input"
                   type="month"
                   name="month"
                   defaultValue={formatMonthInputValue(report.summary.selectedMonth)}
                 />
+              </label>
+              <label className="field">
+                <span>Reporting mode</span>
+                <select className="input" name="mode" defaultValue={report.summary.reportingMode}>
+                  <option value="payment_date">Payment date</option>
+                  <option value="allocated_period">Adjusted period</option>
+                </select>
+              </label>
+              <div className="field">
+                <span>&nbsp;</span>
                 <button className="button" type="submit">
-                  Load month
+                  Load report
                 </button>
               </div>
             </form>
@@ -174,14 +227,14 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
 
         <PeriodSummarySection
           title="Year to date"
-          description={`January through ${formatReportMonthLabel(yearToDate.summary.selectedMonth)}.`}
+          description={`January through ${formatReportMonthLabel(yearToDate.summary.selectedMonth)} in ${formatReportingModeLabel(yearToDate.summary.reportingMode).toLowerCase()} mode.`}
           summary={yearToDate.summary}
           months={yearToDate.months}
         />
 
         <PeriodSummarySection
           title="Rolling 12 months"
-          description={`Twelve payment months ending in ${formatReportMonthLabel(rollingTwelve.summary.selectedMonth)}.`}
+          description={`Twelve months ending in ${formatReportMonthLabel(rollingTwelve.summary.selectedMonth)} in ${formatReportingModeLabel(rollingTwelve.summary.reportingMode).toLowerCase()} mode.`}
           summary={rollingTwelve.summary}
           months={rollingTwelve.months}
         />
@@ -255,8 +308,9 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
         <section className="card">
           <h2>Included line items</h2>
           <p className="muted-text">
-            Recurring-generated and manual entries are shown alongside imported classified
-            transactions so you can verify what fed the month.
+            {report.summary.reportingMode === "allocated_period"
+              ? "Adjusted-period rows come from materialized allocations, so one source event can appear in multiple months once split coverage is introduced."
+              : "Recurring-generated and manual entries are shown alongside imported classified transactions so you can verify what fed the payment month."}
           </p>
 
           {report.lineItems.length === 0 ? (
@@ -266,7 +320,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
               <table className="data-table">
                 <thead>
                   <tr>
-                    <th>Date</th>
+                    <th>{report.summary.reportingMode === "allocated_period" ? "Report month" : "Date"}</th>
                     <th>Title</th>
                     <th>Source</th>
                     <th>Type</th>

@@ -1,7 +1,13 @@
 import { and, eq, gte, lt, ne } from "drizzle-orm";
 
 import { getDb } from "@/db";
-import { manualEntries, transactionClassifications, transactions } from "@/db/schema";
+import {
+  expenseAllocations,
+  expenseEvents,
+  manualEntries,
+  transactionClassifications,
+  transactions,
+} from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import {
@@ -19,8 +25,12 @@ import {
 
 type ReportDirection = "income" | "expense";
 
+export const REPORTING_VIEW_MODES = ["payment_date", "allocated_period"] as const;
+export type ReportingViewMode = (typeof REPORTING_VIEW_MODES)[number];
+
 export type MonthlyReportSummary = {
   selectedMonth: string;
+  reportingMode: ReportingViewMode;
   workspaceCurrency: string;
   incomeTotal: number;
   expenseTotal: number;
@@ -78,6 +88,7 @@ export type ReportingMonthBucket = {
 
 export type ReportingPeriodSummary = {
   selectedMonth: string;
+  reportingMode: ReportingViewMode;
   periodStartMonth: string;
   periodEndMonth: string;
   workspaceCurrency: string;
@@ -104,6 +115,7 @@ export type RollingTwelveReportData = {
 
 export type DashboardSnapshot = {
   selectedMonth: string;
+  reportingMode: ReportingViewMode;
   workspaceCurrency: string;
   monthSummary: MonthlyReportSummary;
   rollingTwelveSummary: ReportingPeriodSummary;
@@ -122,7 +134,7 @@ type ReportRecord = {
   memberId: string | null;
 };
 
-function normalizeMonthInput(value?: string) {
+export function normalizeMonthInput(value?: string) {
   if (!value) {
     return monthKey(startOfMonth(new Date()));
   }
@@ -135,6 +147,13 @@ function normalizeMonthInput(value?: string) {
   }
 
   return monthKey(parsed);
+}
+
+export function normalizeReportingModeInput(
+  value?: string,
+  fallback: ReportingViewMode = "payment_date",
+): ReportingViewMode {
+  return value === "allocated_period" ? "allocated_period" : fallback;
 }
 
 function buildMonthWindow(selectedMonth: string) {
@@ -174,6 +193,19 @@ function createEmptyMonthBucket(month: string): ReportingMonthBucket {
 
 function getRecordMonthKey(value: string): MonthKey {
   return `${value.slice(0, 7)}-01` as MonthKey;
+}
+
+function expenseEventSourceToLineItemSourceKind(
+  sourceType: "transaction" | "manual" | "recurring",
+): MonthlyReportLineItem["sourceKind"] {
+  switch (sourceType) {
+    case "transaction":
+      return "imported_transaction";
+    case "manual":
+      return "one_time_manual";
+    case "recurring":
+      return "recurring_generated";
+  }
 }
 
 function accumulateCategoryBreakdown(records: ReportRecord[]) {
@@ -277,6 +309,7 @@ function buildMonthBuckets(records: ReportRecord[], includedMonths: string[]) {
 
 function summarizeBuckets(
   selectedMonth: string,
+  reportingMode: ReportingViewMode,
   workspaceCurrency: string,
   buckets: ReportingMonthBucket[],
 ) {
@@ -291,6 +324,7 @@ function summarizeBuckets(
 
   return {
     selectedMonth,
+    reportingMode,
     periodStartMonth: buckets[0]?.month ?? selectedMonth,
     periodEndMonth: buckets[buckets.length - 1]?.month ?? selectedMonth,
     workspaceCurrency,
@@ -311,7 +345,7 @@ async function getMemberNames(context: CurrentWorkspaceContext) {
   return new Map(members.map((member) => [member.id, member.displayName]));
 }
 
-async function listReportRecordsForRange(
+async function listPaymentDateReportRecordsForRange(
   context: CurrentWorkspaceContext,
   startMonth: string,
   endMonth: string,
@@ -403,14 +437,81 @@ async function listReportRecordsForRange(
   });
 }
 
+async function listAllocatedPeriodReportRecordsForRange(
+  context: CurrentWorkspaceContext,
+  startMonth: string,
+  endMonth: string,
+) {
+  const db = getDb();
+  const rangeStart = monthKey(startOfMonth(new Date(`${startMonth}T00:00:00.000Z`)));
+  const { nextMonthStart } = buildMonthWindow(endMonth);
+  const allocatedRows = await db
+    .select({
+      id: expenseAllocations.id,
+      sourceType: expenseEvents.sourceType,
+      reportMonth: expenseAllocations.reportMonth,
+      allocatedAmount: expenseAllocations.allocatedAmount,
+      eventKind: expenseEvents.eventKind,
+      title: expenseEvents.title,
+      classificationType: expenseEvents.classificationType,
+      category: expenseEvents.category,
+      payerMemberId: expenseEvents.payerMemberId,
+    })
+    .from(expenseAllocations)
+    .innerJoin(expenseEvents, eq(expenseEvents.id, expenseAllocations.expenseEventId))
+    .where(
+      and(
+        eq(expenseEvents.workspaceId, context.workspaceId),
+        gte(expenseAllocations.reportMonth, rangeStart),
+        lt(expenseAllocations.reportMonth, nextMonthStart),
+        ne(expenseEvents.classificationType, "transfer"),
+        ne(expenseEvents.classificationType, "ignore"),
+      ),
+    );
+
+  return allocatedRows
+    .map<ReportRecord>((row) => ({
+      id: row.id,
+      sourceKind: expenseEventSourceToLineItemSourceKind(row.sourceType),
+      title: row.title,
+      eventDate: row.reportMonth,
+      direction: row.eventKind,
+      normalizedAmount: toNumber(row.allocatedAmount),
+      classificationType: row.classificationType,
+      category: row.category,
+      memberId: row.payerMemberId,
+    }))
+    .sort((left, right) => {
+      if (left.eventDate !== right.eventDate) {
+        return right.eventDate.localeCompare(left.eventDate);
+      }
+
+      return left.title.localeCompare(right.title);
+    });
+}
+
+async function listReportRecordsForRange(
+  context: CurrentWorkspaceContext,
+  startMonth: string,
+  endMonth: string,
+  reportingMode: ReportingViewMode,
+) {
+  if (reportingMode === "allocated_period") {
+    return listAllocatedPeriodReportRecordsForRange(context, startMonth, endMonth);
+  }
+
+  return listPaymentDateReportRecordsForRange(context, startMonth, endMonth);
+}
+
 export async function getMonthlyReport(
   context: CurrentWorkspaceContext,
-  input?: { month?: string },
+  input?: { month?: string; mode?: ReportingViewMode | string },
 ): Promise<MonthlyReportData> {
   const selectedMonth = normalizeMonthInput(input?.month);
+  const reportingMode = normalizeReportingModeInput(input?.mode);
   const [memberNames, allRecords] = await Promise.all([
     getMemberNames(context),
-    listReportRecordsForRange(context, selectedMonth, selectedMonth),
+    listReportRecordsForRange(context, selectedMonth, selectedMonth, reportingMode),
   ]);
 
   const incomeTotal = allRecords
@@ -429,6 +530,7 @@ export async function getMonthlyReport(
   return {
     summary: {
       selectedMonth,
+      reportingMode,
       workspaceCurrency: context.baseCurrency,
       incomeTotal,
       expenseTotal,
@@ -455,56 +557,65 @@ export async function getMonthlyReport(
 
 export async function getYearToDateReport(
   context: CurrentWorkspaceContext,
-  input?: { throughMonth?: string },
+  input?: { throughMonth?: string; mode?: ReportingViewMode | string },
 ): Promise<YearToDateReportData> {
   const selectedMonth = normalizeMonthInput(input?.throughMonth);
+  const reportingMode = normalizeReportingModeInput(input?.mode);
   const selectedMonthDate = new Date(`${selectedMonth}T00:00:00.000Z`);
   const window = buildYearToDateWindow(selectedMonthDate);
   const records = await listReportRecordsForRange(
     context,
     window.periodStart,
     window.periodEnd,
+    reportingMode,
   );
   const months = buildMonthBuckets(records, window.includedMonths);
 
   return {
-    summary: summarizeBuckets(selectedMonth, context.baseCurrency, months),
+    summary: summarizeBuckets(selectedMonth, reportingMode, context.baseCurrency, months),
     months,
   };
 }
 
 export async function getRollingTwelveReport(
   context: CurrentWorkspaceContext,
-  input?: { throughMonth?: string },
+  input?: { throughMonth?: string; mode?: ReportingViewMode | string },
 ): Promise<RollingTwelveReportData> {
   const selectedMonth = normalizeMonthInput(input?.throughMonth);
+  const reportingMode = normalizeReportingModeInput(input?.mode);
   const selectedMonthDate = new Date(`${selectedMonth}T00:00:00.000Z`);
   const window = buildRollingTwelveWindow(selectedMonthDate);
   const records = await listReportRecordsForRange(
     context,
     window.periodStart,
     window.periodEnd,
+    reportingMode,
   );
   const months = buildMonthBuckets(records, window.includedMonths);
 
   return {
-    summary: summarizeBuckets(selectedMonth, context.baseCurrency, months),
+    summary: summarizeBuckets(selectedMonth, reportingMode, context.baseCurrency, months),
     months,
   };
 }
 
 export async function getDashboardSnapshot(
   context: CurrentWorkspaceContext,
-  input?: { month?: string },
+  input?: { month?: string; mode?: ReportingViewMode | string },
 ): Promise<DashboardSnapshot> {
   const selectedMonth = normalizeMonthInput(input?.month);
+  const reportingMode = normalizeReportingModeInput(input?.mode, "allocated_period");
   const [monthReport, rollingTwelveReport] = await Promise.all([
-    getMonthlyReport(context, { month: selectedMonth }),
-    getRollingTwelveReport(context, { throughMonth: selectedMonth }),
+    getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }),
+    getRollingTwelveReport(context, {
+      throughMonth: selectedMonth,
+      mode: reportingMode,
+    }),
   ]);
 
   return {
     selectedMonth,
+    reportingMode,
     workspaceCurrency: context.baseCurrency,
     monthSummary: monthReport.summary,
     rollingTwelveSummary: rollingTwelveReport.summary,
