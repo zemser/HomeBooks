@@ -1,16 +1,19 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
+  classificationRules,
   financialAccounts,
   imports,
   importRows,
   importSources,
   importTemplates,
+  transactionClassifications,
   transactions,
 } from "@/db/schema";
+import { normalizeMerchantRuleValue } from "@/features/expenses/classifications";
 import { ensureSupportedBankImportCatalog } from "@/features/imports/catalog";
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
 import type { ParsedBankTransaction, WorkbookData } from "@/features/imports/types";
@@ -22,6 +25,13 @@ type CurrentImportContext = {
   userId: string;
   memberId: string;
   baseCurrency: string;
+};
+
+type ActiveExactClassificationRule = {
+  matchValue: string;
+  classificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
+  memberOwnerId: string | null;
+  category: string | null;
 };
 
 export type SavedImportSummary = {
@@ -307,6 +317,30 @@ export async function persistBankImport(input: {
     });
 
     await db.transaction(async (tx) => {
+      const activeRuleRows = await tx
+        .select({
+          matchValue: classificationRules.matchValue,
+          classificationType: classificationRules.defaultClassificationType,
+          memberOwnerId: classificationRules.defaultMemberOwnerId,
+          category: classificationRules.defaultCategory,
+        })
+        .from(classificationRules)
+        .where(
+          and(
+            eq(classificationRules.workspaceId, input.context.workspaceId),
+            eq(classificationRules.active, true),
+            eq(classificationRules.matchType, "exact"),
+          ),
+        )
+        .orderBy(asc(classificationRules.priority), asc(classificationRules.createdAt));
+      const activeRuleByMatch = new Map<string, ActiveExactClassificationRule>();
+
+      for (const rule of activeRuleRows) {
+        if (!activeRuleByMatch.has(rule.matchValue)) {
+          activeRuleByMatch.set(rule.matchValue, rule);
+        }
+      }
+
       if (stagingRows.length > 0) {
         await tx.insert(importRows).values(
           stagingRows.map((row) => ({
@@ -322,41 +356,78 @@ export async function persistBankImport(input: {
       }
 
       if (preview.parsed.transactions.length > 0) {
-        await tx.insert(transactions).values(
-          preview.parsed.transactions.map((transaction, index) => {
-            const normalizedPreview = preview.previewTransactions[index];
+        const insertedTransactions = await tx
+          .insert(transactions)
+          .values(
+            preview.parsed.transactions.map((transaction, index) => {
+              const normalizedPreview = preview.previewTransactions[index];
 
-            return {
-              workspaceId: input.context.workspaceId,
-              accountId: account.id,
-              importId,
-              transactionDate: transaction.transactionDate,
-              bookingDate: transaction.bookingDate ?? null,
-              statementSection: transaction.statementSection ?? null,
-              description: transaction.description,
-              merchantRaw: transaction.merchantRaw,
-              originalCurrency: transaction.originalCurrency,
-              originalAmount: transaction.originalAmount.toFixed(6),
-              settlementCurrency: transaction.settlementCurrency ?? null,
-              settlementAmount:
-                transaction.settlementAmount !== undefined
-                  ? transaction.settlementAmount.toFixed(6)
-                  : null,
-              workspaceCurrency: normalizedPreview.workspaceCurrency,
-              normalizedAmount: normalizedPreview.normalizedAmount.toFixed(6),
-              normalizationRate: normalizedPreview.normalizationRate.toFixed(8),
-              normalizationRateSource: normalizedPreview.normalizationRateSource,
-              direction: transaction.direction,
-              externalReference: null,
-              dedupeHash: buildTransactionDedupeHash({
+              return {
                 workspaceId: input.context.workspaceId,
-                sourceId: templateRecord.sourceId,
-                accountLabel,
-                transaction,
-              }),
-            };
-          }),
-        );
+                accountId: account.id,
+                importId,
+                transactionDate: transaction.transactionDate,
+                bookingDate: transaction.bookingDate ?? null,
+                statementSection: transaction.statementSection ?? null,
+                description: transaction.description,
+                merchantRaw: transaction.merchantRaw,
+                originalCurrency: transaction.originalCurrency,
+                originalAmount: transaction.originalAmount.toFixed(6),
+                settlementCurrency: transaction.settlementCurrency ?? null,
+                settlementAmount:
+                  transaction.settlementAmount !== undefined
+                    ? transaction.settlementAmount.toFixed(6)
+                    : null,
+                workspaceCurrency: normalizedPreview.workspaceCurrency,
+                normalizedAmount: normalizedPreview.normalizedAmount.toFixed(6),
+                normalizationRate: normalizedPreview.normalizationRate.toFixed(8),
+                normalizationRateSource: normalizedPreview.normalizationRateSource,
+                direction: transaction.direction,
+                externalReference: null,
+                dedupeHash: buildTransactionDedupeHash({
+                  workspaceId: input.context.workspaceId,
+                  sourceId: templateRecord.sourceId,
+                  accountLabel,
+                  transaction,
+                }),
+              };
+            }),
+          )
+          .returning({
+            id: transactions.id,
+            merchantRaw: transactions.merchantRaw,
+          });
+        const automaticClassifications = insertedTransactions.flatMap((transaction) => {
+          const merchantValue = transaction.merchantRaw?.trim();
+
+          if (!merchantValue) {
+            return [];
+          }
+
+          const matchedRule = activeRuleByMatch.get(
+            normalizeMerchantRuleValue(merchantValue),
+          );
+
+          if (!matchedRule) {
+            return [];
+          }
+
+          return [
+            {
+              transactionId: transaction.id,
+              classificationType: matchedRule.classificationType,
+              memberOwnerId: matchedRule.memberOwnerId,
+              category: matchedRule.category,
+              confidence: null,
+              decidedBy: "rule" as const,
+              reviewedAt: null,
+            },
+          ];
+        });
+
+        if (automaticClassifications.length > 0) {
+          await tx.insert(transactionClassifications).values(automaticClassifications);
+        }
       }
 
       await tx
