@@ -1,7 +1,8 @@
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
+import { parseCalWorkbook } from "@/features/imports/templates/cal";
+import { parseCalRecentTransactionsWorkbook } from "@/features/imports/templates/cal-recent-transactions";
 import { detectBankTemplate } from "@/features/imports/templates/detect";
-import { parseDiscountWorkbook } from "@/features/imports/templates/discount";
-import { parseFibiBankWorkbook } from "@/features/imports/templates/fibi";
+import { parseMaxWorkbook } from "@/features/imports/templates/max";
 import type {
   CurrencyNormalizer,
   NormalizedTransactionPreview,
@@ -16,7 +17,7 @@ function defaultCurrencyNormalizer(workspaceCurrency: string): CurrencyNormalize
       fromCurrency,
       toCurrency: workspaceCurrency,
       monthlyAverageRate: 1,
-      rateSource: "default-placeholder",
+      rateSource: "preview-placeholder-rate-1",
     });
 }
 
@@ -24,10 +25,12 @@ function parseByTemplate(workbook: WorkbookData): ParsedBankStatement {
   const detected = detectBankTemplate(workbook);
 
   switch (detected.id) {
-    case "fibi_credit_statement":
-      return parseFibiBankWorkbook(workbook);
-    case "discount_card_export":
-      return parseDiscountWorkbook(workbook);
+    case "max_credit_statement":
+      return parseMaxWorkbook(workbook);
+    case "cal_card_export":
+      return parseCalWorkbook(workbook);
+    case "cal_recent_transactions_report":
+      return parseCalRecentTransactionsWorkbook(workbook);
     default:
       throw new Error(detected.reason);
   }
