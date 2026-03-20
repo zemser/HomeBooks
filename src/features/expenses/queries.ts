@@ -10,6 +10,7 @@ import {
   users,
   workspaceMembers,
 } from "@/db/schema";
+import { listTransactionAllocationStates } from "@/features/expenses/allocation";
 import type {
   ExpenseTransactionItem,
   ReviewQueueResponse,
@@ -71,7 +72,10 @@ async function listMemberNamesById(memberIds: string[]) {
   );
 }
 
-async function mapTransactionRows(rows: RawTransactionRow[]) {
+async function mapTransactionRows(
+  context: CurrentWorkspaceContext,
+  rows: RawTransactionRow[],
+) {
   const memberIds = Array.from(
     new Set(
       rows
@@ -80,6 +84,10 @@ async function mapTransactionRows(rows: RawTransactionRow[]) {
     ),
   );
   const memberNamesById = await listMemberNamesById(memberIds);
+  const allocationStatesByTransactionId = await listTransactionAllocationStates(
+    context,
+    rows.map((row) => row.id),
+  );
 
   return rows.map<ExpenseTransactionItem>((row) => ({
     id: row.id,
@@ -109,10 +117,12 @@ async function mapTransactionRows(rows: RawTransactionRow[]) {
           reviewedAt: row.reviewedAt?.toISOString() ?? null,
         }
       : null,
+    allocation: allocationStatesByTransactionId.get(row.id) ?? null,
   }));
 }
 
 async function listTransactionsByWorkspace(input: {
+  context: CurrentWorkspaceContext;
   workspaceId: string;
   onlyUnclassified?: boolean;
   transactionId?: string;
@@ -162,11 +172,12 @@ async function listTransactionsByWorkspace(input: {
     .where(and(...filters))
     .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt));
 
-  return mapTransactionRows(rows);
+  return mapTransactionRows(input.context, rows);
 }
 
 export async function listExpenseTransactions(context: CurrentWorkspaceContext) {
   return listTransactionsByWorkspace({
+    context,
     workspaceId: context.workspaceId,
   });
 }
@@ -202,11 +213,13 @@ export async function listReviewQueue(
 ): Promise<ReviewQueueResponse> {
   const [queue, focusTransaction, members] = await Promise.all([
     listTransactionsByWorkspace({
+      context,
       workspaceId: context.workspaceId,
       onlyUnclassified: true,
     }),
     transactionId
       ? listTransactionsByWorkspace({
+          context,
           workspaceId: context.workspaceId,
           transactionId,
         }).then((rows) => rows[0] ?? null)
