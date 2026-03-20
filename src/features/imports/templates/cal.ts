@@ -15,7 +15,7 @@ import {
 
 const HEADER_TITLE = "תאריך עסקה";
 
-function parseDiscountRow(
+function parseCalRow(
   row: TabularRow,
   sectionName: string,
 ): NormalizedBankTransaction | undefined {
@@ -55,7 +55,7 @@ function parseDiscountRow(
   };
 }
 
-function parseDiscountSheet(
+function parseCalSheet(
   rows: TabularRow[],
   sectionName: string,
 ): NormalizedBankTransaction[] {
@@ -73,7 +73,7 @@ function parseDiscountSheet(
       continue;
     }
 
-    const parsed = parseDiscountRow(row, sectionName);
+    const parsed = parseCalRow(row, sectionName);
     if (parsed) {
       transactions.push(parsed);
     }
@@ -82,14 +82,14 @@ function parseDiscountSheet(
   return transactions;
 }
 
-export function parseDiscountWorkbook(workbook: WorkbookData): ParsedBankStatement {
+export function parseCalWorkbook(workbook: WorkbookData): ParsedBankStatement {
   const transactions = workbook.sheets.flatMap((sheet) =>
-    parseDiscountSheet(sheet.rows, sheet.name),
+    parseCalSheet(sheet.rows, sheet.name),
   );
   const primarySheet = workbook.sheets[0];
 
   return {
-    templateId: "discount_card_export",
+    templateId: "cal_card_export",
     accountLabel: normalizeRow(primarySheet.rows[1] ?? [])[0] || undefined,
     statementLabel: normalizeRow(primarySheet.rows[2] ?? [])[0] || undefined,
     transactions,

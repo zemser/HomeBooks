@@ -9,7 +9,7 @@ export function normalizeCell(input: TabularCell): string {
     return input.toISOString().slice(0, 10);
   }
 
-  return String(input).trim();
+  return String(input).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
 }
 
 export function normalizeRow(row: TabularRow): string[] {
@@ -43,6 +43,11 @@ export function parseDate(value: TabularCell): string | undefined {
   const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (isoMatch) {
     return normalized;
+  }
+
+  const isoDateTimeMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})T/);
+  if (isoDateTimeMatch) {
+    return normalized.slice(0, 10);
   }
 
   return undefined;
@@ -98,4 +103,3 @@ export function mapCurrencySymbol(input: string | undefined): string {
 export function isEffectivelyEmptyRow(row: TabularRow): boolean {
   return normalizeRow(row).every((cell) => cell === "");
 }
-

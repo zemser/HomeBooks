@@ -1,3 +1,5 @@
+import { ImportPreviewClient } from "@/components/imports/import-preview-client";
+
 const importSteps = [
   "Upload CSV or Excel export",
   "Detect provider template",
@@ -7,8 +9,9 @@ const importSteps = [
 ];
 
 const supportedExpenseTemplates = [
-  "FIBI / First International credit-card statement with local and foreign-currency sections",
-  "Discount card export with domestic and foreign transaction sheets",
+  "Max credit-card statements",
+  "Cal card exports",
+  "Cal recent transactions reports",
 ];
 
 const nextParserTargets = [
@@ -38,6 +41,8 @@ export default function ImportsPage() {
             ))}
           </ul>
         </section>
+
+        <ImportPreviewClient />
 
         <section className="two-up">
           <article className="card">

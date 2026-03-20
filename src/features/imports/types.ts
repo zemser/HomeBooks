@@ -15,8 +15,9 @@ export type WorkbookData = {
 };
 
 export type DetectedTemplateId =
-  | "fibi_credit_statement"
-  | "discount_card_export"
+  | "max_credit_statement"
+  | "cal_card_export"
+  | "cal_recent_transactions_report"
   | "unknown";
 
 export type DetectedTemplate = {
@@ -65,4 +66,3 @@ export type NormalizedTransactionPreview = NormalizedBankTransaction & {
   normalizationRate: number;
   normalizationRateSource: string;
 };
-

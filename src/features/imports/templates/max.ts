@@ -64,12 +64,12 @@ function parseTransactionRow(
   };
 }
 
-export function parseFibiBankWorkbook(workbook: WorkbookData): ParsedBankStatement {
+export function parseMaxWorkbook(workbook: WorkbookData): ParsedBankStatement {
   const sheet = workbook.sheets[0];
   const headerRowIndex = findFirstRowIndex(sheet.rows, (row) => row[0] === HEADER_TITLE);
 
   if (headerRowIndex === -1) {
-    throw new Error("Could not find the FIBI transaction header row");
+    throw new Error("Could not find the Max transaction header row");
   }
 
   const accountLabel = normalizeRow(sheet.rows[0])[0] || undefined;
@@ -104,7 +104,7 @@ export function parseFibiBankWorkbook(workbook: WorkbookData): ParsedBankStateme
   }
 
   return {
-    templateId: "fibi_credit_statement",
+    templateId: "max_credit_statement",
     accountLabel,
     statementLabel: normalizeRow(sheet.rows[2])[0] || undefined,
     transactions,
