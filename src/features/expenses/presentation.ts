@@ -1,4 +1,5 @@
 import type { ClassificationType } from "@/features/expenses/constants";
+import type { TransactionAllocationState } from "@/features/expenses/allocation";
 import type {
   ExpenseTransactionItem,
   TransactionClassificationState,
@@ -46,6 +47,30 @@ export function formatDecisionSourceLabel(value: "rule" | "user" | "system_defau
     default:
       return "System";
   }
+}
+
+export function formatAllocationSummary(allocation: TransactionAllocationState | null) {
+  if (!allocation) {
+    return "Not materialized";
+  }
+
+  if (allocation.reportingMode === "payment_date") {
+    return "Payment month";
+  }
+
+  if (allocation.allocationMethod === "manual_split") {
+    return `Manual split across ${allocation.allocationCount} month${allocation.allocationCount === 1 ? "" : "s"}`;
+  }
+
+  if (allocation.coverageStartDate && allocation.coverageEndDate) {
+    if (allocation.coverageStartDate === allocation.coverageEndDate) {
+      return `Adjusted: ${allocation.coverageStartDate}`;
+    }
+
+    return `Adjusted: ${allocation.coverageStartDate} to ${allocation.coverageEndDate}`;
+  }
+
+  return `Adjusted across ${allocation.allocationCount} month${allocation.allocationCount === 1 ? "" : "s"}`;
 }
 
 export function formatMoneyDisplay(

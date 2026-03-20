@@ -39,6 +39,7 @@ type ExistingExpenseEventRow = {
   id: string;
   sourceId: string;
   sourceType: ExpenseEventSourceType;
+  reportingMode: "payment_date" | "allocated_period";
 };
 
 type MonthRangeInput = {
@@ -115,6 +116,10 @@ async function applyExpenseEventSync(
     const currentRows = groupedExistingRows.get(key) ?? [];
     const [primaryRow, ...duplicateRows] = currentRows;
     let eventId = primaryRow?.id;
+    const shouldPreserveAllocations = primaryRow?.reportingMode === "allocated_period";
+    const nextReportingMode = shouldPreserveAllocations
+      ? primaryRow.reportingMode
+      : row.reportingMode;
 
     if (!eventId) {
       const [createdEvent] = await db
@@ -130,7 +135,7 @@ async function applyExpenseEventSync(
           classificationType: row.classificationType,
           payerMemberId: row.payerMemberId,
           category: row.category,
-          reportingMode: row.reportingMode,
+          reportingMode: nextReportingMode,
         })
         .returning({
           id: expenseEvents.id,
@@ -148,7 +153,7 @@ async function applyExpenseEventSync(
           classificationType: row.classificationType,
           payerMemberId: row.payerMemberId,
           category: row.category,
-          reportingMode: row.reportingMode,
+          reportingMode: nextReportingMode,
           updatedAt: new Date(),
         })
         .where(eq(expenseEvents.id, eventId));
@@ -161,15 +166,17 @@ async function applyExpenseEventSync(
       );
     }
 
-    await db.delete(expenseAllocations).where(eq(expenseAllocations.expenseEventId, eventId));
-    await db.insert(expenseAllocations).values({
-      expenseEventId: eventId,
-      reportMonth: row.reportMonth,
-      allocatedAmount: row.totalAmount,
-      allocationMethod: "single_month",
-      coverageStartDate: row.coverageStartDate,
-      coverageEndDate: row.coverageEndDate,
-    });
+    if (!shouldPreserveAllocations) {
+      await db.delete(expenseAllocations).where(eq(expenseAllocations.expenseEventId, eventId));
+      await db.insert(expenseAllocations).values({
+        expenseEventId: eventId,
+        reportMonth: row.reportMonth,
+        allocatedAmount: row.totalAmount,
+        allocationMethod: "single_month",
+        coverageStartDate: row.coverageStartDate,
+        coverageEndDate: row.coverageEndDate,
+      });
+    }
   }
 
   const staleEventIds = existingRows
@@ -196,6 +203,7 @@ async function listExistingExpenseEvents(
       id: expenseEvents.id,
       sourceId: expenseEvents.sourceId,
       sourceType: expenseEvents.sourceType,
+      reportingMode: expenseEvents.reportingMode,
     })
     .from(expenseEvents)
     .where(

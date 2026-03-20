@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import {
+  formatAllocationSummary,
   formatClassificationSummary,
   formatDecisionSourceLabel,
   formatMoneyDisplay,
@@ -112,6 +113,7 @@ export function ExpensesPageClient() {
                   <th>Account</th>
                   <th>Import source</th>
                   <th>Classification</th>
+                  <th>Allocation</th>
                   <th />
                 </tr>
               </thead>
@@ -160,6 +162,13 @@ export function ExpensesPageClient() {
                           {formatDecisionSourceLabel(transaction.classification.decidedBy)}
                         </div>
                       ) : null}
+                    </td>
+                    <td>
+                      <span
+                        className={`badge ${transaction.allocation?.reportingMode === "allocated_period" ? "badge-warning" : "badge-neutral"}`}
+                      >
+                        {formatAllocationSummary(transaction.allocation)}
+                      </span>
                     </td>
                     <td>
                       <Link
