@@ -1,4 +1,10 @@
-import { getMonthlyReport } from "@/features/reporting/monthly-report";
+import {
+  getMonthlyReport,
+  getRollingTwelveReport,
+  getYearToDateReport,
+  type ReportingMonthBucket,
+  type ReportingPeriodSummary,
+} from "@/features/reporting/monthly-report";
 import {
   formatClassificationTypeLabel,
   formatMonthInputValue,
@@ -16,11 +22,92 @@ type ReportsPageProps = {
   }>;
 };
 
+function PeriodSummarySection({
+  title,
+  description,
+  summary,
+  months,
+}: {
+  title: string;
+  description: string;
+  summary: ReportingPeriodSummary;
+  months: ReportingMonthBucket[];
+}) {
+  return (
+    <section className="card stack compact">
+      <div>
+        <h2>{title}</h2>
+        <p className="muted-text">{description}</p>
+      </div>
+
+      <div className="summary-strip">
+        <div>
+          <strong>{formatReportMoney(summary.incomeTotal, summary.workspaceCurrency)}</strong>
+          <span>Total income</span>
+        </div>
+        <div>
+          <strong>{formatReportMoney(summary.expenseTotal, summary.workspaceCurrency)}</strong>
+          <span>Total expenses</span>
+        </div>
+        <div>
+          <strong>{formatReportMoney(summary.savingsTotal, summary.workspaceCurrency)}</strong>
+          <span>Total savings</span>
+        </div>
+        <div>
+          <strong>{formatReportMoney(summary.averageMonthlyIncome, summary.workspaceCurrency)}</strong>
+          <span>Average monthly income</span>
+        </div>
+        <div>
+          <strong>{formatReportMoney(summary.averageMonthlyExpense, summary.workspaceCurrency)}</strong>
+          <span>Average monthly expenses</span>
+        </div>
+        <div>
+          <strong>{formatReportMoney(summary.averageMonthlySavings, summary.workspaceCurrency)}</strong>
+          <span>Average monthly savings</span>
+        </div>
+      </div>
+
+      <div className="table-wrap">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Month</th>
+              <th>Income</th>
+              <th>Expenses</th>
+              <th>Savings</th>
+              <th>Imported</th>
+              <th>Manual</th>
+              <th>Items</th>
+            </tr>
+          </thead>
+          <tbody>
+            {months.map((month) => (
+              <tr key={month.month}>
+                <td>{formatReportMonthLabel(month.month)}</td>
+                <td>{formatReportMoney(month.incomeTotal, summary.workspaceCurrency)}</td>
+                <td>{formatReportMoney(month.expenseTotal, summary.workspaceCurrency)}</td>
+                <td>{formatReportMoney(month.savingsTotal, summary.workspaceCurrency)}</td>
+                <td>{month.importedTransactionCount}</td>
+                <td>{month.manualEntryCount}</td>
+                <td>{month.itemCount}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const params = await searchParams;
   const month = typeof params.month === "string" ? params.month : undefined;
   const context = await resolveCurrentWorkspaceContext();
-  const report = await getMonthlyReport(context, { month });
+  const [report, yearToDate, rollingTwelve] = await Promise.all([
+    getMonthlyReport(context, { month }),
+    getYearToDateReport(context, { throughMonth: month }),
+    getRollingTwelveReport(context, { throughMonth: month }),
+  ]);
 
   return (
     <main>
@@ -84,6 +171,20 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             </div>
           </div>
         </section>
+
+        <PeriodSummarySection
+          title="Year to date"
+          description={`January through ${formatReportMonthLabel(yearToDate.summary.selectedMonth)}.`}
+          summary={yearToDate.summary}
+          months={yearToDate.months}
+        />
+
+        <PeriodSummarySection
+          title="Rolling 12 months"
+          description={`Twelve payment months ending in ${formatReportMonthLabel(rollingTwelve.summary.selectedMonth)}.`}
+          summary={rollingTwelve.summary}
+          months={rollingTwelve.months}
+        />
 
         <section className="two-up">
           <article className="card">
