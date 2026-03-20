@@ -118,6 +118,10 @@ main {
   gap: 1rem;
 }
 
+.stack.compact {
+  gap: 0.75rem;
+}
+
 .section-title {
   margin: 2.5rem 0 0.75rem;
   font-size: 0.95rem;
@@ -183,6 +187,20 @@ main {
   color: #7d5b12;
 }
 
+.muted-text,
+.table-note,
+.helper-text {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.empty-state {
+  margin: 0;
+  padding: 1rem 0;
+  color: var(--muted);
+}
+
 .meta-grid {
   display: grid;
   gap: 1rem;
@@ -221,6 +239,96 @@ main {
   font-weight: 700;
 }
 
+.checkbox-cell {
+  width: 2.5rem;
+}
+
+.table-row-active {
+  background: rgba(39, 93, 76, 0.08);
+}
+
+.summary-strip,
+.page-actions,
+.action-row,
+.inline-form,
+.review-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.summary-strip {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.summary-strip strong {
+  display: block;
+  font-size: 1.4rem;
+}
+
+.summary-strip span {
+  color: var(--muted);
+}
+
+.page-actions {
+  align-items: start;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.action-row {
+  align-items: center;
+  grid-auto-flow: column;
+  justify-content: start;
+}
+
+.inline-form {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.review-layout {
+  align-items: start;
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.badge-neutral {
+  background: #edf2ef;
+  color: var(--text);
+}
+
+.badge-warning {
+  background: #fff4da;
+  color: #7d5b12;
+}
+
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.checkbox-label {
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  color: var(--text);
+}
+
 @media (max-width: 640px) {
   .page-shell {
     width: min(100vw - 1rem, 1120px);
@@ -229,5 +337,15 @@ main {
 
   .hero {
     padding: 1.25rem;
+  }
+}
+
+@media (max-width: 960px) {
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .action-row {
+    grid-auto-flow: row;
   }
 }
