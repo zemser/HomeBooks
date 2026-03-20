@@ -16,6 +16,7 @@ import {
 import { normalizeMerchantRuleValue } from "@/features/expenses/classifications";
 import { ensureSupportedBankImportCatalog } from "@/features/imports/catalog";
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
+import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import type { ParsedBankTransaction, WorkbookData } from "@/features/imports/types";
 import { isEffectivelyEmptyRow, normalizeRow } from "@/features/imports/utils";
 import { buildImportStoragePath, writeImportFile } from "@/lib/storage/import-files";
@@ -427,6 +428,11 @@ export async function persistBankImport(input: {
 
         if (automaticClassifications.length > 0) {
           await tx.insert(transactionClassifications).values(automaticClassifications);
+          await syncTransactionExpenseEvents(
+            input.context,
+            automaticClassifications.map((classification) => classification.transactionId),
+            tx,
+          );
         }
       }
 

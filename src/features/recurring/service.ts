@@ -5,6 +5,7 @@ import { manualEntries, manualRecurringExpenses, recurringEntryVersions } from "
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
 import type { ClassificationType } from "@/features/expenses/constants";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
+import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import type {
   EventKind,
@@ -552,7 +553,20 @@ export async function generateRecurringEntriesForPeriod(
     };
   }
 
-  await db.insert(manualEntries).values(rowsToInsert);
+  await db.transaction(async (tx) => {
+    const createdEntries = await tx
+      .insert(manualEntries)
+      .values(rowsToInsert)
+      .returning({
+        id: manualEntries.id,
+      });
+
+    await syncManualEntryExpenseEvents(
+      context,
+      createdEntries.map((entry) => entry.id),
+      tx,
+    );
+  });
 
   return {
     createdCount: rowsToInsert.length,
