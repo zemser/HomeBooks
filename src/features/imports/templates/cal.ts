@@ -1,5 +1,5 @@
 import type {
-  NormalizedBankTransaction,
+  ParsedBankTransaction,
   ParsedBankStatement,
   TabularRow,
   WorkbookData,
@@ -18,7 +18,9 @@ const HEADER_TITLE = "תאריך עסקה";
 function parseCalRow(
   row: TabularRow,
   sectionName: string,
-): NormalizedBankTransaction | undefined {
+  sourceSheetName: string,
+  sourceRowIndex: number,
+): ParsedBankTransaction | undefined {
   const normalized = normalizeRow(row);
   const transactionDate = parseDate(row[0]);
   const merchantRaw = normalized[1];
@@ -51,6 +53,9 @@ function parseCalRow(
     statementSection: sectionName,
     notes,
     cardLastFour,
+    sourceSheetName,
+    sourceRowIndex,
+    rawValues: normalized,
     direction,
   };
 }
@@ -58,14 +63,14 @@ function parseCalRow(
 function parseCalSheet(
   rows: TabularRow[],
   sectionName: string,
-): NormalizedBankTransaction[] {
+): ParsedBankTransaction[] {
   const headerRowIndex = findFirstRowIndex(rows, (row) => row[0] === HEADER_TITLE);
 
   if (headerRowIndex === -1) {
     return [];
   }
 
-  const transactions: NormalizedBankTransaction[] = [];
+  const transactions: ParsedBankTransaction[] = [];
 
   for (let i = headerRowIndex + 1; i < rows.length; i += 1) {
     const row = rows[i];
@@ -73,7 +78,7 @@ function parseCalSheet(
       continue;
     }
 
-    const parsed = parseCalRow(row, sectionName);
+    const parsed = parseCalRow(row, sectionName, sectionName, i);
     if (parsed) {
       transactions.push(parsed);
     }

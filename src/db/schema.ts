@@ -129,7 +129,9 @@ export const importSources = pgTable("import_sources", {
   name: text("name").notNull(),
   countryCode: char("country_code", { length: 2 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  typeNameUnique: unique().on(table.type, table.name),
+}));
 
 export const importTemplates = pgTable("import_templates", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -145,7 +147,9 @@ export const importTemplates = pgTable("import_templates", {
   sectionRulesJson: jsonb("section_rules_json"),
   active: boolean("active").notNull().default(true),
   ...timestamps,
-});
+}, (table) => ({
+  sourceTemplateUnique: unique().on(table.importSourceId, table.templateName),
+}));
 
 export const imports = pgTable(
   "imports",

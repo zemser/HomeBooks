@@ -6,6 +6,7 @@ import { parseMaxWorkbook } from "@/features/imports/templates/max";
 import type {
   CurrencyNormalizer,
   NormalizedTransactionPreview,
+  ParsedBankTransaction,
   ParsedBankStatement,
   WorkbookData,
 } from "@/features/imports/types";
@@ -36,6 +37,37 @@ function parseByTemplate(workbook: WorkbookData): ParsedBankStatement {
   }
 }
 
+function toPreviewTransaction(
+  transaction: ParsedBankTransaction,
+  normalizeCurrency: CurrencyNormalizer,
+): NormalizedTransactionPreview {
+  const normalized = normalizeCurrency({
+    amount: transaction.settlementAmount ?? transaction.originalAmount,
+    fromCurrency: transaction.settlementCurrency ?? transaction.originalCurrency,
+    transactionDate: transaction.transactionDate,
+  });
+
+  return {
+    transactionDate: transaction.transactionDate,
+    bookingDate: transaction.bookingDate,
+    description: transaction.description,
+    merchantRaw: transaction.merchantRaw,
+    category: transaction.category,
+    originalAmount: transaction.originalAmount,
+    originalCurrency: transaction.originalCurrency,
+    settlementAmount: transaction.settlementAmount,
+    settlementCurrency: transaction.settlementCurrency,
+    statementSection: transaction.statementSection,
+    notes: transaction.notes,
+    cardLastFour: transaction.cardLastFour,
+    direction: transaction.direction,
+    normalizedAmount: normalized.normalizedAmount,
+    workspaceCurrency: normalized.workspaceCurrency,
+    normalizationRate: normalized.normalizationRate,
+    normalizationRateSource: normalized.normalizationRateSource,
+  };
+}
+
 export function parseBankWorkbookToPreview(input: {
   workbook: WorkbookData;
   workspaceCurrency: string;
@@ -47,22 +79,9 @@ export function parseBankWorkbookToPreview(input: {
   const parsed = parseByTemplate(input.workbook);
   const normalizeCurrency =
     input.currencyNormalizer ?? defaultCurrencyNormalizer(input.workspaceCurrency);
-
-  const previewTransactions = parsed.transactions.map((transaction) => {
-    const normalized = normalizeCurrency({
-      amount: transaction.settlementAmount ?? transaction.originalAmount,
-      fromCurrency: transaction.settlementCurrency ?? transaction.originalCurrency,
-      transactionDate: transaction.transactionDate,
-    });
-
-    return {
-      ...transaction,
-      normalizedAmount: normalized.normalizedAmount,
-      workspaceCurrency: normalized.workspaceCurrency,
-      normalizationRate: normalized.normalizationRate,
-      normalizationRateSource: normalized.normalizationRateSource,
-    };
-  });
+  const previewTransactions = parsed.transactions.map((transaction) =>
+    toPreviewTransaction(transaction, normalizeCurrency),
+  );
 
   return {
     parsed,
