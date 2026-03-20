@@ -26,13 +26,24 @@ Completed in code:
   - staged raw rows
   - normalized transactions
   - checksum-based duplicate protection
+- transactions page on persisted data
+- review queue and classification workflow with:
+  - bulk classification
+  - merchant rule creation
+  - rule application during future imports
+- recurring entry CRUD with future-dated versions
+- recurring-generated manual entries
+- monthly reporting built from:
+  - classified imported transactions
+  - one-time manual entries
+  - recurring-generated entries
 
 Next up:
 
-- transactions page
-- review queue and classification workflow
-- recurring entry CRUD and generated manual entries
-- reporting built from persisted transactions and recurring/manual inputs
+- dashboard cards backed by real reporting data
+- yearly and trailing-period reporting
+- allocation-based adjusted-period reporting
+- shared-settlement workflow
 
 ## Recommended repo structure
 
@@ -378,7 +389,7 @@ Success criteria:
 
 Status:
 
-- mostly completed for imported transaction persistence
+- completed for imported transaction persistence and first transaction views
 
 Deliverables:
 
@@ -395,10 +406,13 @@ Success criteria:
 
 Remaining:
 
-- build the actual transactions page
-- add first-pass classification records and review UX
+- adjusted-period allocation logic is still future work
 
 ## Milestone 4: Review workflow
+
+Status:
+
+- completed for first-pass manual review and rule reuse
 
 Deliverables:
 
@@ -412,6 +426,10 @@ Success criteria:
 - future imports reuse saved rules
 
 ## Milestone 5: Recurring and manual entries
+
+Status:
+
+- completed for recurring CRUD, version history, and recurring-generated manual entries
 
 Deliverables:
 
@@ -427,16 +445,22 @@ Success criteria:
 
 ## Milestone 6: Reporting
 
+Status:
+
+- partially completed with a monthly payment-date reporting slice
+
 Deliverables:
 
+- payment-date monthly summaries
+- reports UI
+- yearly and trailing-period summaries
 - expense events
 - allocations
-- period summaries
-- reports UI
 
 Success criteria:
 
 - user can view monthly summary
+- user can inspect category and member breakdowns
 - user can view yearly summary
 - user can view trailing average savings
 
@@ -458,10 +482,14 @@ The MVP is useful if a household can:
 - upload bank files in CSV or Excel
 - review and classify imported data
 - add recurring rent and salary manually
-- handle foreign-currency expenses in reporting
+- view monthly reporting from classified imports plus manual entries
+
+Still needed for the fuller vision:
+
+- handle foreign-currency expenses in reporting beyond placeholder rates
 - allocate late-paid bills to the months they belong to
-- view monthly and yearly summaries
-- see average savings over time
+- view yearly summaries and trailing averages
+- see dashboard-level savings trends over time
 
 ## Recommended implementation sequence inside the codebase
 
@@ -477,6 +505,17 @@ Build in this exact order if possible:
 8. period summaries and reports
 
 This order minimizes rework.
+
+What actually happened in code so far:
+
+1. DB schema and migrations
+2. seeded workspace setup
+3. import staging and persistence
+4. normalized transactions plus review/classification
+5. recurring entries and generated manual rows
+6. first monthly reporting slice
+
+The next architectural step is to broaden reporting and later introduce `expense_events` and `expense_allocations` for adjusted-period views.
 
 ## What to postpone on purpose
 
@@ -494,9 +533,9 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. build the transactions page on top of persisted `transactions`
-2. build the review queue and first manual classification flow
-3. add recurring entry CRUD and generated manual entries
-4. connect reporting to persisted transactions plus recurring/manual inputs
+1. extend reporting into yearly and trailing-period summaries plus dashboard cards
+2. introduce `expense_events` and `expense_allocations` for adjusted-period reporting
+3. build shared-settlement workflow on top of classified expenses
+4. continue investment import foundation as an isolated sidecar
 
-That will turn the existing import foundation into the first usable household workflow instead of extending infrastructure without review/reporting value.
+That keeps the product moving from a usable monthly household workflow toward richer insights and the later shared-expense model.
