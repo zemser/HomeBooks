@@ -1,5 +1,5 @@
 import type {
-  NormalizedBankTransaction,
+  ParsedBankTransaction,
   ParsedBankStatement,
   TabularRow,
   WorkbookData,
@@ -33,13 +33,16 @@ function inferSectionCurrency(sectionLabel: string | undefined): string {
 function parseTransactionRow(
   row: TabularRow,
   sectionName: string | undefined,
-): NormalizedBankTransaction | undefined {
+  sourceSheetName: string,
+  sourceRowIndex: number,
+): ParsedBankTransaction | undefined {
+  const normalizedRow = normalizeRow(row);
   const transactionDate = parseDate(row[0]);
-  const merchantRaw = normalizeRow(row)[1];
+  const merchantRaw = normalizedRow[1];
   const originalAmount = parseNumber(row[2]);
   const settlementAmount = parseNumber(row[3]);
-  const category = normalizeRow(row)[5] || undefined;
-  const notes = normalizeRow(row)[6] || undefined;
+  const category = normalizedRow[5] || undefined;
+  const notes = normalizedRow[6] || undefined;
 
   if (!transactionDate || !merchantRaw || originalAmount === undefined) {
     return undefined;
@@ -60,6 +63,9 @@ function parseTransactionRow(
     settlementCurrency,
     statementSection: sectionName,
     notes,
+    sourceSheetName,
+    sourceRowIndex,
+    rawValues: normalizedRow,
     direction,
   };
 }
@@ -73,7 +79,7 @@ export function parseMaxWorkbook(workbook: WorkbookData): ParsedBankStatement {
   }
 
   const accountLabel = normalizeRow(sheet.rows[0])[0] || undefined;
-  const transactions: NormalizedBankTransaction[] = [];
+  const transactions: ParsedBankTransaction[] = [];
   let currentSectionName: string | undefined;
 
   for (let i = headerRowIndex + 1; i < sheet.rows.length; i += 1) {
@@ -97,7 +103,7 @@ export function parseMaxWorkbook(workbook: WorkbookData): ParsedBankStatement {
       continue;
     }
 
-    const parsed = parseTransactionRow(row, currentSectionName);
+    const parsed = parseTransactionRow(row, currentSectionName, sheet.name, i);
     if (parsed) {
       transactions.push(parsed);
     }

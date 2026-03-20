@@ -4,6 +4,7 @@ const importSteps = [
   "Upload CSV or Excel export",
   "Detect provider template",
   "Preview rows and section metadata",
+  "Confirm and save the import",
   "Normalize transactions or holdings",
   "Send uncertain items to review queue",
 ];
@@ -42,7 +43,7 @@ export default function ImportsPage() {
           </ul>
         </section>
 
-        <ImportPreviewClient />
+        <ImportPreviewClient savedImports={[]} />
 
         <section className="two-up">
           <article className="card">

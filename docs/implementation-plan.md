@@ -11,6 +11,29 @@ This document answers:
 - which screens and APIs are needed for MVP
 - what can wait until later
 
+## Progress snapshot
+
+Completed in code:
+
+- Next.js scaffold and static app routes
+- Drizzle schema and first baseline migration
+- non-interactive ESLint setup
+- seeded dev workspace bootstrap with default base currency resolution
+- bank import preview for Max and Cal variants
+- persisted bank imports with:
+  - local file retention
+  - import history API
+  - staged raw rows
+  - normalized transactions
+  - checksum-based duplicate protection
+
+Next up:
+
+- transactions page
+- review queue and classification workflow
+- recurring entry CRUD and generated manual entries
+- reporting built from persisted transactions and recurring/manual inputs
+
 ## Recommended repo structure
 
 ```text
@@ -307,6 +330,10 @@ Needs:
 
 ## Milestone 1: App foundation
 
+Status:
+
+- completed with seeded dev bootstrap instead of real auth
+
 Deliverables:
 
 - Next.js app bootstrapped
@@ -321,7 +348,16 @@ Success criteria:
 - user can create a household workspace
 - base currency can be set
 
+Notes:
+
+- real auth is intentionally deferred
+- the current app uses a seeded dev user/workspace/member contract
+
 ## Milestone 2: Import foundation
+
+Status:
+
+- completed for supported bank imports
 
 Deliverables:
 
@@ -336,8 +372,13 @@ Success criteria:
 - user can upload an example file from `examples/`
 - file is parsed into staging rows
 - parse errors are visible
+- confirmed imports are saved into `imports`, `import_rows`, and `transactions`
 
 ## Milestone 3: Expense normalization
+
+Status:
+
+- mostly completed for imported transaction persistence
 
 Deliverables:
 
@@ -351,6 +392,11 @@ Success criteria:
 - user can see parsed transactions
 - duplicate imports do not create duplicate transactions
 - imported rows have normalized currency amounts
+
+Remaining:
+
+- build the actual transactions page
+- add first-pass classification records and review UX
 
 ## Milestone 4: Review workflow
 
@@ -448,9 +494,9 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. create the actual Next.js project skeleton
-2. define the Drizzle schema from `docs/database-schema.md`
-3. implement the import pipeline for one real example bank file
-4. build the review queue and summary page around that first source
+1. build the transactions page on top of persisted `transactions`
+2. build the review queue and first manual classification flow
+3. add recurring entry CRUD and generated manual entries
+4. connect reporting to persisted transactions plus recurring/manual inputs
 
-That will give us a usable vertical slice quickly instead of building abstractions with no real imported data flowing through them.
+That will turn the existing import foundation into the first usable household workflow instead of extending infrastructure without review/reporting value.

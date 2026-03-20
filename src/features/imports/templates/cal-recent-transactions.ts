@@ -1,5 +1,5 @@
 import type {
-  NormalizedBankTransaction,
+  ParsedBankTransaction,
   ParsedBankStatement,
   TabularRow,
   WorkbookData,
@@ -47,7 +47,11 @@ function extractOriginalAmountFromNotes(notes: string | undefined): number | und
   return match ? Number(match[1]) : undefined;
 }
 
-function parseRecentTransactionRow(row: TabularRow): NormalizedBankTransaction | undefined {
+function parseRecentTransactionRow(
+  row: TabularRow,
+  sourceSheetName: string,
+  sourceRowIndex: number,
+): ParsedBankTransaction | undefined {
   const normalized = normalizeRow(row);
   const transactionDate = parseDate(row[0]);
   const merchantRaw = normalized[1];
@@ -84,6 +88,9 @@ function parseRecentTransactionRow(row: TabularRow): NormalizedBankTransaction |
     settlementAmount: Math.abs(settlementAmount),
     settlementCurrency,
     notes,
+    sourceSheetName,
+    sourceRowIndex,
+    rawValues: normalized,
     direction,
   };
 }
@@ -96,7 +103,7 @@ export function parseCalRecentTransactionsWorkbook(workbook: WorkbookData): Pars
     throw new Error("Could not find the recent transactions report header row");
   }
 
-  const transactions: NormalizedBankTransaction[] = [];
+  const transactions: ParsedBankTransaction[] = [];
 
   for (let i = headerRowIndex + 1; i < sheet.rows.length; i += 1) {
     const row = sheet.rows[i];
@@ -105,7 +112,7 @@ export function parseCalRecentTransactionsWorkbook(workbook: WorkbookData): Pars
       continue;
     }
 
-    const parsed = parseRecentTransactionRow(row);
+    const parsed = parseRecentTransactionRow(row, sheet.name, i);
     if (parsed) {
       transactions.push(parsed);
     }

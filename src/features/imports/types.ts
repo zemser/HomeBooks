@@ -42,11 +42,17 @@ export type NormalizedBankTransaction = {
   direction: "debit" | "credit";
 };
 
+export type ParsedBankTransaction = NormalizedBankTransaction & {
+  sourceSheetName: string;
+  sourceRowIndex: number;
+  rawValues: string[];
+};
+
 export type ParsedBankStatement = {
   templateId: Exclude<DetectedTemplateId, "unknown">;
   accountLabel?: string;
   statementLabel?: string;
-  transactions: NormalizedBankTransaction[];
+  transactions: ParsedBankTransaction[];
 };
 
 export type CurrencyNormalizer = (input: {

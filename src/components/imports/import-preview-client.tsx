@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 type PreviewTransaction = {
   transactionDate: string;
@@ -31,17 +31,102 @@ type PreviewResponse = {
   warnings: string[];
 };
 
-const workspaceCurrencies = ["ILS", "USD", "EUR"];
+type SavedImportSummary = {
+  id: string;
+  originalFilename: string;
+  importStatus: string;
+  createdAt: string;
+  sourceName?: string | null;
+  templateName?: string | null;
+  transactionCount?: number | null;
+};
 
-export function ImportPreviewClient() {
+type ImportPreviewClientProps = {
+  savedImports?: SavedImportSummary[];
+};
+
+type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
+
+type PendingSave = {
+  file: File;
+  workspaceCurrency: string;
+  preview: PreviewResponse;
+};
+
+function formatSavedAt(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+export function ImportPreviewClient({ savedImports = [] }: ImportPreviewClientProps) {
   const [isPending, startTransition] = useTransition();
   const [workspaceCurrency, setWorkspaceCurrency] = useState("ILS");
   const [result, setResult] = useState<PreviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [savedImportList, setSavedImportList] = useState(savedImports);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSavedImports() {
+      try {
+        const response = await fetch("/api/imports");
+
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as {
+          workspaceCurrency?: string;
+          savedImports?: SavedImportSummary[];
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        if (data.workspaceCurrency) {
+          setWorkspaceCurrency(data.workspaceCurrency);
+        }
+
+        if (data.savedImports) {
+          setSavedImportList(data.savedImports);
+        }
+      } catch {
+        // Keep the page usable even when persistence isn't configured yet.
+      }
+    }
+
+    void loadSavedImports();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSavedImportList(savedImports);
+  }, [savedImports]);
 
   async function handleSubmit(formData: FormData) {
     setError(null);
     setResult(null);
+    setPendingSave(null);
+    setSaveState("idle");
+
+    const workspaceCurrencyValue = formData.get("workspaceCurrency");
+    const selectedWorkspaceCurrency =
+      typeof workspaceCurrencyValue === "string" ? workspaceCurrencyValue : workspaceCurrency;
 
     const response = await fetch("/api/imports/preview", {
       method: "POST",
@@ -55,7 +140,89 @@ export function ImportPreviewClient() {
       return;
     }
 
-    setResult(data as PreviewResponse);
+    const preview = data as PreviewResponse;
+    const file = formData.get("file");
+
+    if (file instanceof File) {
+      setPendingSave({
+        file,
+        workspaceCurrency: selectedWorkspaceCurrency,
+        preview,
+      });
+    }
+
+    setResult(preview);
+  }
+
+  async function handleSaveImport() {
+    if (!pendingSave) {
+      return;
+    }
+
+    setError(null);
+    setSaveState("saving");
+
+    const formData = new FormData();
+    formData.append("file", pendingSave.file);
+    formData.append("workspaceCurrency", pendingSave.workspaceCurrency);
+    formData.append("importType", "bank");
+    formData.append(
+      "preview",
+      JSON.stringify({
+        detectedTemplate: pendingSave.preview.detectedTemplate,
+        accountLabel: pendingSave.preview.accountLabel,
+        statementLabel: pendingSave.preview.statementLabel,
+        transactionCount: pendingSave.preview.transactionCount,
+      }),
+    );
+
+    try {
+      const response = await fetch("/api/imports", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = (await response.json().catch(() => ({}))) as {
+        status?: string;
+        duplicate?: boolean;
+        message?: string;
+        error?: string;
+        import?: SavedImportSummary | null;
+      };
+
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 405) {
+          setSaveState("error");
+          setError("Saving is not connected yet. The preview works, but the persisted import endpoint is not available.");
+          return;
+        }
+
+        if (response.status === 409 || data.duplicate || data.status === "duplicate") {
+          setSaveState("duplicate");
+          return;
+        }
+
+        setSaveState("error");
+        setError(data.error ?? data.message ?? "Save import failed.");
+        return;
+      }
+
+      if (data.duplicate || data.status === "duplicate") {
+        setSaveState("duplicate");
+        return;
+      }
+
+      const savedImport = data.import;
+
+      if (savedImport) {
+        setSavedImportList((current) => [savedImport, ...current.filter((item) => item.id !== savedImport.id)]);
+      }
+
+      setSaveState("saved");
+    } catch {
+      setSaveState("error");
+      setError("Could not save this import right now.");
+    }
   }
 
   return (
@@ -77,13 +244,10 @@ export function ImportPreviewClient() {
               className="input"
               name="workspaceCurrency"
               value={workspaceCurrency}
-              onChange={(event) => setWorkspaceCurrency(event.target.value)}
+              disabled
+              aria-disabled="true"
             >
-              {workspaceCurrencies.map((currency) => (
-                <option key={currency} value={currency}>
-                  {currency}
-                </option>
-              ))}
+              <option value={workspaceCurrency}>{workspaceCurrency}</option>
             </select>
           </label>
 
@@ -136,6 +300,29 @@ export function ImportPreviewClient() {
                 ))}
               </div>
             ) : null}
+
+            <div className="stack">
+              <button
+                className="button"
+                type="button"
+                onClick={() => void handleSaveImport()}
+                disabled={saveState === "saving" || saveState === "saved"}
+              >
+                {saveState === "saving"
+                  ? "Saving..."
+                  : saveState === "saved"
+                    ? "Saved"
+                    : "Save import"}
+              </button>
+              {saveState === "saved" ? (
+                <p className="status">Import saved to the workspace.</p>
+              ) : null}
+              {saveState === "duplicate" ? (
+                <p className="status warning">
+                  This file already exists for the current workspace, so we skipped a duplicate save.
+                </p>
+              ) : null}
+            </div>
           </article>
 
           <article className="card">
@@ -181,7 +368,45 @@ export function ImportPreviewClient() {
           </article>
         </section>
       ) : null}
+
+      {savedImportList.length > 0 ? (
+        <article className="card">
+          <h2>Saved imports</h2>
+          <p>Recent imports already persisted for the current workspace.</p>
+          <div className="stack">
+            {savedImportList.map((savedImport) => (
+              <div className="card" key={savedImport.id}>
+                <div className="meta-grid">
+                  <div>
+                    <strong>File</strong>
+                    <p>{savedImport.originalFilename}</p>
+                  </div>
+                  <div>
+                    <strong>Status</strong>
+                    <p>{savedImport.importStatus}</p>
+                  </div>
+                  <div>
+                    <strong>Saved</strong>
+                    <p>{formatSavedAt(savedImport.createdAt)}</p>
+                  </div>
+                  <div>
+                    <strong>Template</strong>
+                    <p>{savedImport.templateName ?? "-"}</p>
+                  </div>
+                  <div>
+                    <strong>Source</strong>
+                    <p>{savedImport.sourceName ?? "-"}</p>
+                  </div>
+                  <div>
+                    <strong>Rows</strong>
+                    <p>{savedImport.transactionCount ?? "-"}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </article>
+      ) : null}
     </section>
   );
 }
-
