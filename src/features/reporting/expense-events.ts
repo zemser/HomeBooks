@@ -9,6 +9,11 @@ import {
   transactionClassifications,
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
+import {
+  buildSingleMonthAllocation,
+  rebuildStoredAllocations,
+  type AllocationMethod,
+} from "@/features/expenses/allocation-core";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { addMonths, monthKey, startOfMonth } from "@/lib/dates/months";
 
@@ -40,6 +45,15 @@ type ExistingExpenseEventRow = {
   sourceId: string;
   sourceType: ExpenseEventSourceType;
   reportingMode: "payment_date" | "allocated_period";
+  allocations: ExistingExpenseAllocationRow[];
+};
+
+type ExistingExpenseAllocationRow = {
+  allocationMethod: AllocationMethod;
+  coverageStartDate: string | null;
+  coverageEndDate: string | null;
+  reportMonth: string;
+  allocatedAmount: string;
 };
 
 type MonthRangeInput = {
@@ -166,17 +180,28 @@ async function applyExpenseEventSync(
       );
     }
 
-    if (!shouldPreserveAllocations) {
-      await db.delete(expenseAllocations).where(eq(expenseAllocations.expenseEventId, eventId));
-      await db.insert(expenseAllocations).values({
+    const nextAllocations = shouldPreserveAllocations
+      ? rebuildStoredAllocations({
+          amount: row.totalAmount,
+          sourceDate: row.coverageStartDate ?? row.reportMonth,
+          rows: primaryRow?.allocations ?? [],
+        })
+      : buildSingleMonthAllocation({
+          amount: row.totalAmount,
+          sourceDate: row.coverageStartDate ?? row.reportMonth,
+        });
+
+    await db.delete(expenseAllocations).where(eq(expenseAllocations.expenseEventId, eventId));
+    await db.insert(expenseAllocations).values(
+      nextAllocations.map((allocation) => ({
         expenseEventId: eventId,
-        reportMonth: row.reportMonth,
-        allocatedAmount: row.totalAmount,
-        allocationMethod: "single_month",
-        coverageStartDate: row.coverageStartDate,
-        coverageEndDate: row.coverageEndDate,
-      });
-    }
+        reportMonth: allocation.reportMonth,
+        allocatedAmount: allocation.allocatedAmount,
+        allocationMethod: allocation.allocationMethod,
+        coverageStartDate: allocation.coverageStartDate,
+        coverageEndDate: allocation.coverageEndDate,
+      })),
+    );
   }
 
   const staleEventIds = existingRows
@@ -198,7 +223,7 @@ async function listExistingExpenseEvents(
     return [];
   }
 
-  return db
+  const existingRows = await db
     .select({
       id: expenseEvents.id,
       sourceId: expenseEvents.sourceId,
@@ -214,6 +239,47 @@ async function listExistingExpenseEvents(
       ),
     )
     .orderBy(asc(expenseEvents.createdAt));
+
+  if (existingRows.length === 0) {
+    return [];
+  }
+
+  const allocationRows = await db
+    .select({
+      expenseEventId: expenseAllocations.expenseEventId,
+      allocationMethod: expenseAllocations.allocationMethod,
+      coverageStartDate: expenseAllocations.coverageStartDate,
+      coverageEndDate: expenseAllocations.coverageEndDate,
+      reportMonth: expenseAllocations.reportMonth,
+      allocatedAmount: expenseAllocations.allocatedAmount,
+    })
+    .from(expenseAllocations)
+    .where(
+      inArray(
+        expenseAllocations.expenseEventId,
+        existingRows.map((row) => row.id),
+      ),
+    )
+    .orderBy(asc(expenseAllocations.reportMonth), asc(expenseAllocations.createdAt));
+
+  const allocationsByEventId = new Map<string, ExistingExpenseAllocationRow[]>();
+
+  for (const row of allocationRows) {
+    const current = allocationsByEventId.get(row.expenseEventId) ?? [];
+    current.push({
+      allocationMethod: row.allocationMethod,
+      coverageStartDate: row.coverageStartDate,
+      coverageEndDate: row.coverageEndDate,
+      reportMonth: row.reportMonth,
+      allocatedAmount: row.allocatedAmount,
+    });
+    allocationsByEventId.set(row.expenseEventId, current);
+  }
+
+  return existingRows.map((row) => ({
+    ...row,
+    allocations: allocationsByEventId.get(row.id) ?? [],
+  }));
 }
 
 export async function syncTransactionExpenseEvents(
