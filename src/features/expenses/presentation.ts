@@ -4,6 +4,7 @@ import type {
   ExpenseTransactionItem,
   TransactionClassificationState,
 } from "@/features/expenses/types";
+import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
 
 const CLASSIFICATION_LABELS: Record<ClassificationType, string> = {
   personal: "Personal",
@@ -18,6 +19,24 @@ export function formatClassificationTypeLabel(value: ClassificationType) {
   return CLASSIFICATION_LABELS[value];
 }
 
+function formatClassifiedEntrySummary(input: {
+  classificationType: ClassificationType;
+  memberOwnerName: string | null;
+  category: string | null;
+}) {
+  const parts = [formatClassificationTypeLabel(input.classificationType)];
+
+  if (input.memberOwnerName) {
+    parts.push(input.memberOwnerName);
+  }
+
+  if (input.category) {
+    parts.push(input.category);
+  }
+
+  return parts.join(" / ");
+}
+
 export function formatClassificationSummary(
   classification: TransactionClassificationState,
 ) {
@@ -25,17 +44,11 @@ export function formatClassificationSummary(
     return "Needs review";
   }
 
-  const parts = [formatClassificationTypeLabel(classification.classificationType)];
-
-  if (classification.memberOwnerName) {
-    parts.push(classification.memberOwnerName);
-  }
-
-  if (classification.category) {
-    parts.push(classification.category);
-  }
-
-  return parts.join(" / ");
+  return formatClassifiedEntrySummary({
+    classificationType: classification.classificationType,
+    memberOwnerName: classification.memberOwnerName,
+    category: classification.category,
+  });
 }
 
 export function formatDecisionSourceLabel(value: "rule" | "user" | "system_default") {
@@ -95,4 +108,14 @@ export function formatMoneyDisplay(
 
 export function getTransactionMerchant(item: ExpenseTransactionItem) {
   return item.merchantRaw?.trim() || item.description;
+}
+
+export function formatManualEntryClassificationSummary(
+  item: Pick<OneTimeManualEntryItem, "classificationType" | "payerMemberName" | "category">,
+) {
+  return formatClassifiedEntrySummary({
+    classificationType: item.classificationType,
+    memberOwnerName: item.payerMemberName,
+    category: item.category,
+  });
 }

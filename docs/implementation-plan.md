@@ -33,17 +33,31 @@ Completed in code:
   - rule application during future imports
 - recurring entry CRUD with future-dated versions
 - recurring-generated manual entries
-- monthly reporting built from:
+- `expense_events` and `expense_allocations` materialized from reportable sources
+- multi-period reporting built from:
   - classified imported transactions
-  - one-time manual entries
   - recurring-generated entries
+  - existing `manual_entries` inputs when present
+- dashboard cards backed by real reporting data
+- year-to-date summaries
+- rolling 12-month summaries
+- payment-date and adjusted-period reporting modes
+- transaction allocation editing from the review flow with:
+  - equal-split coverage ranges
+  - manual per-month splits
+- shared settlements v1 with:
+  - pairwise shared expense selection from classified expense events
+  - equal, percentage, and fixed split rules
+  - open, settled, and ignored tracking states
+  - running open balance summary
+- minimal workspace member management in settings for settlement readiness
 
 Next up:
 
-- dashboard cards backed by real reporting data
-- yearly and trailing-period reporting
-- allocation-based adjusted-period reporting
-- shared-settlement workflow
+- one-time manual entry CRUD
+- allocation editing outside the review flow and for one-time manual entries
+- workspace settings polish for base currency and broader member flows
+- investment import sidecar
 
 ## Recommended repo structure
 
@@ -406,7 +420,7 @@ Success criteria:
 
 Remaining:
 
-- adjusted-period allocation logic is still future work
+- richer transaction filtering and allocation-aware editing in `/expenses` are still future work
 
 ## Milestone 4: Review workflow
 
@@ -435,7 +449,7 @@ Deliverables:
 
 - recurring entries with versions
 - generated manual entries
-- one-off manual income and expense entries
+- future-dated recurring changes that do not rewrite past periods
 
 Success criteria:
 
@@ -443,19 +457,25 @@ Success criteria:
 - user can create salary as recurring income
 - amount change from future month does not alter past periods
 
+Remaining:
+
+- one-time manual income and expense entry CRUD is still future work
+
 ## Milestone 6: Reporting
 
 Status:
 
-- partially completed with a monthly payment-date reporting slice
+- completed for payment-date and first adjusted-period reporting plus dashboard views
 
 Deliverables:
 
 - payment-date monthly summaries
+- adjusted-period summaries backed by `expense_events` and `expense_allocations`
 - reports UI
 - yearly and trailing-period summaries
-- expense events
-- allocations
+- dashboard cards backed by real data
+- review-driven transaction allocation editing
+- manual split month allocations for imported transactions
 
 Success criteria:
 
@@ -463,8 +483,18 @@ Success criteria:
 - user can inspect category and member breakdowns
 - user can view yearly summary
 - user can view trailing average savings
+- user can switch between payment-date and adjusted-period reporting
+- user can split a classified transaction across multiple reporting months without mutating the original transaction date
+
+Remaining:
+
+- one-time manual entry allocation editing is still future work
 
 ## Milestone 7: Shared settlements
+
+Status:
+
+- completed for pairwise v1 shared split tracking and balance summaries
 
 Deliverables:
 
@@ -472,7 +502,17 @@ Deliverables:
 - split rules
 - balance calculation
 
-This is a later milestone.
+Success criteria:
+
+- user can select shared expense events for settlement tracking
+- user can define equal, percentage, or fixed two-member split rules
+- user can mark tracked items as open, settled, or ignored
+- user can see a running open balance between the 2 active workspace members
+
+Remaining:
+
+- shared settlement is intentionally pairwise only in v1
+- one-time manual shared entries and reimbursement-ledger history are still future work
 
 ## MVP acceptance checklist
 
@@ -487,9 +527,9 @@ The MVP is useful if a household can:
 Still needed for the fuller vision:
 
 - handle foreign-currency expenses in reporting beyond placeholder rates
-- allocate late-paid bills to the months they belong to
-- view yearly summaries and trailing averages
-- see dashboard-level savings trends over time
+- settle shared expenses on top of classified data
+- add one-time manual entries without going through recurring rules
+- support allocation editing for non-imported inputs and outside the review queue
 
 ## Recommended implementation sequence inside the codebase
 
@@ -513,9 +553,12 @@ What actually happened in code so far:
 3. import staging and persistence
 4. normalized transactions plus review/classification
 5. recurring entries and generated manual rows
-6. first monthly reporting slice
+6. multi-period payment-date reporting and dashboard cards
+7. `expense_events` and `expense_allocations` for adjusted-period reporting
+8. review-driven transaction allocation editing with equal and manual splits
+9. pairwise shared settlements v1 plus minimal member-management settings
 
-The next architectural step is to broaden reporting and later introduce `expense_events` and `expense_allocations` for adjusted-period views.
+The next architectural step is to add one-time manual entry CRUD on top of the now-stable classified, allocated, and settlement-aware expense model.
 
 ## What to postpone on purpose
 
@@ -533,9 +576,9 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. extend reporting into yearly and trailing-period summaries plus dashboard cards
-2. introduce `expense_events` and `expense_allocations` for adjusted-period reporting
-3. build shared-settlement workflow on top of classified expenses
+1. add one-time manual entry CRUD for non-imported inputs, then follow with allocation editing
+2. extend allocation editing beyond the review queue into `/expenses` and one-time manual entry flows
+3. tighten workspace settings so base currency and broader member workflows are editable in the app
 4. continue investment import foundation as an isolated sidecar
 
-That keeps the product moving from a usable monthly household workflow toward richer insights and the later shared-expense model.
+That keeps the product moving from the first settlement workflow into fuller non-imported input coverage and broader household finance completeness.
