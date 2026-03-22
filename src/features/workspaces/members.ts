@@ -5,7 +5,11 @@ import { and, asc, eq } from "drizzle-orm";
 import { getDb } from "@/db";
 import { users, workspaceMembers } from "@/db/schema";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
-import type { WorkspaceMemberSettingsItem } from "@/features/workspaces/types";
+import {
+  WORKSPACE_MEMBER_ROLES,
+  type WorkspaceMemberRole,
+  type WorkspaceMemberSettingsItem,
+} from "@/features/workspaces/types";
 
 function normalizeDisplayName(value?: string | null) {
   const normalized = value?.trim();
@@ -15,6 +19,14 @@ function normalizeDisplayName(value?: string | null) {
   }
 
   return normalized;
+}
+
+function normalizeRole(value?: string | null): WorkspaceMemberRole {
+  if (value && WORKSPACE_MEMBER_ROLES.includes(value as WorkspaceMemberRole)) {
+    return value as WorkspaceMemberRole;
+  }
+
+  throw new Error("Workspace member role must be owner or member.");
 }
 
 function toSettingsItem(row: {
@@ -30,7 +42,7 @@ function toSettingsItem(row: {
     displayNameOverride: row.displayNameOverride?.trim() || null,
     userDisplayName: row.userDisplayName,
     isActive: row.isActive,
-    role: row.role,
+    role: normalizeRole(row.role),
   } satisfies WorkspaceMemberSettingsItem;
 }
 
@@ -59,6 +71,10 @@ export async function listWorkspaceMembersForSettings(
     .sort((left, right) => {
       if (left.isActive !== right.isActive) {
         return left.isActive ? -1 : 1;
+      }
+
+      if (left.role !== right.role) {
+        return left.role === "owner" ? -1 : 1;
       }
 
       return left.displayName.localeCompare(right.displayName);
@@ -115,56 +131,87 @@ export async function updateWorkspaceMember(
   input: {
     displayName?: string | null;
     isActive?: boolean;
+    role?: WorkspaceMemberRole;
   },
 ) {
   const db = getDb();
-  const existing = await db
-    .select({
-      id: workspaceMembers.id,
-      userId: workspaceMembers.userId,
-      role: workspaceMembers.role,
-      isActive: workspaceMembers.isActive,
-      displayNameOverride: workspaceMembers.displayNameOverride,
-      userDisplayName: users.displayName,
-    })
-    .from(workspaceMembers)
-    .innerJoin(users, eq(users.id, workspaceMembers.userId))
-    .where(
-      and(
-        eq(workspaceMembers.id, memberId),
-        eq(workspaceMembers.workspaceId, context.workspaceId),
-      ),
-    )
-    .then((rows) => rows[0] ?? null);
+  return db.transaction(async (tx) => {
+    const existing = await tx
+      .select({
+        id: workspaceMembers.id,
+        userId: workspaceMembers.userId,
+        role: workspaceMembers.role,
+        isActive: workspaceMembers.isActive,
+        displayNameOverride: workspaceMembers.displayNameOverride,
+        userDisplayName: users.displayName,
+      })
+      .from(workspaceMembers)
+      .innerJoin(users, eq(users.id, workspaceMembers.userId))
+      .where(
+        and(
+          eq(workspaceMembers.id, memberId),
+          eq(workspaceMembers.workspaceId, context.workspaceId),
+        ),
+      )
+      .then((rows) => rows[0] ?? null);
 
-  if (!existing) {
-    throw new Error("Workspace member was not found.");
-  }
+    if (!existing) {
+      throw new Error("Workspace member was not found.");
+    }
 
-  const nextDisplayNameOverride =
-    input.displayName === undefined
-      ? existing.displayNameOverride
-      : normalizeDisplayName(input.displayName) === existing.userDisplayName
-        ? null
-        : normalizeDisplayName(input.displayName);
+    const nextDisplayNameOverride =
+      input.displayName === undefined
+        ? existing.displayNameOverride
+        : normalizeDisplayName(input.displayName) === existing.userDisplayName
+          ? null
+          : normalizeDisplayName(input.displayName);
+    const nextRole = input.role === undefined ? normalizeRole(existing.role) : normalizeRole(input.role);
+    const nextIsActive = input.isActive ?? existing.isActive;
 
-  const [updatedMember] = await db
-    .update(workspaceMembers)
-    .set({
-      displayNameOverride: nextDisplayNameOverride,
-      isActive: input.isActive ?? existing.isActive,
-      updatedAt: new Date(),
-    })
-    .where(eq(workspaceMembers.id, existing.id))
-    .returning({
-      id: workspaceMembers.id,
-      displayNameOverride: workspaceMembers.displayNameOverride,
-      isActive: workspaceMembers.isActive,
-      role: workspaceMembers.role,
+    const roster = await tx
+      .select({
+        id: workspaceMembers.id,
+        role: workspaceMembers.role,
+        isActive: workspaceMembers.isActive,
+      })
+      .from(workspaceMembers)
+      .where(eq(workspaceMembers.workspaceId, context.workspaceId));
+    const activeMembers = roster.filter((member) => member.isActive);
+    const activeOwners = activeMembers.filter((member) => member.role === "owner");
+    const removesLastActiveMember = existing.isActive && !nextIsActive && activeMembers.length <= 1;
+    const removesLastActiveOwner =
+      existing.isActive
+      && existing.role === "owner"
+      && (nextRole !== "owner" || !nextIsActive)
+      && activeOwners.length <= 1;
+
+    if (removesLastActiveMember) {
+      throw new Error("At least one active household member is required.");
+    }
+
+    if (removesLastActiveOwner) {
+      throw new Error("At least one active owner is required.");
+    }
+
+    const [updatedMember] = await tx
+      .update(workspaceMembers)
+      .set({
+        role: nextRole,
+        displayNameOverride: nextDisplayNameOverride,
+        isActive: nextIsActive,
+        updatedAt: new Date(),
+      })
+      .where(eq(workspaceMembers.id, existing.id))
+      .returning({
+        id: workspaceMembers.id,
+        displayNameOverride: workspaceMembers.displayNameOverride,
+        isActive: workspaceMembers.isActive,
+        role: workspaceMembers.role,
+      });
+
+    return toSettingsItem({
+      ...updatedMember,
+      userDisplayName: existing.userDisplayName,
     });
-
-  return toSettingsItem({
-    ...updatedMember,
-    userDisplayName: existing.userDisplayName,
   });
 }

@@ -54,13 +54,17 @@ Completed in code:
   - equal, percentage, and fixed split rules
   - open, settled, and ignored tracking states
   - running open balance summary
-- minimal workspace member management in settings for settlement readiness
+- workspace settings polish with:
+  - safe base-currency editing before financial data exists
+  - owner/member role management
+  - member deactivation guardrails
+  - settlement-readiness guidance in `/settings`
 
 Next up:
 
-- DB-backed validation checkpoint so the current app can be exercised end-to-end against a real PostgreSQL instance
-- workspace settings polish for base currency and broader member flows
 - investment import sidecar
+- broader one-time manual shared-entry and settlement coverage
+- auth planning and provider selection once early deployment direction is clearer
 
 ## Recommended repo structure
 
@@ -552,21 +556,30 @@ What actually happened in code so far:
 6. multi-period payment-date reporting and dashboard cards
 7. `expense_events` and `expense_allocations` for adjusted-period reporting
 8. review-driven transaction allocation editing with equal and manual splits
-9. pairwise shared settlements v1 plus minimal member-management settings
+9. pairwise shared settlements v1 plus initial member-management settings
+10. DB-backed validation checkpoint completed against local PostgreSQL, including first-run bootstrap hardening and dynamic API freshness fixes
+11. workspace settings polish with guarded base-currency editing, role management, and stronger member-state guardrails
 
-Before the next architectural slice, we should run a real DB-backed validation checkpoint so the current app is exercised outside static build checks.
+The DB-backed validation checkpoint and settings polish slices are now completed, so the next architectural work can move back to shared-expense depth, investments, and later auth planning.
 
-## Immediate validation checkpoint
+## Completed validation checkpoint
 
-Run this before the next feature-heavy milestone:
+Completed against local Docker PostgreSQL with `.env.local` and `DATABASE_URL`.
 
-1. set `DATABASE_URL` to a local PostgreSQL database
-2. run `npm run db:push`
-3. run `npm run dev`
-4. confirm the seeded dev workspace bootstrap creates the default user/workspace/member automatically
-5. smoke-test `/settings`, `/expenses`, `/recurring`, and `/reports`
-6. create and edit at least one one-time manual entry, including allocation editing from `/expenses`
-7. optionally smoke-test `/imports` with a real bank file if one is available
+Verified:
+
+1. `npm run db:push` works against local PostgreSQL after loading Next-style env files
+2. `npm run dev` boots cleanly against the live database
+3. the seeded dev workspace bootstrap creates the default user/workspace/member automatically
+4. concurrent first-load requests no longer race into duplicate seeded inserts
+5. `/settings`, `/expenses`, `/recurring`, and `/reports` load against the live database
+6. one-time manual entry CRUD and allocation editing from `/expenses` work end-to-end
+7. mutable GET routes now return fresh database state after edits instead of stale cached responses
+8. `npm run lint` and `npm run build` both pass after the DB-backed fixes
+
+Still optional:
+
+- smoke-test `/imports` with a real bank file when one is available
 
 ## Early deployment note
 
@@ -594,7 +607,7 @@ Important caveat:
 
 - the current import flow writes uploaded files to local disk, so a production Vercel deployment should either avoid import-heavy usage initially or replace local file persistence with durable object storage first
 
-Once that checkpoint is green, the next architectural step is to tighten workspace settings and broader manual/shared-expense coverage on top of the now-stable classified, allocated, and settlement-aware expense model.
+With that checkpoint green and settings tightened, the next architectural step is broader manual/shared-expense coverage on top of the now-stable classified, allocated, settlement-aware, and settings-backed expense model.
 
 ## What to postpone on purpose
 
@@ -612,9 +625,9 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. run the DB-backed validation checkpoint and test the current app against a live PostgreSQL instance
-2. tighten workspace settings so base currency and broader member workflows are editable in the app
-3. continue investment import foundation as an isolated sidecar
-4. expand one-time manual shared-entry and settlement coverage
+1. expand one-time manual shared-entry and settlement coverage
+2. continue investment import foundation as an isolated sidecar
+3. scope the later auth slice once early deployment direction and provider choices are clearer
+4. replace local import-file persistence before any import-heavy Vercel deployment
 
 That keeps the product moving from fuller non-imported input coverage into broader household finance completeness.

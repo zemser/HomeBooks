@@ -1,26 +1,51 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 
-import type { WorkspaceMemberSettingsItem } from "@/features/workspaces/types";
+import type {
+  WorkspaceMemberRole,
+  WorkspaceMemberSettingsItem,
+  WorkspaceSettingsSnapshot,
+} from "@/features/workspaces/types";
 
 type WorkspaceMembersResponse = {
   members?: WorkspaceMemberSettingsItem[];
   error?: string;
 };
 
-type SettingsPageClientProps = {
-  baseCurrency: string;
+type WorkspaceSettingsResponse = WorkspaceSettingsSnapshot & {
+  error?: string;
 };
 
-export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
-  const [members, setMembers] = useState<WorkspaceMemberSettingsItem[]>([]);
-  const [draftNames, setDraftNames] = useState<Record<string, string>>({});
+type SettingsPageClientProps = {
+  initialSettings: WorkspaceSettingsSnapshot;
+  initialMembers: WorkspaceMemberSettingsItem[];
+};
+
+function buildNameDrafts(members: WorkspaceMemberSettingsItem[]) {
+  return Object.fromEntries(members.map((member) => [member.id, member.displayName]));
+}
+
+function buildRoleDrafts(members: WorkspaceMemberSettingsItem[]) {
+  return Object.fromEntries(members.map((member) => [member.id, member.role]));
+}
+
+export function SettingsPageClient({
+  initialSettings,
+  initialMembers,
+}: SettingsPageClientProps) {
+  const [settings, setSettings] = useState(initialSettings);
+  const [members, setMembers] = useState<WorkspaceMemberSettingsItem[]>(initialMembers);
+  const [draftNames, setDraftNames] = useState<Record<string, string>>(() => buildNameDrafts(initialMembers));
+  const [draftRoles, setDraftRoles] = useState<Record<string, WorkspaceMemberRole>>(
+    () => buildRoleDrafts(initialMembers),
+  );
+  const [baseCurrencyDraft, setBaseCurrencyDraft] = useState(initialSettings.baseCurrency);
   const [newMemberName, setNewMemberName] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingMemberId, setPendingMemberId] = useState<string | null>(null);
+  const [isSavingBaseCurrency, setIsSavingBaseCurrency] = useState(false);
   const [isSaving, startSaving] = useTransition();
 
   async function loadMembers() {
@@ -36,25 +61,16 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
 
       const nextMembers = payload.members ?? [];
       setMembers(nextMembers);
-      setDraftNames(
-        Object.fromEntries(nextMembers.map((member) => [member.id, member.displayName])),
-      );
+      setDraftNames(buildNameDrafts(nextMembers));
+      setDraftRoles(buildRoleDrafts(nextMembers));
     } catch (loadError) {
       setError(
         loadError instanceof Error
           ? loadError.message
           : "Could not load workspace members.",
       );
-      setMembers([]);
-      setDraftNames({});
-    } finally {
-      setIsLoading(false);
     }
   }
-
-  useEffect(() => {
-    void loadMembers();
-  }, []);
 
   async function handleCreateMember() {
     setError(null);
@@ -86,7 +102,10 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
     setMessage("Workspace member created.");
   }
 
-  async function handleUpdateMember(memberId: string, input: { displayName?: string; isActive?: boolean }) {
+  async function handleUpdateMember(
+    memberId: string,
+    input: { displayName?: string; isActive?: boolean; role?: WorkspaceMemberRole },
+  ) {
     setError(null);
     setMessage(null);
     setPendingMemberId(memberId);
@@ -113,14 +132,46 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
     setMessage("Workspace member updated.");
   }
 
+  async function handleSaveBaseCurrency() {
+    setError(null);
+    setMessage(null);
+    setIsSavingBaseCurrency(true);
+
+    const response = await fetch("/api/workspace-settings", {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        baseCurrency: baseCurrencyDraft,
+      }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as WorkspaceSettingsResponse;
+
+    setIsSavingBaseCurrency(false);
+
+    if (!response.ok) {
+      setError(payload.error ?? "Could not update workspace base currency.");
+      return;
+    }
+
+    setSettings(payload);
+    setBaseCurrencyDraft(payload.baseCurrency);
+    setMessage("Workspace base currency updated.");
+  }
+
   const activeMembers = members.filter((member) => member.isActive);
+  const activeOwners = activeMembers.filter((member) => member.role === "owner");
+  const settlementReady = activeMembers.length === 2;
+  const normalizedBaseCurrencyDraft = baseCurrencyDraft.trim().toUpperCase();
+  const isBaseCurrencyDraftValid = /^[A-Z]{3}$/.test(normalizedBaseCurrencyDraft);
 
   return (
     <section className="stack">
       <article className="card">
         <div className="summary-strip">
           <div>
-            <strong>{baseCurrency}</strong>
+            <strong>{settings.baseCurrency}</strong>
             <span>Workspace base currency</span>
           </div>
           <div>
@@ -128,10 +179,110 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
             <span>Active household members</span>
           </div>
           <div>
+            <strong>{activeOwners.length}</strong>
+            <span>Active owners</span>
+          </div>
+          <div>
+            <strong>{settlementReady ? "Ready" : "Not ready"}</strong>
+            <span>Settlement readiness</span>
+          </div>
+        </div>
+      </article>
+
+      <article className="card stack compact">
+        <div className="page-actions">
+          <div>
+            <h2>Workspace currency</h2>
+            <p className="muted-text">
+              This is the base currency used by imports, manual entries, recurring generation,
+              and reporting. It stays editable only before the workspace has real financial data.
+            </p>
+          </div>
+        </div>
+
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            startSaving(() => {
+              void handleSaveBaseCurrency();
+            });
+          }}
+        >
+          <label className="field">
+            <span>Base currency</span>
+            <input
+              className="input"
+              value={baseCurrencyDraft}
+              onChange={(event) => setBaseCurrencyDraft(event.target.value.toUpperCase())}
+              placeholder="ILS"
+              maxLength={3}
+              disabled={!settings.canUpdateBaseCurrency || isSavingBaseCurrency}
+            />
+          </label>
+          <div className="field">
+            <span>&nbsp;</span>
+            <button
+              className="button"
+              type="submit"
+              disabled={
+                isSaving
+                || isSavingBaseCurrency
+                || !settings.canUpdateBaseCurrency
+                || !isBaseCurrencyDraftValid
+                || normalizedBaseCurrencyDraft === settings.baseCurrency
+              }
+            >
+              {isSavingBaseCurrency ? "Saving..." : "Save currency"}
+            </button>
+          </div>
+        </form>
+
+        <p className="muted-text">
+          {settings.canUpdateBaseCurrency
+            ? "Safe to edit now because the workspace does not have financial records yet."
+            : settings.baseCurrencyLockReason}
+        </p>
+      </article>
+
+      <article className="card stack compact">
+        <div className="page-actions">
+          <div>
+            <h2>Settlement readiness</h2>
+            <p className="muted-text">
+              Shared settlements are designed around exactly two active members. You can keep more
+              member records in the workspace, but only two should stay active when settlement flows
+              are in use.
+            </p>
+          </div>
+        </div>
+
+        <div className="summary-strip">
+          <div>
+            <strong>{activeMembers.length}</strong>
+            <span>Active members now</span>
+          </div>
+          <div>
             <strong>{members.length}</strong>
             <span>Total member records</span>
           </div>
+          <div>
+            <strong>{activeOwners.length}</strong>
+            <span>Owners with access</span>
+          </div>
+          <div>
+            <strong>{settlementReady ? "Exactly 2" : "Needs review"}</strong>
+            <span>Settlement rule</span>
+          </div>
         </div>
+
+        <p className="muted-text">
+          {settlementReady
+            ? "The workspace is ready for pairwise settlement flows."
+            : activeMembers.length < 2
+              ? "Add or reactivate a second member before relying on shared settlement screens."
+              : "Too many active members are enabled for the current pairwise settlement model. Deactivate extra records when you want settlements to be accurate."}
+        </p>
       </article>
 
       <article className="card stack compact">
@@ -140,12 +291,12 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
             <h2>Household members</h2>
             <p className="muted-text">
               Shared settlements need exactly two active members. Add a member here, rename
-              them with a display override, or deactivate old records.
+              them with a display override, promote another owner if needed, or deactivate old
+              records without breaking the workspace.
             </p>
           </div>
         </div>
 
-        {isLoading ? <p className="status">Loading settings...</p> : null}
         {error ? <p className="status error">{error}</p> : null}
         {message ? <p className="status">{message}</p> : null}
 
@@ -179,11 +330,11 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
           </div>
         </form>
 
-        {!isLoading && members.length === 0 ? (
+        {members.length === 0 ? (
           <p className="empty-state">No workspace members found yet.</p>
         ) : null}
 
-        {!isLoading && members.length > 0 ? (
+        {members.length > 0 ? (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -196,7 +347,19 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
                 </tr>
               </thead>
               <tbody>
-                {members.map((member) => (
+                {members.map((member) => {
+                  const draftName = draftNames[member.id] ?? member.displayName;
+                  const draftRole = draftRoles[member.id] ?? member.role;
+                  const hasPendingChanges =
+                    draftName !== member.displayName || draftRole !== member.role;
+                  const canDeactivate =
+                    !member.isActive
+                    || (
+                      activeMembers.length > 1
+                      && (member.role !== "owner" || activeOwners.length > 1)
+                    );
+
+                  return (
                   <tr key={member.id}>
                     <td>
                       <strong>{member.displayName}</strong>
@@ -207,7 +370,22 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
                         {member.isActive ? "Active" : "Inactive"}
                       </span>
                     </td>
-                    <td>{member.role}</td>
+                    <td>
+                      <select
+                        className="input"
+                        value={draftRoles[member.id] ?? member.role}
+                        disabled={pendingMemberId === member.id}
+                        onChange={(event) =>
+                          setDraftRoles((current) => ({
+                            ...current,
+                            [member.id]: event.target.value as WorkspaceMemberRole,
+                          }))
+                        }
+                      >
+                        <option value="owner">owner</option>
+                        <option value="member">member</option>
+                      </select>
+                    </td>
                     <td>
                       <input
                         className="input"
@@ -225,21 +403,22 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
                         <button
                           className="button"
                           type="button"
-                          disabled={pendingMemberId === member.id}
+                          disabled={pendingMemberId === member.id || !hasPendingChanges}
                           onClick={() =>
                             startSaving(() => {
                               void handleUpdateMember(member.id, {
-                                displayName: draftNames[member.id] ?? member.displayName,
+                                displayName: draftName,
+                                role: draftRole,
                               });
                             })
                           }
                         >
-                          {pendingMemberId === member.id ? "Saving..." : "Save name"}
+                          {pendingMemberId === member.id ? "Saving..." : "Save changes"}
                         </button>
                         <button
                           className="button button-secondary"
                           type="button"
-                          disabled={pendingMemberId === member.id}
+                          disabled={pendingMemberId === member.id || !canDeactivate}
                           onClick={() =>
                             startSaving(() => {
                               void handleUpdateMember(member.id, {
@@ -253,11 +432,17 @@ export function SettingsPageClient({ baseCurrency }: SettingsPageClientProps) {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         ) : null}
+
+        <p className="muted-text">
+          At least one active owner and one active household member must remain. Promote another
+          owner before demoting or deactivating the current one.
+        </p>
       </article>
     </section>
   );
