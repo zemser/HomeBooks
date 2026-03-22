@@ -50,8 +50,8 @@ export type SettlementBalanceSummary = {
 export type SharedSettlementItem = {
   expenseEventId: string;
   sourceId: string;
-  sourceKind: "imported_transaction" | "recurring_generated";
-  sourceType: "transaction" | "recurring";
+  sourceKind: "imported_transaction" | "one_time_manual" | "recurring_generated";
+  sourceType: "transaction" | "manual" | "recurring";
   title: string;
   eventDate: string;
   totalAmount: string;

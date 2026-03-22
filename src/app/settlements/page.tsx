@@ -6,9 +6,9 @@ export default function SettlementsPage() {
       <div className="page-shell stack">
         <section className="hero">
           <span className="eyebrow">Shared settlements</span>
-          <h1>Track shared expenses after the reporting model is stable.</h1>
+          <h1>Track imported, manual, and recurring shared expenses in one place.</h1>
           <p>
-            Shared items only enter balances after you confirm who paid and how the
+            Shared items only enter balances after you confirm who paid and how each
             expense should be split across the active household pair.
           </p>
         </section>
