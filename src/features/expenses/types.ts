@@ -1,5 +1,6 @@
 import type { ClassificationType, DecisionSource } from "@/features/expenses/constants";
 import type { TransactionAllocationState } from "@/features/expenses/allocation";
+import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
 
 export type TransactionClassificationState = {
   classificationType: ClassificationType;
@@ -38,5 +39,11 @@ export type WorkspaceMemberOption = {
 export type ReviewQueueResponse = {
   queue: ExpenseTransactionItem[];
   focusTransaction: ExpenseTransactionItem | null;
+  members: WorkspaceMemberOption[];
+};
+
+export type ExpensesPageData = {
+  transactions: ExpenseTransactionItem[];
+  oneTimeManualEntries: OneTimeManualEntryItem[];
   members: WorkspaceMemberOption[];
 };
