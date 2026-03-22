@@ -1,11 +1,11 @@
-const settingsAreas = [
-  "Workspace base currency",
-  "Household members",
-  "Import source preferences",
-  "Recurring defaults and reporting rules",
-];
+import { SettingsPageClient } from "@/components/settings/settings-page-client";
+import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
-export default function SettingsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function SettingsPage() {
+  const context = await resolveCurrentWorkspaceContext();
+
   return (
     <main>
       <div className="page-shell stack">
@@ -13,19 +13,13 @@ export default function SettingsPage() {
           <span className="eyebrow">Settings</span>
           <h1>Household configuration lives here.</h1>
           <p>
-            Base currency, workspace members, and reporting defaults should be explicit
-            because they shape every import and summary.
+            Household members shape classification, recurring inputs, and the new
+            settlement workflow. This page keeps the member roster usable even before
+            full auth and invites arrive.
           </p>
         </section>
 
-        <section className="card">
-          <h2>Core settings</h2>
-          <ul>
-            {settingsAreas.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </section>
+        <SettingsPageClient baseCurrency={context.baseCurrency} />
       </div>
     </main>
   );

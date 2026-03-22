@@ -166,6 +166,11 @@ main {
   cursor: pointer;
 }
 
+.button-secondary {
+  background: var(--surface);
+  color: var(--text);
+}
+
 .button:disabled {
   cursor: progress;
   opacity: 0.7;

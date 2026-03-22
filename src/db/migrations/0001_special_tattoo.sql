@@ -1,0 +1,1 @@
+ALTER TABLE "shared_expense_splits" ADD CONSTRAINT "shared_expense_splits_expense_event_id_unique" UNIQUE("expense_event_id");
