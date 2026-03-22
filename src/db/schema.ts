@@ -452,6 +452,7 @@ export const sharedExpenseSplits = pgTable(
     ...timestamps,
   },
   (table) => ({
+    expenseEventUnique: unique().on(table.expenseEventId),
     expenseEventIdx: index("shared_expense_splits_event_idx").on(table.expenseEventId),
   }),
 );
