@@ -58,6 +58,7 @@ Completed in code:
 
 Next up:
 
+- DB-backed validation checkpoint so the current app can be exercised end-to-end against a real PostgreSQL instance
 - workspace settings polish for base currency and broader member flows
 - investment import sidecar
 
@@ -553,7 +554,47 @@ What actually happened in code so far:
 8. review-driven transaction allocation editing with equal and manual splits
 9. pairwise shared settlements v1 plus minimal member-management settings
 
-The next architectural step is to tighten workspace settings and broader manual/shared-expense coverage on top of the now-stable classified, allocated, and settlement-aware expense model.
+Before the next architectural slice, we should run a real DB-backed validation checkpoint so the current app is exercised outside static build checks.
+
+## Immediate validation checkpoint
+
+Run this before the next feature-heavy milestone:
+
+1. set `DATABASE_URL` to a local PostgreSQL database
+2. run `npm run db:push`
+3. run `npm run dev`
+4. confirm the seeded dev workspace bootstrap creates the default user/workspace/member automatically
+5. smoke-test `/settings`, `/expenses`, `/recurring`, and `/reports`
+6. create and edit at least one one-time manual entry, including allocation editing from `/expenses`
+7. optionally smoke-test `/imports` with a real bank file if one is available
+
+## Early deployment note
+
+For local validation, prefer Dockerized PostgreSQL plus `DATABASE_URL`.
+
+For a later Vercel deployment, the most natural PostgreSQL options are:
+
+- Neon when we want the simplest serverless Postgres fit and tight Vercel integration
+- Supabase when we want Postgres plus optional platform features such as auth, storage, or realtime
+
+Current recommendation:
+
+- validate locally with plain PostgreSQL first
+- prefer Neon for the first Vercel deployment if the app only needs hosted Postgres
+- consider Supabase only if we explicitly choose to adopt its broader platform features
+
+Auth note:
+
+- auth is still part of the planned product scope and is not being removed or deferred forever
+- the early Neon recommendation is only about the hosted database choice for the first deployment
+- we are not locking in an auth provider yet
+- if we later choose Supabase, that can be because we intentionally want auth, storage, or realtime from the same platform
+
+Important caveat:
+
+- the current import flow writes uploaded files to local disk, so a production Vercel deployment should either avoid import-heavy usage initially or replace local file persistence with durable object storage first
+
+Once that checkpoint is green, the next architectural step is to tighten workspace settings and broader manual/shared-expense coverage on top of the now-stable classified, allocated, and settlement-aware expense model.
 
 ## What to postpone on purpose
 
@@ -571,8 +612,9 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. tighten workspace settings so base currency and broader member workflows are editable in the app
-2. continue investment import foundation as an isolated sidecar
-3. expand one-time manual shared-entry and settlement coverage
+1. run the DB-backed validation checkpoint and test the current app against a live PostgreSQL instance
+2. tighten workspace settings so base currency and broader member workflows are editable in the app
+3. continue investment import foundation as an isolated sidecar
+4. expand one-time manual shared-entry and settlement coverage
 
 That keeps the product moving from fuller non-imported input coverage into broader household finance completeness.

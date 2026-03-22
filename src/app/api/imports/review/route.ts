@@ -4,6 +4,7 @@ import { listReviewQueue } from "@/features/expenses/queries";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {

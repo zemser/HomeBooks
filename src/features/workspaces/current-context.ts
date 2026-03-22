@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
@@ -20,6 +20,10 @@ export async function resolveCurrentWorkspaceContext(): Promise<CurrentWorkspace
   const db = getDb();
 
   return db.transaction(async (tx) => {
+    // Serialize the dev bootstrap path so concurrent first-load requests do not race
+    // into duplicate inserts for the seeded user/workspace/member records.
+    await tx.execute(sql`select pg_advisory_xact_lock(424242)`);
+
     let user = await tx.query.users.findFirst({
       where: eq(users.email, DEFAULT_USER_EMAIL),
     });

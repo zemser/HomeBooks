@@ -8,6 +8,7 @@ import {
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const createSchema = z.object({
   displayName: z.string().trim().min(1),

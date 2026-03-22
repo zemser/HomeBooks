@@ -10,6 +10,7 @@ import {
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const getSchema = z.object({
   startMonth: z.string().trim().optional(),

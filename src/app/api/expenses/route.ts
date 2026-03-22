@@ -5,6 +5,7 @@ import { listOneTimeManualEntries } from "@/features/manual-entries/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {

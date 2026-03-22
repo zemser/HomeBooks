@@ -5,6 +5,7 @@ import { listSavedImports, persistBankImport } from "@/features/imports/persiste
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
