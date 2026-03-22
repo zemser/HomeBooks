@@ -1,5 +1,5 @@
 import type { ClassificationType, DecisionSource } from "@/features/expenses/constants";
-import type { TransactionAllocationState } from "@/features/expenses/allocation";
+import type { ExpenseAllocationState } from "@/features/expenses/allocation";
 import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
 
 export type TransactionClassificationState = {
@@ -28,7 +28,7 @@ export type ExpenseTransactionItem = {
   importSourceName: string | null;
   importOriginalFilename: string;
   classification: TransactionClassificationState;
-  allocation: TransactionAllocationState | null;
+  allocation: ExpenseAllocationState | null;
 };
 
 export type WorkspaceMemberOption = {

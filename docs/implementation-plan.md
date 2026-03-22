@@ -33,6 +33,7 @@ Completed in code:
   - rule application during future imports
 - recurring entry CRUD with future-dated versions
 - recurring-generated manual entries
+- one-time manual expense and income entry CRUD inline on `/expenses`
 - `expense_events` and `expense_allocations` materialized from reportable sources
 - multi-period reporting built from:
   - classified imported transactions
@@ -45,6 +46,9 @@ Completed in code:
 - transaction allocation editing from the review flow with:
   - equal-split coverage ranges
   - manual per-month splits
+- allocation editing inline on `/expenses` for:
+  - imported transactions
+  - one-time manual entries
 - shared settlements v1 with:
   - pairwise shared expense selection from classified expense events
   - equal, percentage, and fixed split rules
@@ -54,8 +58,6 @@ Completed in code:
 
 Next up:
 
-- one-time manual entry CRUD
-- allocation editing outside the review flow and for one-time manual entries
 - workspace settings polish for base currency and broader member flows
 - investment import sidecar
 
@@ -443,12 +445,13 @@ Success criteria:
 
 Status:
 
-- completed for recurring CRUD, version history, and recurring-generated manual entries
+- completed for recurring CRUD, version history, recurring-generated manual entries, and one-time manual entry CRUD
 
 Deliverables:
 
 - recurring entries with versions
 - generated manual entries
+- one-time manual income and expense entries
 - future-dated recurring changes that do not rewrite past periods
 
 Success criteria:
@@ -457,15 +460,11 @@ Success criteria:
 - user can create salary as recurring income
 - amount change from future month does not alter past periods
 
-Remaining:
-
-- one-time manual income and expense entry CRUD is still future work
-
 ## Milestone 6: Reporting
 
 Status:
 
-- completed for payment-date and first adjusted-period reporting plus dashboard views
+- completed for payment-date and broader adjusted-period reporting plus dashboard views
 
 Deliverables:
 
@@ -476,6 +475,7 @@ Deliverables:
 - dashboard cards backed by real data
 - review-driven transaction allocation editing
 - manual split month allocations for imported transactions
+- inline allocation editing from `/expenses` for imported and one-time manual rows
 
 Success criteria:
 
@@ -485,10 +485,6 @@ Success criteria:
 - user can view trailing average savings
 - user can switch between payment-date and adjusted-period reporting
 - user can split a classified transaction across multiple reporting months without mutating the original transaction date
-
-Remaining:
-
-- one-time manual entry allocation editing is still future work
 
 ## Milestone 7: Shared settlements
 
@@ -528,8 +524,7 @@ Still needed for the fuller vision:
 
 - handle foreign-currency expenses in reporting beyond placeholder rates
 - settle shared expenses on top of classified data
-- add one-time manual entries without going through recurring rules
-- support allocation editing for non-imported inputs and outside the review queue
+- support one-time manual shared entries and settlement coverage
 
 ## Recommended implementation sequence inside the codebase
 
@@ -558,7 +553,7 @@ What actually happened in code so far:
 8. review-driven transaction allocation editing with equal and manual splits
 9. pairwise shared settlements v1 plus minimal member-management settings
 
-The next architectural step is to add one-time manual entry CRUD on top of the now-stable classified, allocated, and settlement-aware expense model.
+The next architectural step is to tighten workspace settings and broader manual/shared-expense coverage on top of the now-stable classified, allocated, and settlement-aware expense model.
 
 ## What to postpone on purpose
 
@@ -576,9 +571,8 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. add one-time manual entry CRUD for non-imported inputs, then follow with allocation editing
-2. extend allocation editing beyond the review queue into `/expenses` and one-time manual entry flows
-3. tighten workspace settings so base currency and broader member workflows are editable in the app
-4. continue investment import foundation as an isolated sidecar
+1. tighten workspace settings so base currency and broader member workflows are editable in the app
+2. continue investment import foundation as an isolated sidecar
+3. expand one-time manual shared-entry and settlement coverage
 
-That keeps the product moving from the first settlement workflow into fuller non-imported input coverage and broader household finance completeness.
+That keeps the product moving from fuller non-imported input coverage into broader household finance completeness.

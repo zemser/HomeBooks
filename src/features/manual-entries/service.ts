@@ -3,6 +3,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/db";
 import { manualEntries, manualEntryOverrides, workspaceMembers } from "@/db/schema";
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
+import { listManualEntryAllocationStates } from "@/features/expenses/allocation";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
@@ -109,34 +110,38 @@ export async function listOneTimeManualEntries(
   context: CurrentWorkspaceContext,
 ): Promise<OneTimeManualEntryItem[]> {
   const db = getDb();
-  const [entries, members] = await Promise.all([
-    db
-      .select({
-        id: manualEntries.id,
-        title: manualEntries.title,
-        eventKind: manualEntries.eventKind,
-        originalAmount: manualEntries.originalAmount,
-        originalCurrency: manualEntries.originalCurrency,
-        normalizedAmount: manualEntries.normalizedAmount,
-        workspaceCurrency: manualEntries.workspaceCurrency,
-        payerMemberId: manualEntries.payerMemberId,
-        classificationType: manualEntries.classificationType,
-        category: manualEntries.category,
-        eventDate: manualEntries.eventDate,
-      })
-      .from(manualEntries)
-      .where(
-        and(
-          eq(manualEntries.workspaceId, context.workspaceId),
-          eq(manualEntries.sourceType, "one_time_manual"),
-          inArray(
-            manualEntries.classificationType,
-            ONE_TIME_MANUAL_ENTRY_CLASSIFICATION_TYPES,
-          ),
+  const entries = await db
+    .select({
+      id: manualEntries.id,
+      title: manualEntries.title,
+      eventKind: manualEntries.eventKind,
+      originalAmount: manualEntries.originalAmount,
+      originalCurrency: manualEntries.originalCurrency,
+      normalizedAmount: manualEntries.normalizedAmount,
+      workspaceCurrency: manualEntries.workspaceCurrency,
+      payerMemberId: manualEntries.payerMemberId,
+      classificationType: manualEntries.classificationType,
+      category: manualEntries.category,
+      eventDate: manualEntries.eventDate,
+    })
+    .from(manualEntries)
+    .where(
+      and(
+        eq(manualEntries.workspaceId, context.workspaceId),
+        eq(manualEntries.sourceType, "one_time_manual"),
+        inArray(
+          manualEntries.classificationType,
+          ONE_TIME_MANUAL_ENTRY_CLASSIFICATION_TYPES,
         ),
-      )
-      .orderBy(desc(manualEntries.eventDate), desc(manualEntries.createdAt)),
+      ),
+    )
+    .orderBy(desc(manualEntries.eventDate), desc(manualEntries.createdAt));
+  const [members, allocationStatesByManualEntryId] = await Promise.all([
     listWorkspaceMembers(context),
+    listManualEntryAllocationStates(
+      context,
+      entries.map((entry) => entry.id),
+    ),
   ]);
 
   const memberNames = new Map(members.map((member) => [member.id, member.displayName]));
@@ -154,6 +159,7 @@ export async function listOneTimeManualEntries(
     classificationType: entry.classificationType as OneTimeManualEntryClassificationType,
     category: entry.category,
     eventDate: entry.eventDate,
+    allocation: allocationStatesByManualEntryId.get(entry.id) ?? null,
   }));
 }
 

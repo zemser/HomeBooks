@@ -1,5 +1,5 @@
 import type { ClassificationType } from "@/features/expenses/constants";
-import type { TransactionAllocationState } from "@/features/expenses/allocation";
+import type { ExpenseAllocationState } from "@/features/expenses/allocation";
 import type {
   ExpenseTransactionItem,
   TransactionClassificationState,
@@ -62,7 +62,7 @@ export function formatDecisionSourceLabel(value: "rule" | "user" | "system_defau
   }
 }
 
-export function formatAllocationSummary(allocation: TransactionAllocationState | null) {
+export function formatAllocationSummary(allocation: ExpenseAllocationState | null) {
   if (!allocation) {
     return "Not materialized";
   }

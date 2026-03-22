@@ -4,6 +4,12 @@ import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 
 import {
+  AllocationEditor,
+  createAllocationFormState,
+  emptyAllocationForm,
+  type AllocationFormState,
+} from "@/components/expenses/allocation-editor";
+import {
   formatAllocationSummary,
   formatClassificationSummary,
   formatDecisionSourceLabel,
@@ -32,6 +38,12 @@ type ManualEntryMutationResponse = {
   error?: string;
 };
 
+type AllocationMutationResponse = {
+  sourceId?: string;
+  sourceType?: "transaction" | "manual";
+  error?: string;
+};
+
 type ManualEntryFormState = {
   title: string;
   eventKind: OneTimeManualEntryEventKind;
@@ -40,6 +52,11 @@ type ManualEntryFormState = {
   category: string;
   amount: string;
   eventDate: string;
+};
+
+type LoadExpensesOptions = {
+  manualEntryId?: string | null;
+  transactionId?: string | null;
 };
 
 const EXPENSE_CLASSIFICATION_OPTIONS: OneTimeManualEntryClassificationType[] = [
@@ -88,6 +105,12 @@ function listClassificationOptions(
     : EXPENSE_CLASSIFICATION_OPTIONS;
 }
 
+function allocationSuccessMessage(form: AllocationFormState) {
+  return form.reportingMode === "allocated_period"
+    ? "Adjusted-period allocation saved."
+    : "Allocation reset to payment month.";
+}
+
 export function ExpensesPageClient() {
   const [transactions, setTransactions] = useState<ExpenseTransactionItem[]>([]);
   const [oneTimeManualEntries, setOneTimeManualEntries] = useState<OneTimeManualEntryItem[]>(
@@ -95,17 +118,24 @@ export function ExpensesPageClient() {
   );
   const [members, setMembers] = useState<WorkspaceMemberOption[]>([]);
   const [selectedManualEntryId, setSelectedManualEntryId] = useState<string | null>(null);
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
   const [manualEntryForm, setManualEntryForm] = useState<ManualEntryFormState>(
     createInitialManualEntryFormState(),
   );
+  const [manualEntryAllocationForm, setManualEntryAllocationForm] =
+    useState<AllocationFormState>(emptyAllocationForm);
+  const [transactionAllocationForm, setTransactionAllocationForm] =
+    useState<AllocationFormState>(emptyAllocationForm);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isSavingManualEntry, startSavingManualEntry] = useTransition();
   const [isDeletingManualEntry, startDeletingManualEntry] = useTransition();
+  const [isSavingManualAllocation, startSavingManualAllocation] = useTransition();
+  const [isSavingTransactionAllocation, startSavingTransactionAllocation] = useTransition();
 
-  async function loadExpenses(nextSelectedManualEntryId?: string | null) {
+  async function loadExpenses(options?: LoadExpensesOptions) {
     setError(null);
 
     try {
@@ -124,10 +154,10 @@ export function ExpensesPageClient() {
       setOneTimeManualEntries(nextOneTimeManualEntries);
       setMembers(nextMembers);
       setSelectedManualEntryId((current) => {
-        if (nextSelectedManualEntryId !== undefined) {
-          return nextSelectedManualEntryId &&
-            nextOneTimeManualEntries.some((entry) => entry.id === nextSelectedManualEntryId)
-            ? nextSelectedManualEntryId
+        if (options?.manualEntryId !== undefined) {
+          return options.manualEntryId &&
+            nextOneTimeManualEntries.some((entry) => entry.id === options.manualEntryId)
+            ? options.manualEntryId
             : null;
         }
 
@@ -135,14 +165,25 @@ export function ExpensesPageClient() {
           ? current
           : null;
       });
+      setSelectedTransactionId((current) => {
+        if (options?.transactionId !== undefined) {
+          return options.transactionId &&
+            nextTransactions.some((transaction) => transaction.id === options.transactionId)
+            ? options.transactionId
+            : null;
+        }
+
+        return current && nextTransactions.some((transaction) => transaction.id === current)
+          ? current
+          : null;
+      });
     } catch (loadError) {
-      setError(
-        loadError instanceof Error ? loadError.message : "Could not load expenses.",
-      );
+      setError(loadError instanceof Error ? loadError.message : "Could not load expenses.");
       setTransactions([]);
       setOneTimeManualEntries([]);
       setMembers([]);
       setSelectedManualEntryId(null);
+      setSelectedTransactionId(null);
     } finally {
       setIsLoading(false);
     }
@@ -154,9 +195,21 @@ export function ExpensesPageClient() {
 
   const selectedManualEntry =
     oneTimeManualEntries.find((entry) => entry.id === selectedManualEntryId) ?? null;
+  const selectedTransaction =
+    transactions.find((transaction) => transaction.id === selectedTransactionId) ?? null;
   const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
   const isEditingManualEntry = Boolean(selectedManualEntry);
   const manualEntryClassificationOptions = listClassificationOptions(manualEntryForm.eventKind);
+  const transactionAllocationEditable =
+    selectedTransaction?.classification &&
+    selectedTransaction.classification.classificationType !== "transfer" &&
+    selectedTransaction.classification.classificationType !== "ignore";
+  const manualEntryAllocationSourceDirty = Boolean(
+    selectedManualEntry &&
+      (Math.abs((Number(manualEntryForm.amount) || 0) - Number(selectedManualEntry.originalAmount)) >=
+        0.000001 ||
+        manualEntryForm.eventDate !== selectedManualEntry.eventDate),
+  );
 
   useEffect(() => {
     setManualEntryForm(
@@ -164,11 +217,33 @@ export function ExpensesPageClient() {
         ? manualEntryToFormState(selectedManualEntry)
         : createInitialManualEntryFormState(),
     );
+    setManualEntryAllocationForm(
+      selectedManualEntry
+        ? createAllocationFormState({
+            allocation: selectedManualEntry.allocation,
+            sourceDate: selectedManualEntry.eventDate,
+            totalAmount: selectedManualEntry.normalizedAmount,
+          })
+        : emptyAllocationForm,
+    );
   }, [selectedManualEntry]);
+
+  useEffect(() => {
+    setTransactionAllocationForm(
+      selectedTransaction
+        ? createAllocationFormState({
+            allocation: selectedTransaction.allocation,
+            sourceDate: selectedTransaction.transactionDate,
+            totalAmount: selectedTransaction.normalizedAmount,
+          })
+        : emptyAllocationForm,
+    );
+  }, [selectedTransaction]);
 
   function startNewManualEntry() {
     setSelectedManualEntryId(null);
     setManualEntryForm(createInitialManualEntryFormState());
+    setManualEntryAllocationForm(emptyAllocationForm);
     setError(null);
     setMessage(null);
   }
@@ -218,7 +293,10 @@ export function ExpensesPageClient() {
         return;
       }
 
-      await loadExpenses(payload.manualEntryId ?? null);
+      await loadExpenses({
+        manualEntryId: payload.manualEntryId ?? selectedManualEntry?.id ?? null,
+        transactionId: selectedTransactionId,
+      });
       setMessage(selectedManualEntry ? "Manual entry updated." : "Manual entry created.");
     } catch {
       setError("Could not save the manual entry.");
@@ -247,11 +325,72 @@ export function ExpensesPageClient() {
         return;
       }
 
-      await loadExpenses(selectedManualEntryId === manualEntryId ? null : selectedManualEntryId);
+      await loadExpenses({
+        manualEntryId: selectedManualEntryId === manualEntryId ? null : selectedManualEntryId,
+        transactionId: selectedTransactionId,
+      });
       setMessage("Manual entry deleted.");
     } catch {
       setPendingDeleteId(null);
       setError("Could not delete the manual entry.");
+    }
+  }
+
+  async function submitAllocationUpdate(input: {
+    sourceId: string;
+    sourceType: "transaction" | "manual";
+    form: AllocationFormState;
+  }) {
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/transaction-allocations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sourceType: input.sourceType,
+          sourceId: input.sourceId,
+          reportingMode: input.form.reportingMode,
+          allocationStrategy:
+            input.form.reportingMode === "allocated_period"
+              ? input.form.allocationStrategy
+              : null,
+          coverageStartDate:
+            input.form.reportingMode === "allocated_period" &&
+            input.form.allocationStrategy === "equal_split"
+              ? input.form.coverageStartDate
+              : null,
+          coverageEndDate:
+            input.form.reportingMode === "allocated_period" &&
+            input.form.allocationStrategy === "equal_split"
+              ? input.form.coverageEndDate
+              : null,
+          allocations:
+            input.form.reportingMode === "allocated_period" &&
+            input.form.allocationStrategy === "manual_split"
+              ? input.form.allocations
+              : null,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as AllocationMutationResponse;
+
+      if (!response.ok) {
+        setError(payload.error ?? "Could not save this allocation.");
+        return;
+      }
+
+      await loadExpenses({
+        manualEntryId:
+          input.sourceType === "manual" ? input.sourceId : selectedManualEntryId,
+        transactionId:
+          input.sourceType === "transaction" ? input.sourceId : selectedTransactionId,
+      });
+      setMessage(allocationSuccessMessage(input.form));
+    } catch {
+      setError("Could not save this allocation.");
     }
   }
 
@@ -283,12 +422,16 @@ export function ExpensesPageClient() {
             <div>
               <h2>{isEditingManualEntry ? "Edit manual entry" : "Create manual entry"}</h2>
               <p className="muted-text">
-                One-time manual entries report in their payment month for now and stay
-                separate from recurring rules.
+                One-time manual entries stay separate from recurring rules, but they can
+                now use the same reporting allocation model as imported transactions.
               </p>
             </div>
             {isEditingManualEntry ? (
-              <button className="button button-secondary" type="button" onClick={startNewManualEntry}>
+              <button
+                className="button button-secondary"
+                type="button"
+                onClick={startNewManualEntry}
+              >
                 New entry
               </button>
             ) : null}
@@ -431,16 +574,52 @@ export function ExpensesPageClient() {
                     : "Create manual entry"}
               </button>
               {isEditingManualEntry ? (
-                <button
-                  className="link-button"
-                  type="button"
-                  onClick={startNewManualEntry}
-                >
+                <button className="link-button" type="button" onClick={startNewManualEntry}>
                   Cancel edit
                 </button>
               ) : null}
             </div>
           </form>
+
+          <div className="card stack compact">
+            <div>
+              <h3>Adjusted-period allocation</h3>
+              <p className="muted-text">
+                Keep payment-date behavior or split this one-time entry across the months
+                it really belongs to.
+              </p>
+            </div>
+
+            {!selectedManualEntry ? (
+              <p className="helper-text">
+                Create a manual entry first, or select one from the saved list to adjust
+                its allocation.
+              </p>
+            ) : manualEntryAllocationSourceDirty ? (
+              <p className="status warning">
+                Save amount or date changes before editing allocation so reporting totals
+                stay aligned.
+              </p>
+            ) : (
+              <AllocationEditor
+                currency={selectedManualEntry.workspaceCurrency}
+                form={manualEntryAllocationForm}
+                isSaving={isSavingManualAllocation}
+                onSave={() =>
+                  startSavingManualAllocation(() =>
+                    void submitAllocationUpdate({
+                      sourceId: selectedManualEntry.id,
+                      sourceType: "manual",
+                      form: manualEntryAllocationForm,
+                    }),
+                  )
+                }
+                setForm={setManualEntryAllocationForm}
+                sourceDate={selectedManualEntry.eventDate}
+                totalAmount={selectedManualEntry.normalizedAmount}
+              />
+            )}
+          </div>
         </article>
 
         <article className="card">
@@ -448,8 +627,8 @@ export function ExpensesPageClient() {
             <div>
               <h2>Saved manual entries</h2>
               <p className="muted-text">
-                Shared manual entries and allocation editing stay out of scope for this
-                slice.
+                Select a row to edit its fields on the left and manage reporting
+                allocation inline.
               </p>
             </div>
           </div>
@@ -498,7 +677,11 @@ export function ExpensesPageClient() {
                         </span>
                       </td>
                       <td>
-                        <span className="badge badge-neutral">Payment month</span>
+                        <span
+                          className={`badge ${entry.allocation?.reportingMode === "allocated_period" ? "badge-warning" : "badge-neutral"}`}
+                        >
+                          {formatAllocationSummary(entry.allocation)}
+                        </span>
                       </td>
                       <td>
                         <div className="action-row">
@@ -539,8 +722,8 @@ export function ExpensesPageClient() {
           <div>
             <h2>Imported transactions</h2>
             <p className="muted-text">
-              Review state is visible here, but edits stay in the review queue for this
-              slice.
+              Classification still lives in the review queue, but reportable transactions
+              can have their allocation corrected here without leaving `/expenses`.
             </p>
           </div>
           <Link className="button" href="/imports/review">
@@ -575,7 +758,12 @@ export function ExpensesPageClient() {
               </thead>
               <tbody>
                 {transactions.map((transaction) => (
-                  <tr key={transaction.id}>
+                  <tr
+                    className={
+                      selectedTransactionId === transaction.id ? "table-row-active" : undefined
+                    }
+                    key={transaction.id}
+                  >
                     <td>{transaction.transactionDate}</td>
                     <td>
                       <strong>{getTransactionMerchant(transaction)}</strong>
@@ -627,12 +815,21 @@ export function ExpensesPageClient() {
                       </span>
                     </td>
                     <td>
-                      <Link
-                        className="link-button"
-                        href={`/imports/review?transactionId=${transaction.id}`}
-                      >
-                        Review
-                      </Link>
+                      <div className="action-row">
+                        <button
+                          className="link-button"
+                          type="button"
+                          onClick={() => setSelectedTransactionId(transaction.id)}
+                        >
+                          {selectedTransactionId === transaction.id ? "Selected" : "Allocation"}
+                        </button>
+                        <Link
+                          className="link-button"
+                          href={`/imports/review?transactionId=${transaction.id}`}
+                        >
+                          Review
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -640,6 +837,45 @@ export function ExpensesPageClient() {
             </table>
           </div>
         ) : null}
+
+        <div className="card stack compact">
+          <div>
+            <h3>Adjusted-period allocation</h3>
+            <p className="muted-text">
+              Select a transaction above to tune which reporting months it lands in.
+            </p>
+          </div>
+
+          {!selectedTransaction ? (
+            <p className="helper-text">
+              Pick a transaction row to edit its allocation here.
+            </p>
+          ) : !transactionAllocationEditable ? (
+            <p className="helper-text">
+              Save a reportable classification in the review queue before editing this
+              transaction&apos;s allocation.
+            </p>
+          ) : (
+            <AllocationEditor
+              currency={selectedTransaction.workspaceCurrency}
+              direction={selectedTransaction.direction}
+              form={transactionAllocationForm}
+              isSaving={isSavingTransactionAllocation}
+              onSave={() =>
+                startSavingTransactionAllocation(() =>
+                  void submitAllocationUpdate({
+                    sourceId: selectedTransaction.id,
+                    sourceType: "transaction",
+                    form: transactionAllocationForm,
+                  }),
+                )
+              }
+              setForm={setTransactionAllocationForm}
+              sourceDate={selectedTransaction.transactionDate}
+              totalAmount={selectedTransaction.normalizedAmount}
+            />
+          )}
+        </div>
       </article>
     </section>
   );

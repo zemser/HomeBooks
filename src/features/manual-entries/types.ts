@@ -1,3 +1,4 @@
+import type { ExpenseAllocationState } from "@/features/expenses/allocation";
 import type {
   OneTimeManualEntryClassificationType,
   OneTimeManualEntryEventKind,
@@ -16,4 +17,5 @@ export type OneTimeManualEntryItem = {
   classificationType: OneTimeManualEntryClassificationType;
   category: string | null;
   eventDate: string;
+  allocation: ExpenseAllocationState | null;
 };

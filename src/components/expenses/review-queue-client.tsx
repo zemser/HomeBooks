@@ -2,6 +2,12 @@
 
 import { useEffect, useState, useTransition } from "react";
 
+import {
+  AllocationEditor,
+  createAllocationFormState,
+  emptyAllocationForm,
+  type AllocationFormState,
+} from "@/components/expenses/allocation-editor";
 import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expenses/constants";
 import {
   formatAllocationSummary,
@@ -33,17 +39,6 @@ type BulkFormState = {
   memberOwnerId: string;
 };
 
-type AllocationFormState = {
-  reportingMode: "payment_date" | "allocated_period";
-  allocationStrategy: "equal_split" | "manual_split";
-  coverageStartDate: string;
-  coverageEndDate: string;
-  allocations: Array<{
-    reportMonth: string;
-    allocatedAmount: string;
-  }>;
-};
-
 const emptySingleForm: SingleFormState = {
   classificationType: "",
   category: "",
@@ -56,48 +51,6 @@ const emptyBulkForm: BulkFormState = {
   category: "",
   memberOwnerId: "",
 };
-
-const emptyAllocationForm: AllocationFormState = {
-  reportingMode: "payment_date",
-  allocationStrategy: "equal_split",
-  coverageStartDate: "",
-  coverageEndDate: "",
-  allocations: [],
-};
-
-function toMonthInputValue(value: string) {
-  return value.slice(0, 7);
-}
-
-function addMonthInputValue(value: string) {
-  const normalized = value.trim().length === 7 ? `${value.trim()}-01` : value.trim();
-  const parsed = new Date(`${normalized}T00:00:00.000Z`);
-
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-
-  const nextMonth = new Date(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth() + 1, 1));
-  return `${nextMonth.getUTCFullYear()}-${String(nextMonth.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function defaultAllocationRows(transaction: ExpenseTransactionItem) {
-  const existingRows = transaction.allocation?.allocations ?? [];
-
-  if (existingRows.length > 0) {
-    return existingRows.map((row) => ({
-      reportMonth: toMonthInputValue(row.reportMonth),
-      allocatedAmount: row.allocatedAmount,
-    }));
-  }
-
-  return [
-    {
-      reportMonth: toMonthInputValue(transaction.transactionDate),
-      allocatedAmount: transaction.normalizedAmount,
-    },
-  ];
-}
 
 function getSelectedTransaction(input: {
   queue: ExpenseTransactionItem[];
@@ -211,18 +164,13 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
       createRule: false,
     });
 
-    setAllocationForm({
-      reportingMode: selectedTransaction.allocation?.reportingMode ?? "payment_date",
-      allocationStrategy:
-        selectedTransaction.allocation?.allocationMethod === "manual_split"
-          ? "manual_split"
-          : "equal_split",
-      coverageStartDate:
-        selectedTransaction.allocation?.coverageStartDate ?? selectedTransaction.transactionDate,
-      coverageEndDate:
-        selectedTransaction.allocation?.coverageEndDate ?? selectedTransaction.transactionDate,
-      allocations: defaultAllocationRows(selectedTransaction),
-    });
+    setAllocationForm(
+      createAllocationFormState({
+        allocation: selectedTransaction.allocation,
+        sourceDate: selectedTransaction.transactionDate,
+        totalAmount: selectedTransaction.normalizedAmount,
+      }),
+    );
   }, [selectedTransaction]);
 
   function toggleSelectedTransaction(transactionId: string) {
@@ -331,7 +279,8 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        transactionId: selectedTransaction.id,
+        sourceType: "transaction",
+        sourceId: selectedTransaction.id,
         reportingMode: allocationForm.reportingMode,
         allocationStrategy:
           allocationForm.reportingMode === "allocated_period"
@@ -377,13 +326,6 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
     selectedTransaction?.classification &&
     selectedTransaction.classification.classificationType !== "transfer" &&
     selectedTransaction.classification.classificationType !== "ignore";
-  const manualAllocationTotal = allocationForm.allocations.reduce(
-    (sum, row) => sum + (Number(row.allocatedAmount) || 0),
-    0,
-  );
-  const selectedTransactionTotal = Number(selectedTransaction?.normalizedAmount ?? 0);
-  const manualAllocationMatchesTotal =
-    Math.abs(manualAllocationTotal - selectedTransactionTotal) < 0.000001;
 
   return (
     <section className="stack">
@@ -747,218 +689,16 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
                     Save a reportable classification first to enable allocation editing.
                   </p>
                 ) : (
-                  <>
-                    <label className="field">
-                      <span>Reporting mode</span>
-                      <select
-                        className="input"
-                        value={allocationForm.reportingMode}
-                        onChange={(event) =>
-                          setAllocationForm((current) => ({
-                            ...current,
-                            reportingMode: event.target.value as
-                              | "payment_date"
-                              | "allocated_period",
-                          }))
-                        }
-                      >
-                        <option value="payment_date">Payment date</option>
-                        <option value="allocated_period">Adjusted period</option>
-                      </select>
-                    </label>
-
-                    {allocationForm.reportingMode === "allocated_period" ? (
-                      <>
-                        <label className="field">
-                          <span>Allocation strategy</span>
-                          <select
-                            className="input"
-                            value={allocationForm.allocationStrategy}
-                            onChange={(event) =>
-                              setAllocationForm((current) => ({
-                                ...current,
-                                allocationStrategy: event.target.value as
-                                  | "equal_split"
-                                  | "manual_split",
-                              }))
-                            }
-                          >
-                            <option value="equal_split">Equal split</option>
-                            <option value="manual_split">Manual split</option>
-                          </select>
-                        </label>
-
-                        {allocationForm.allocationStrategy === "equal_split" ? (
-                          <div className="inline-form">
-                            <label className="field">
-                              <span>Coverage start</span>
-                              <input
-                                className="input"
-                                type="date"
-                                value={allocationForm.coverageStartDate}
-                                onChange={(event) =>
-                                  setAllocationForm((current) => ({
-                                    ...current,
-                                    coverageStartDate: event.target.value,
-                                  }))
-                                }
-                              />
-                            </label>
-                            <label className="field">
-                              <span>Coverage end</span>
-                              <input
-                                className="input"
-                                type="date"
-                                value={allocationForm.coverageEndDate}
-                                onChange={(event) =>
-                                  setAllocationForm((current) => ({
-                                    ...current,
-                                    coverageEndDate: event.target.value,
-                                  }))
-                                }
-                              />
-                            </label>
-                          </div>
-                        ) : (
-                          <div className="stack compact">
-                            <div className="page-actions">
-                              <div>
-                                <p className="muted-text">
-                                  Enter the exact month amounts. They must add up to{" "}
-                                  {selectedTransaction
-                                    ? formatMoneyDisplay(
-                                        selectedTransaction.normalizedAmount,
-                                        selectedTransaction.workspaceCurrency,
-                                        selectedTransaction.direction,
-                                      )
-                                    : "-"}
-                                  .
-                                </p>
-                              </div>
-                              <button
-                                className="link-button"
-                                type="button"
-                                onClick={() =>
-                                  setAllocationForm((current) => {
-                                    const lastMonth =
-                                      current.allocations[current.allocations.length - 1]
-                                        ?.reportMonth ??
-                                      toMonthInputValue(
-                                        selectedTransaction?.transactionDate ?? "",
-                                      );
-
-                                    return {
-                                      ...current,
-                                      allocations: [
-                                        ...current.allocations,
-                                        {
-                                          reportMonth: addMonthInputValue(lastMonth),
-                                          allocatedAmount: "0.00",
-                                        },
-                                      ],
-                                    };
-                                  })
-                                }
-                              >
-                                Add month row
-                              </button>
-                            </div>
-
-                            {allocationForm.allocations.map((row, index) => (
-                              <div className="inline-form" key={`${row.reportMonth}-${index}`}>
-                                <label className="field">
-                                  <span>Month</span>
-                                  <input
-                                    className="input"
-                                    type="month"
-                                    value={row.reportMonth}
-                                    onChange={(event) =>
-                                      setAllocationForm((current) => ({
-                                        ...current,
-                                        allocations: current.allocations.map((candidate, candidateIndex) =>
-                                          candidateIndex === index
-                                            ? {
-                                                ...candidate,
-                                                reportMonth: event.target.value,
-                                              }
-                                            : candidate,
-                                        ),
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <label className="field">
-                                  <span>Amount</span>
-                                  <input
-                                    className="input"
-                                    inputMode="decimal"
-                                    value={row.allocatedAmount}
-                                    onChange={(event) =>
-                                      setAllocationForm((current) => ({
-                                        ...current,
-                                        allocations: current.allocations.map((candidate, candidateIndex) =>
-                                          candidateIndex === index
-                                            ? {
-                                                ...candidate,
-                                                allocatedAmount: event.target.value,
-                                              }
-                                            : candidate,
-                                        ),
-                                      }))
-                                    }
-                                  />
-                                </label>
-                                <div className="field">
-                                  <span>&nbsp;</span>
-                                  <button
-                                    className="link-button"
-                                    type="button"
-                                    disabled={allocationForm.allocations.length === 1}
-                                    onClick={() =>
-                                      setAllocationForm((current) => ({
-                                        ...current,
-                                        allocations: current.allocations.filter(
-                                          (_, candidateIndex) => candidateIndex !== index,
-                                        ),
-                                      }))
-                                    }
-                                  >
-                                    Remove row
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-
-                            <p
-                              className={
-                                manualAllocationMatchesTotal ? "helper-text" : "status warning"
-                              }
-                            >
-                              Entered total:{" "}
-                              {selectedTransaction
-                                ? formatMoneyDisplay(
-                                    manualAllocationTotal.toFixed(2),
-                                    selectedTransaction.workspaceCurrency,
-                                    selectedTransaction.direction,
-                                  )
-                                : "-"}
-                            </p>
-                          </div>
-                        )}
-                      </>
-                    ) : null}
-
-                    <div className="action-row">
-                      <button
-                        className="button"
-                        type="button"
-                        disabled={isSavingAllocation}
-                        onClick={() => startSavingAllocation(() => void submitAllocationUpdate())}
-                      >
-                        {isSavingAllocation ? "Saving..." : "Save allocation"}
-                      </button>
-                    </div>
-                  </>
+                  <AllocationEditor
+                    currency={selectedTransaction.workspaceCurrency}
+                    direction={selectedTransaction.direction}
+                    form={allocationForm}
+                    isSaving={isSavingAllocation}
+                    onSave={() => startSavingAllocation(() => void submitAllocationUpdate())}
+                    setForm={setAllocationForm}
+                    sourceDate={selectedTransaction.transactionDate}
+                    totalAmount={selectedTransaction.normalizedAmount}
+                  />
                 )}
               </div>
             </div>
