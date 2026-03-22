@@ -61,6 +61,7 @@ type LoadExpensesOptions = {
 
 const EXPENSE_CLASSIFICATION_OPTIONS: OneTimeManualEntryClassificationType[] = [
   "household",
+  "shared",
   "personal",
 ];
 const INCOME_CLASSIFICATION_OPTIONS: OneTimeManualEntryClassificationType[] = ["income"];
@@ -422,8 +423,9 @@ export function ExpensesPageClient() {
             <div>
               <h2>{isEditingManualEntry ? "Edit manual entry" : "Create manual entry"}</h2>
               <p className="muted-text">
-                One-time manual entries stay separate from recurring rules, but they can
-                now use the same reporting allocation model as imported transactions.
+                One-time manual entries stay separate from recurring rules, but shared
+                expenses created here can also flow into settlements after you confirm
+                payer and split details.
               </p>
             </div>
             {isEditingManualEntry ? (
@@ -500,7 +502,7 @@ export function ExpensesPageClient() {
               </label>
 
               <label className="field">
-                <span>Member owner</span>
+                <span>Payer / owner</span>
                 <select
                   className="input"
                   value={manualEntryForm.payerMemberId}
@@ -637,8 +639,8 @@ export function ExpensesPageClient() {
 
           {!isLoading && oneTimeManualEntries.length === 0 ? (
             <p className="empty-state">
-              No one-time manual entries exist yet. Create rent corrections, bonuses, or
-              other non-imported items here.
+              No one-time manual entries exist yet. Create shared reimbursements, rent
+              corrections, bonuses, or other non-imported items here.
             </p>
           ) : null}
 

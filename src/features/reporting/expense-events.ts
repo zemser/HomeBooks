@@ -5,6 +5,7 @@ import {
   expenseAllocations,
   expenseEvents,
   manualEntries,
+  sharedExpenseSplits,
   transactions,
   transactionClassifications,
 } from "@/db/schema";
@@ -44,7 +45,10 @@ type ExistingExpenseEventRow = {
   id: string;
   sourceId: string;
   sourceType: ExpenseEventSourceType;
+  totalAmount: string;
+  payerMemberId: string | null;
   reportingMode: "payment_date" | "allocated_period";
+  splitMode: "equal" | "percentage" | "fixed" | null;
   allocations: ExistingExpenseAllocationRow[];
 };
 
@@ -103,6 +107,7 @@ async function deleteEventIds(db: DbExecutor, eventIds: string[]) {
     return;
   }
 
+  await db.delete(sharedExpenseSplits).where(inArray(sharedExpenseSplits.expenseEventId, eventIds));
   await db.delete(expenseAllocations).where(inArray(expenseAllocations.expenseEventId, eventIds));
   await db.delete(expenseEvents).where(inArray(expenseEvents.id, eventIds));
 }
@@ -134,6 +139,14 @@ async function applyExpenseEventSync(
     const nextReportingMode = shouldPreserveAllocations
       ? primaryRow.reportingMode
       : row.reportingMode;
+    const shouldResetFixedSharedSplit = Boolean(
+      primaryRow &&
+        row.sourceType === "manual" &&
+        row.eventKind === "expense" &&
+        row.classificationType === "shared" &&
+        primaryRow.splitMode === "fixed" &&
+        primaryRow.totalAmount !== row.totalAmount,
+    );
 
     if (!eventId) {
       const [createdEvent] = await db
@@ -178,6 +191,10 @@ async function applyExpenseEventSync(
         db,
         duplicateRows.map((duplicateRow) => duplicateRow.id),
       );
+    }
+
+    if (shouldResetFixedSharedSplit && eventId) {
+      await db.delete(sharedExpenseSplits).where(eq(sharedExpenseSplits.expenseEventId, eventId));
     }
 
     const nextAllocations = shouldPreserveAllocations
@@ -228,6 +245,8 @@ async function listExistingExpenseEvents(
       id: expenseEvents.id,
       sourceId: expenseEvents.sourceId,
       sourceType: expenseEvents.sourceType,
+      totalAmount: expenseEvents.totalAmount,
+      payerMemberId: expenseEvents.payerMemberId,
       reportingMode: expenseEvents.reportingMode,
     })
     .from(expenseEvents)
@@ -261,8 +280,21 @@ async function listExistingExpenseEvents(
       ),
     )
     .orderBy(asc(expenseAllocations.reportMonth), asc(expenseAllocations.createdAt));
+  const splitRows = await db
+    .select({
+      expenseEventId: sharedExpenseSplits.expenseEventId,
+      splitMode: sharedExpenseSplits.splitMode,
+    })
+    .from(sharedExpenseSplits)
+    .where(
+      inArray(
+        sharedExpenseSplits.expenseEventId,
+        existingRows.map((row) => row.id),
+      ),
+    );
 
   const allocationsByEventId = new Map<string, ExistingExpenseAllocationRow[]>();
+  const splitModeByEventId = new Map(splitRows.map((row) => [row.expenseEventId, row.splitMode]));
 
   for (const row of allocationRows) {
     const current = allocationsByEventId.get(row.expenseEventId) ?? [];
@@ -278,6 +310,7 @@ async function listExistingExpenseEvents(
 
   return existingRows.map((row) => ({
     ...row,
+    splitMode: splitModeByEventId.get(row.id) ?? null,
     allocations: allocationsByEventId.get(row.id) ?? [],
   }));
 }

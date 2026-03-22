@@ -29,7 +29,7 @@ type WorkspaceMemberSummary = {
 type SharedSettlementSourceRow = {
   expenseEventId: string;
   sourceId: string;
-  sourceType: "transaction" | "recurring";
+  sourceType: "transaction" | "manual" | "recurring";
   title: string;
   totalAmount: string;
   workspaceCurrency: string;
@@ -72,6 +72,19 @@ function microsToAmountString(value: bigint) {
   const fraction = absolute % MICRO_MULTIPLIER;
 
   return `${negative ? "-" : ""}${whole.toString()}.${fraction.toString().padStart(6, "0")}`;
+}
+
+function expenseEventSourceTypeToSettlementSourceKind(
+  sourceType: SharedSettlementSourceRow["sourceType"],
+): SharedSettlementItem["sourceKind"] {
+  switch (sourceType) {
+    case "transaction":
+      return "imported_transaction";
+    case "manual":
+      return "one_time_manual";
+    case "recurring":
+      return "recurring_generated";
+  }
 }
 
 function buildBlockedBalanceSummary(
@@ -420,8 +433,7 @@ function buildSettlementItem(input: {
   return {
     expenseEventId: input.row.expenseEventId,
     sourceId: input.row.sourceId,
-    sourceKind:
-      input.row.sourceType === "transaction" ? "imported_transaction" : "recurring_generated",
+    sourceKind: expenseEventSourceTypeToSettlementSourceKind(input.row.sourceType),
     sourceType: input.row.sourceType,
     title: input.row.title,
     eventDate: input.eventDate,
@@ -516,7 +528,7 @@ async function listEligibleSettlementRows(
         eq(expenseEvents.workspaceId, context.workspaceId),
         eq(expenseEvents.eventKind, "expense"),
         eq(expenseEvents.classificationType, "shared"),
-        inArray(expenseEvents.sourceType, ["transaction", "recurring"]),
+        inArray(expenseEvents.sourceType, ["transaction", "manual", "recurring"]),
       ),
     )
     .orderBy(desc(expenseEvents.createdAt));
@@ -529,10 +541,10 @@ async function listSourceDates(rows: SharedSettlementSourceRow[]) {
   const transactionIds = rows
     .filter((row) => row.sourceType === "transaction")
     .map((row) => row.sourceId);
-  const recurringIds = rows
-    .filter((row) => row.sourceType === "recurring")
+  const manualEntryIds = rows
+    .filter((row) => row.sourceType !== "transaction")
     .map((row) => row.sourceId);
-  const [transactionRows, recurringRows] = await Promise.all([
+  const [transactionRows, manualEntryRows] = await Promise.all([
     transactionIds.length === 0
       ? Promise.resolve<DateSourceRow[]>([])
       : db
@@ -542,7 +554,7 @@ async function listSourceDates(rows: SharedSettlementSourceRow[]) {
           })
           .from(transactions)
           .where(inArray(transactions.id, transactionIds)),
-    recurringIds.length === 0
+    manualEntryIds.length === 0
       ? Promise.resolve<DateSourceRow[]>([])
       : db
           .select({
@@ -550,11 +562,11 @@ async function listSourceDates(rows: SharedSettlementSourceRow[]) {
             eventDate: manualEntries.eventDate,
           })
           .from(manualEntries)
-          .where(inArray(manualEntries.id, recurringIds)),
+          .where(inArray(manualEntries.id, manualEntryIds)),
   ]);
 
   return new Map(
-    [...transactionRows, ...recurringRows].map((row) => [row.id, row.eventDate]),
+    [...transactionRows, ...manualEntryRows].map((row) => [row.id, row.eventDate]),
   );
 }
 
@@ -649,6 +661,8 @@ export async function upsertSharedSettlement(
       .select({
         id: expenseEvents.id,
         totalAmount: expenseEvents.totalAmount,
+        sourceType: expenseEvents.sourceType,
+        sourceId: expenseEvents.sourceId,
       })
       .from(expenseEvents)
       .where(
@@ -657,7 +671,7 @@ export async function upsertSharedSettlement(
           eq(expenseEvents.workspaceId, context.workspaceId),
           eq(expenseEvents.eventKind, "expense"),
           eq(expenseEvents.classificationType, "shared"),
-          inArray(expenseEvents.sourceType, ["transaction", "recurring"]),
+          inArray(expenseEvents.sourceType, ["transaction", "manual", "recurring"]),
         ),
       )
       .then((rows) => rows[0] ?? null);
@@ -681,6 +695,22 @@ export async function upsertSharedSettlement(
         updatedAt: new Date(),
       })
       .where(eq(expenseEvents.id, expenseEvent.id));
+
+    if (expenseEvent.sourceType === "manual") {
+      await tx
+        .update(manualEntries)
+        .set({
+          payerMemberId: input.payerMemberId,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(manualEntries.id, expenseEvent.sourceId),
+            eq(manualEntries.workspaceId, context.workspaceId),
+            eq(manualEntries.sourceType, "one_time_manual"),
+          ),
+        );
+    }
 
     await tx
       .insert(sharedExpenseSplits)

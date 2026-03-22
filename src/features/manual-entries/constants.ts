@@ -1,6 +1,7 @@
 export const ONE_TIME_MANUAL_ENTRY_EVENT_KINDS = ["expense", "income"] as const;
 export const ONE_TIME_MANUAL_ENTRY_CLASSIFICATION_TYPES = [
   "personal",
+  "shared",
   "household",
   "income",
 ] as const;
