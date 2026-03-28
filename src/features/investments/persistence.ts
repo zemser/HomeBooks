@@ -1,0 +1,546 @@
+import { createHash, randomUUID } from "node:crypto";
+
+import { and, desc, eq, sql } from "drizzle-orm";
+
+import { getDb } from "@/db";
+import {
+  holdingSnapshots,
+  imports,
+  investmentAccounts,
+  importSources,
+  workspaceMembers,
+} from "@/db/schema";
+import { ensureExcellenceInvestmentImportSource } from "@/features/investments/catalog";
+import { parseInvestmentWorkbookToPreview } from "@/features/investments/parse-investment-workbook";
+import type {
+  InvestmentImportSummary,
+  InvestmentPreviewHolding,
+  SaveInvestmentImportResult,
+} from "@/features/investments/types";
+import type { WorkbookData } from "@/features/imports/types";
+import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { normalizeInvestmentAccountLabel } from "@/features/investments/utils";
+import { buildImportStoragePath, writeImportFile } from "@/lib/storage/import-files";
+
+const ACCOUNT_RESOLUTION_LOCK_NAMESPACE = 824301;
+const SNAPSHOT_REPLACEMENT_LOCK_NAMESPACE = 824302;
+const CHECKSUM_LOCK_NAMESPACE = 824303;
+type DbTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+export class InvestmentImportValidationError extends Error {}
+
+function hashBuffer(fileBuffer: Buffer) {
+  return createHash("sha256").update(fileBuffer).digest("hex");
+}
+
+function normalizeAccountLabelForDisplay(value: string) {
+  const normalized = value.normalize("NFKC").trim().replace(/\s+/g, " ");
+
+  if (!normalized) {
+    throw new InvestmentImportValidationError("Account label is required.");
+  }
+
+  return normalized;
+}
+
+async function acquireAdvisoryLock(
+  tx: DbTransaction,
+  namespace: number,
+  key: string,
+) {
+  await tx.execute(sql`select pg_advisory_xact_lock(${namespace}, hashtext(${key}))`);
+}
+
+function formatNumeric(value: number | null, scale: number) {
+  return value === null ? null : value.toFixed(scale);
+}
+
+function buildHoldingSnapshotValues(input: {
+  workspaceId: string;
+  importId: string;
+  investmentAccountId: string;
+  snapshotDate: string;
+  holdings: InvestmentPreviewHolding[];
+}) {
+  return input.holdings.map((holding) => {
+    if (holding.marketValueIls === null) {
+      throw new InvestmentImportValidationError(
+        `Holding "${holding.assetName}" is missing an ILS market value.`,
+      );
+    }
+
+    const computedCostBasis =
+      holding.quantity !== null && holding.costBasisPrice !== null
+        ? holding.quantity * holding.costBasisPrice
+        : null;
+
+    return {
+      workspaceId: input.workspaceId,
+      importId: input.importId,
+      investmentAccountId: input.investmentAccountId,
+      snapshotDate: input.snapshotDate,
+      assetName: holding.assetName,
+      assetSymbol: holding.securityId,
+      assetType: "other" as const,
+      quantity: formatNumeric(holding.quantity, 8),
+      marketValue: formatNumeric(holding.marketValueIls, 6) ?? "0.000000",
+      marketValueCurrency: "ILS",
+      normalizedMarketValue: formatNumeric(holding.marketValueIls, 6) ?? "0.000000",
+      costBasis: formatNumeric(computedCostBasis, 6),
+      gainLoss: formatNumeric(holding.gainLossIls, 6),
+    };
+  });
+}
+
+async function findWorkspaceMemberOrThrow(input: {
+  tx: DbTransaction,
+  workspaceId: string;
+  ownerMemberId: string;
+}) {
+  const member = await input.tx.query.workspaceMembers.findFirst({
+    where: and(
+      eq(workspaceMembers.id, input.ownerMemberId),
+      eq(workspaceMembers.workspaceId, input.workspaceId),
+    ),
+    columns: {
+      id: true,
+    },
+  });
+
+  if (!member) {
+    throw new InvestmentImportValidationError(
+      "Selected owner was not found in the current workspace.",
+    );
+  }
+
+  return member;
+}
+
+async function resolveInvestmentAccount(input: {
+  tx: DbTransaction,
+  workspaceId: string;
+  ownerMemberId: string;
+  sourceId: string;
+  accountLabel: string;
+}) {
+  const displayName = normalizeAccountLabelForDisplay(input.accountLabel);
+  const canonicalDisplayName = normalizeInvestmentAccountLabel(displayName);
+
+  await acquireAdvisoryLock(
+    input.tx,
+    ACCOUNT_RESOLUTION_LOCK_NAMESPACE,
+    [
+      input.workspaceId,
+      input.ownerMemberId,
+      input.sourceId,
+      canonicalDisplayName,
+    ].join(":"),
+  );
+
+  const matches = await input.tx
+    .select({
+      id: investmentAccounts.id,
+      displayName: investmentAccounts.displayName,
+    })
+    .from(investmentAccounts)
+    .where(
+      and(
+        eq(investmentAccounts.workspaceId, input.workspaceId),
+        eq(investmentAccounts.ownerMemberId, input.ownerMemberId),
+        eq(investmentAccounts.importSourceId, input.sourceId),
+        eq(investmentAccounts.canonicalDisplayName, canonicalDisplayName),
+      ),
+    );
+
+  if (matches.length > 1) {
+    throw new InvestmentImportValidationError(
+      "Multiple investment accounts matched this owner and account label. Clean up the duplicate accounts before saving again.",
+    );
+  }
+
+  if (matches[0]) {
+    return {
+      id: matches[0].id,
+      displayName: matches[0].displayName,
+    };
+  }
+
+  await input.tx
+    .insert(investmentAccounts)
+    .values({
+      workspaceId: input.workspaceId,
+      ownerMemberId: input.ownerMemberId,
+      displayName,
+      canonicalDisplayName,
+      importSourceId: input.sourceId,
+      accountCurrency: null,
+    })
+    .onConflictDoNothing({
+      target: [
+        investmentAccounts.workspaceId,
+        investmentAccounts.ownerMemberId,
+        investmentAccounts.importSourceId,
+        investmentAccounts.canonicalDisplayName,
+      ],
+    });
+
+  const createdOrExisting = await input.tx.query.investmentAccounts.findFirst({
+    where: and(
+      eq(investmentAccounts.workspaceId, input.workspaceId),
+      eq(investmentAccounts.ownerMemberId, input.ownerMemberId),
+      eq(investmentAccounts.importSourceId, input.sourceId),
+      eq(investmentAccounts.canonicalDisplayName, canonicalDisplayName),
+    ),
+    columns: {
+      id: true,
+      displayName: true,
+    },
+  });
+
+  if (!createdOrExisting) {
+    throw new Error("Could not resolve the investment account for this workbook.");
+  }
+
+  return createdOrExisting;
+}
+
+async function upsertFailedInvestmentImport(input: {
+  importId: string;
+  workspaceId: string;
+  userId: string;
+  sourceId: string;
+  fileKind: WorkbookData["fileKind"];
+  originalFilename: string;
+  storagePath: string;
+  checksum: string;
+  message: string;
+}) {
+  const db = getDb();
+
+  await db
+    .insert(imports)
+    .values({
+      id: input.importId,
+      workspaceId: input.workspaceId,
+      uploadedByUserId: input.userId,
+      importSourceId: input.sourceId,
+      importTemplateId: null,
+      type: "investment",
+      fileKind: input.fileKind,
+      originalFilename: input.originalFilename,
+      storagePath: input.storagePath,
+      fileChecksum: input.checksum,
+      importStatus: "failed",
+      startedAt: new Date(),
+      completedAt: new Date(),
+      errorSummary: input.message,
+    })
+    .onConflictDoUpdate({
+      target: imports.id,
+      set: {
+        uploadedByUserId: input.userId,
+        importSourceId: input.sourceId,
+        importTemplateId: null,
+        fileKind: input.fileKind,
+        originalFilename: input.originalFilename,
+        storagePath: input.storagePath,
+        fileChecksum: input.checksum,
+        importStatus: "failed",
+        completedAt: new Date(),
+        errorSummary: input.message,
+        updatedAt: new Date(),
+      },
+    });
+}
+
+export async function listInvestmentImports(
+  context: CurrentWorkspaceContext,
+): Promise<InvestmentImportSummary[]> {
+  const db = getDb();
+  const investmentImports = await db
+    .select({
+      id: imports.id,
+      originalFilename: imports.originalFilename,
+      importStatus: imports.importStatus,
+      createdAt: imports.createdAt,
+      completedAt: imports.completedAt,
+      sourceName: importSources.name,
+    })
+    .from(imports)
+    .leftJoin(importSources, eq(importSources.id, imports.importSourceId))
+    .where(
+      and(
+        eq(imports.workspaceId, context.workspaceId),
+        eq(imports.type, "investment"),
+      ),
+    )
+    .orderBy(desc(imports.createdAt));
+
+  if (investmentImports.length === 0) {
+    return [];
+  }
+
+  const stats = await Promise.all(
+    investmentImports.map(async (investmentImport) => {
+      const [holdingCount, snapshotRow] = await Promise.all([
+        db.$count(holdingSnapshots, eq(holdingSnapshots.importId, investmentImport.id)),
+        db.query.holdingSnapshots.findFirst({
+          where: eq(holdingSnapshots.importId, investmentImport.id),
+          columns: {
+            snapshotDate: true,
+          },
+        }),
+      ]);
+
+      return {
+        importId: investmentImport.id,
+        holdingCount,
+        snapshotDate: snapshotRow?.snapshotDate ?? null,
+      };
+    }),
+  );
+  const statsByImportId = new Map(stats.map((item) => [item.importId, item]));
+
+  return investmentImports.map((investmentImport) => {
+    const stat = statsByImportId.get(investmentImport.id);
+
+    return {
+      id: investmentImport.id,
+      originalFilename: investmentImport.originalFilename,
+      importStatus: investmentImport.importStatus,
+      createdAt: investmentImport.createdAt.toISOString(),
+      completedAt: investmentImport.completedAt?.toISOString() ?? null,
+      sourceName: investmentImport.sourceName ?? null,
+      holdingCount: stat?.holdingCount ?? 0,
+      snapshotDate: stat?.snapshotDate ?? null,
+    };
+  });
+}
+
+export async function persistInvestmentImport(input: {
+  workbook: WorkbookData;
+  originalFilename: string;
+  fileBuffer: Buffer;
+  ownerMemberId: string;
+  accountLabel: string;
+  context: CurrentWorkspaceContext;
+}): Promise<SaveInvestmentImportResult> {
+  if (input.context.baseCurrency !== "ILS") {
+    throw new InvestmentImportValidationError(
+      "Investment snapshot saves are limited to ILS workspaces until non-ILS normalization is implemented.",
+    );
+  }
+
+  const db = getDb();
+  const source = await ensureExcellenceInvestmentImportSource();
+  const checksum = hashBuffer(input.fileBuffer);
+  let parsed: ReturnType<typeof parseInvestmentWorkbookToPreview>;
+
+  try {
+    parsed = parseInvestmentWorkbookToPreview({
+      workbook: input.workbook,
+    });
+  } catch (error) {
+    throw new InvestmentImportValidationError(
+      error instanceof Error ? error.message : "Could not parse this investment workbook.",
+    );
+  }
+  const displayAccountLabel = normalizeAccountLabelForDisplay(input.accountLabel);
+
+  if (parsed.preview.provider !== "excellence") {
+    throw new InvestmentImportValidationError(
+      "Only Excellence investment workbooks can be saved right now.",
+    );
+  }
+
+  if (!parsed.preview.snapshotDate) {
+    throw new InvestmentImportValidationError(
+      "The workbook is missing a snapshot date, so it cannot be saved yet.",
+    );
+  }
+
+  const snapshotDate = parsed.preview.snapshotDate;
+
+  if (parsed.preview.holdings.length === 0) {
+    throw new InvestmentImportValidationError(
+      "No holdings were parsed from this workbook.",
+    );
+  }
+
+  let importId: string = randomUUID();
+  let storagePath: string = buildImportStoragePath({
+    workspaceId: input.context.workspaceId,
+    importId,
+    filename: input.originalFilename,
+  });
+
+  try {
+    const result = await db.transaction(async (tx) => {
+      await acquireAdvisoryLock(
+        tx,
+        CHECKSUM_LOCK_NAMESPACE,
+        [
+          input.context.workspaceId,
+          checksum,
+          "investment",
+        ].join(":"),
+      );
+
+      const existingImport = await tx.query.imports.findFirst({
+        where: and(
+          eq(imports.workspaceId, input.context.workspaceId),
+          eq(imports.fileChecksum, checksum),
+          eq(imports.type, "investment"),
+        ),
+        columns: {
+          id: true,
+          storagePath: true,
+          importStatus: true,
+        },
+      });
+
+      if (existingImport && existingImport.importStatus !== "failed") {
+        return {
+          status: "duplicate" as const,
+          importId: existingImport.id,
+          duplicateOfImportId: existingImport.id,
+          holdingCount: await tx.$count(
+            holdingSnapshots,
+            eq(holdingSnapshots.importId, existingImport.id),
+          ),
+          importStatus: existingImport.importStatus,
+        };
+      }
+
+      importId = existingImport?.id ?? importId;
+      storagePath = existingImport?.storagePath ?? storagePath;
+
+      await findWorkspaceMemberOrThrow({
+        tx,
+        workspaceId: input.context.workspaceId,
+        ownerMemberId: input.ownerMemberId,
+      });
+
+      if (existingImport?.importStatus === "failed") {
+        await tx
+          .update(imports)
+          .set({
+            uploadedByUserId: input.context.userId,
+            importSourceId: source.sourceId,
+            importTemplateId: null,
+            fileKind: input.workbook.fileKind,
+            originalFilename: input.originalFilename,
+            storagePath,
+            fileChecksum: checksum,
+            importStatus: "processing",
+            startedAt: new Date(),
+            completedAt: null,
+            errorSummary: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(imports.id, importId));
+      } else {
+        await tx.insert(imports).values({
+          id: importId,
+          workspaceId: input.context.workspaceId,
+          uploadedByUserId: input.context.userId,
+          importSourceId: source.sourceId,
+          importTemplateId: null,
+          type: "investment",
+          fileKind: input.workbook.fileKind,
+          originalFilename: input.originalFilename,
+          storagePath,
+          fileChecksum: checksum,
+          importStatus: "processing",
+          startedAt: new Date(),
+        });
+      }
+
+      await writeImportFile({
+        storagePath,
+        fileBuffer: input.fileBuffer,
+      });
+
+      const account = await resolveInvestmentAccount({
+        tx,
+        workspaceId: input.context.workspaceId,
+        ownerMemberId: input.ownerMemberId,
+        sourceId: source.sourceId,
+        accountLabel: displayAccountLabel,
+      });
+
+      await acquireAdvisoryLock(
+        tx,
+        SNAPSHOT_REPLACEMENT_LOCK_NAMESPACE,
+        [
+          input.context.workspaceId,
+          account.id,
+          snapshotDate,
+        ].join(":"),
+      );
+
+      await tx
+        .delete(holdingSnapshots)
+        .where(
+          and(
+            eq(holdingSnapshots.workspaceId, input.context.workspaceId),
+            eq(holdingSnapshots.investmentAccountId, account.id),
+            eq(holdingSnapshots.snapshotDate, snapshotDate),
+          ),
+        );
+
+      await tx.insert(holdingSnapshots).values(
+        buildHoldingSnapshotValues({
+          workspaceId: input.context.workspaceId,
+          importId,
+          investmentAccountId: account.id,
+          snapshotDate,
+          holdings: parsed.preview.holdings,
+        }),
+      );
+
+      await tx
+        .update(imports)
+        .set({
+          importStatus: "completed",
+          completedAt: new Date(),
+          errorSummary: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(imports.id, importId));
+
+      return {
+        status: "saved" as const,
+        holdingCount: parsed.preview.holdings.length,
+      };
+    });
+
+    if (result.status === "duplicate") {
+      return result;
+    }
+
+    return {
+      status: "saved",
+      importId,
+      holdingCount: result.holdingCount,
+      importStatus: "completed",
+    };
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Investment import persistence failed";
+
+    await upsertFailedInvestmentImport({
+      importId,
+      workspaceId: input.context.workspaceId,
+      userId: input.context.userId,
+      sourceId: source.sourceId,
+      fileKind: input.workbook.fileKind,
+      originalFilename: input.originalFilename,
+      storagePath,
+      checksum,
+      message,
+    });
+
+    throw error;
+  }
+}
