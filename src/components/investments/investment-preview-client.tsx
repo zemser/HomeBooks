@@ -2,7 +2,10 @@
 
 import { useState, useTransition } from "react";
 
-import type { InvestmentImportSummary } from "@/features/investments/types";
+import type {
+  InvestmentAccountHoldingsSnapshot,
+  InvestmentImportSummary,
+} from "@/features/investments/types";
 import type { WorkspaceMemberSettingsItem } from "@/features/workspaces/types";
 
 type InvestmentPreviewHolding = {
@@ -47,6 +50,7 @@ type InvestmentPreviewResponse = {
 type InvestmentSaveResponse = {
   status?: string;
   error?: string;
+  accounts?: InvestmentAccountHoldingsSnapshot[];
   import?: InvestmentImportSummary | null;
   imports?: InvestmentImportSummary[];
 };
@@ -59,6 +63,7 @@ type PendingSave = {
 type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
 
 type InvestmentPreviewClientProps = {
+  initialInvestmentAccountHoldings: InvestmentAccountHoldingsSnapshot[];
   initialInvestmentImports: InvestmentImportSummary[];
   initialMembers: WorkspaceMemberSettingsItem[];
   initialCurrentMemberId: string;
@@ -71,6 +76,45 @@ function formatDisplayValue(value: string | number | null | undefined) {
   }
 
   return String(value);
+}
+
+function formatNumberValue(
+  value: number | null | undefined,
+  options?: Intl.NumberFormatOptions,
+) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("en", {
+    maximumFractionDigits: 2,
+    ...options,
+  }).format(value);
+}
+
+function formatMoneyValue(value: number | null | undefined, currency: string) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  return `${formatNumberValue(value, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })} ${currency}`;
+}
+
+function formatSignedMoneyValue(value: number | null | undefined, currency: string) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  const formatted = new Intl.NumberFormat("en", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: "exceptZero",
+  }).format(value);
+
+  return `${formatted} ${currency}`;
 }
 
 function formatSnapshotValue(value: string | null) {
@@ -116,6 +160,7 @@ function getImportStatusLabel(item: InvestmentImportSummary) {
 }
 
 export function InvestmentPreviewClient({
+  initialInvestmentAccountHoldings,
   initialInvestmentImports,
   initialMembers,
   initialCurrentMemberId,
@@ -128,6 +173,8 @@ export function InvestmentPreviewClient({
   const [members] = useState<WorkspaceMemberSettingsItem[]>(initialMembers);
   const [selectedOwnerMemberId, setSelectedOwnerMemberId] = useState(initialCurrentMemberId);
   const [accountLabelDraft, setAccountLabelDraft] = useState("");
+  const [investmentAccountHoldings, setInvestmentAccountHoldings] =
+    useState<InvestmentAccountHoldingsSnapshot[]>(initialInvestmentAccountHoldings);
   const [investmentImports, setInvestmentImports] =
     useState<InvestmentImportSummary[]>(initialInvestmentImports);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -212,6 +259,9 @@ export function InvestmentPreviewClient({
       if (!response.ok) {
         if (response.status === 409 || payload.status === "duplicate") {
           setSaveState("duplicate");
+          if (payload.accounts) {
+            setInvestmentAccountHoldings(payload.accounts);
+          }
           if (payload.imports) {
             setInvestmentImports(payload.imports);
           }
@@ -225,6 +275,9 @@ export function InvestmentPreviewClient({
       }
 
       setSaveState("saved");
+      if (payload.accounts) {
+        setInvestmentAccountHoldings(payload.accounts);
+      }
       if (payload.imports) {
         setInvestmentImports(payload.imports);
       } else if (payload.import) {
@@ -285,6 +338,98 @@ export function InvestmentPreviewClient({
           {message}
         </p>
       ) : null}
+
+      <article className="card stack compact">
+        <div>
+          <h2>Latest saved holdings</h2>
+          <p className="muted-text">
+            Active positions are grouped by investment account. Replaced imports stay
+            visible in history below, but only the latest active snapshot per account is
+            rendered here.
+          </p>
+        </div>
+
+        {investmentAccountHoldings.length === 0 ? (
+          <p className="empty-state">No investment holdings snapshots have been saved yet.</p>
+        ) : (
+          <div className="stack">
+            {investmentAccountHoldings.map((account) => (
+              <article className="card stack compact" key={account.accountId}>
+                <div className="page-actions">
+                  <div>
+                    <h3>{account.accountDisplayName}</h3>
+                    <p className="muted-text">
+                      {account.ownerDisplayName ? `${account.ownerDisplayName} · ` : ""}
+                      Latest active snapshot from {account.importOriginalFilename}
+                    </p>
+                  </div>
+                  <span className="badge badge-neutral">{account.sourceName ?? "Investment"}</span>
+                </div>
+
+                <div className="summary-strip">
+                  <div>
+                    <strong>{formatSnapshotValue(account.snapshotDate)}</strong>
+                    <span>Snapshot date</span>
+                  </div>
+                  <div>
+                    <strong>{account.holdingCount}</strong>
+                    <span>Holdings</span>
+                  </div>
+                  <div>
+                    <strong>{formatMoneyValue(account.totalMarketValue, workspaceCurrency)}</strong>
+                    <span>Total market value</span>
+                  </div>
+                  <div>
+                    <strong>{formatMoneyValue(account.totalCostBasis, workspaceCurrency)}</strong>
+                    <span>Total cost basis</span>
+                  </div>
+                  <div>
+                    <strong>{formatSignedMoneyValue(account.totalGainLoss, workspaceCurrency)}</strong>
+                    <span>Total gain/loss</span>
+                  </div>
+                  <div>
+                    <strong>{formatTimestampValue(account.importCreatedAt)}</strong>
+                    <span>Saved</span>
+                  </div>
+                </div>
+
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Asset</th>
+                        <th>Symbol</th>
+                        <th>Type</th>
+                        <th>Quantity</th>
+                        <th>Market value</th>
+                        <th>Cost basis</th>
+                        <th>Gain/Loss</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {account.holdings.map((holding) => (
+                        <tr
+                          key={`${account.accountId}-${holding.assetName}-${holding.assetSymbol ?? "unknown"}`}
+                        >
+                          <td>
+                            <strong>{holding.assetName}</strong>
+                          </td>
+                          <td>{holding.assetSymbol ?? "-"}</td>
+                          <td>{holding.assetType}</td>
+                          <td>{formatNumberValue(holding.quantity, { maximumFractionDigits: 8 })}</td>
+                          <td>{formatMoneyValue(holding.marketValue, holding.marketValueCurrency)}</td>
+                          <td>{formatMoneyValue(holding.costBasis, workspaceCurrency)}</td>
+                          <td>{formatSignedMoneyValue(holding.gainLoss, workspaceCurrency)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </article>
 
       {preview ? (
         <>
@@ -351,6 +496,13 @@ export function InvestmentPreviewClient({
                 />
               </label>
             </div>
+
+            {!preview.accountLabel ? (
+              <p className="status warning">
+                This workbook did not expose an account label, so type the exact label
+                you want to use before saving.
+              </p>
+            ) : null}
 
             <div className="action-row">
               <button

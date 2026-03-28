@@ -1,5 +1,8 @@
 import { InvestmentPreviewClient } from "@/components/investments/investment-preview-client";
-import { listInvestmentImports } from "@/features/investments/persistence";
+import {
+  listInvestmentAccountHoldings,
+  listInvestmentImports,
+} from "@/features/investments/persistence";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 
@@ -7,9 +10,10 @@ export const dynamic = "force-dynamic";
 
 export default async function InvestmentsPage() {
   const context = await resolveCurrentWorkspaceContext();
-  const [members, imports] = await Promise.all([
+  const [members, imports, accountHoldings] = await Promise.all([
     listWorkspaceMembersForSettings(context),
     listInvestmentImports(context),
+    listInvestmentAccountHoldings(context),
   ]);
 
   return (
@@ -25,6 +29,7 @@ export default async function InvestmentsPage() {
         </section>
 
         <InvestmentPreviewClient
+          initialInvestmentAccountHoldings={accountHoldings}
           initialInvestmentImports={imports}
           initialMembers={members}
           initialCurrentMemberId={context.memberId}

@@ -69,6 +69,35 @@ export type InvestmentImportSummary = {
   snapshotDate: string | null;
 };
 
+export type PersistedInvestmentHolding = {
+  assetName: string;
+  assetSymbol: string | null;
+  assetType: string;
+  quantity: number | null;
+  marketValue: number;
+  marketValueCurrency: string;
+  normalizedMarketValue: number;
+  costBasis: number | null;
+  gainLoss: number | null;
+};
+
+export type InvestmentAccountHoldingsSnapshot = {
+  accountId: string;
+  accountDisplayName: string;
+  ownerMemberId: string | null;
+  ownerDisplayName: string | null;
+  sourceName: string | null;
+  snapshotDate: string;
+  importId: string;
+  importCreatedAt: string;
+  importOriginalFilename: string;
+  holdingCount: number;
+  totalMarketValue: number;
+  totalCostBasis: number | null;
+  totalGainLoss: number | null;
+  holdings: PersistedInvestmentHolding[];
+};
+
 export type SaveInvestmentImportResult =
   | {
       status: "saved";

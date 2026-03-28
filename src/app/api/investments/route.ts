@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   InvestmentImportValidationError,
+  listInvestmentAccountHoldings,
   listInvestmentImports,
   persistInvestmentImport,
 } from "@/features/investments/persistence";
@@ -56,12 +57,16 @@ export async function POST(request: Request) {
       accountLabel: accountLabel.trim(),
       context,
     });
-    const investmentImports = await listInvestmentImports(context);
+    const [investmentImports, investmentAccountHoldings] = await Promise.all([
+      listInvestmentImports(context),
+      listInvestmentAccountHoldings(context),
+    ]);
     const savedImport = investmentImports.find((item) => item.id === result.importId) ?? null;
 
     return NextResponse.json(
       {
         ...result,
+        accounts: investmentAccountHoldings,
         import: savedImport,
         imports: investmentImports,
       },
