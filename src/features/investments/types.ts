@@ -98,6 +98,64 @@ export type InvestmentAccountHoldingsSnapshot = {
   holdings: PersistedInvestmentHolding[];
 };
 
+export type InvestmentPortfolioAccountLeader = {
+  accountId: string;
+  accountDisplayName: string;
+  totalMarketValue: number;
+  portfolioSharePct: number | null;
+};
+
+export type InvestmentPortfolioHoldingLeader = {
+  accountId: string;
+  accountDisplayName: string;
+  assetName: string;
+  assetSymbol: string | null;
+  marketValue: number;
+  portfolioWeightPct: number | null;
+};
+
+export type InvestmentAccountOverview = {
+  accountId: string;
+  accountDisplayName: string;
+  ownerDisplayName: string | null;
+  sourceName: string | null;
+  snapshotDate: string;
+  importCreatedAt: string;
+  holdingCount: number;
+  holdingsWithCostBasisCount: number;
+  totalMarketValue: number;
+  totalCostBasis: number | null;
+  totalGainLoss: number | null;
+  totalGainLossPct: number | null;
+  portfolioSharePct: number | null;
+  topHoldingName: string | null;
+  topHoldingSymbol: string | null;
+  topHoldingMarketValue: number | null;
+  topHoldingWeightPct: number | null;
+  topThreeHoldingsWeightPct: number | null;
+  concentrationHint: string;
+  concentrationLevel: "balanced" | "watch";
+};
+
+export type InvestmentPortfolioSummary = {
+  accountCount: number;
+  holdingCount: number;
+  holdingsWithCostBasisCount: number;
+  totalMarketValue: number;
+  totalCostBasis: number | null;
+  totalGainLoss: number | null;
+  totalGainLossPct: number | null;
+  oldestSnapshotDate: string | null;
+  latestSnapshotDate: string | null;
+  largestAccount: InvestmentPortfolioAccountLeader | null;
+  topHolding: InvestmentPortfolioHoldingLeader | null;
+};
+
+export type InvestmentPortfolioReport = {
+  summary: InvestmentPortfolioSummary;
+  accountOverviews: InvestmentAccountOverview[];
+};
+
 export type SaveInvestmentImportResult =
   | {
       status: "saved";

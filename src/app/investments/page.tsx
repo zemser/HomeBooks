@@ -21,10 +21,11 @@ export default async function InvestmentsPage() {
       <div className="page-shell stack">
         <section className="hero">
           <span className="eyebrow">Investments</span>
-          <h1>Preview and save Excellence holdings snapshots.</h1>
+          <h1>Preview, save, and summarize Excellence holdings snapshots.</h1>
           <p>
             Upload an Excellence Excel file to inspect holdings metadata, warnings,
-            and parsed rows before you save the snapshot into the workspace.
+            parsed rows, and latest portfolio summaries before you save the snapshot
+            into the workspace.
           </p>
         </section>
 

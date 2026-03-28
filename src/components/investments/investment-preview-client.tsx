@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { buildInvestmentPortfolioReport } from "@/features/investments/reporting";
 import type {
   InvestmentAccountHoldingsSnapshot,
   InvestmentImportSummary,
@@ -117,6 +118,27 @@ function formatSignedMoneyValue(value: number | null | undefined, currency: stri
   return `${formatted} ${currency}`;
 }
 
+function formatPercentValue(
+  value: number | null | undefined,
+  options?: {
+    signed?: boolean;
+    maximumFractionDigits?: number;
+    minimumFractionDigits?: number;
+  },
+) {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+
+  const formatted = new Intl.NumberFormat("en", {
+    minimumFractionDigits: options?.minimumFractionDigits ?? 1,
+    maximumFractionDigits: options?.maximumFractionDigits ?? 1,
+    signDisplay: options?.signed ? "exceptZero" : "auto",
+  }).format(value);
+
+  return `${formatted}%`;
+}
+
 function formatSnapshotValue(value: string | null) {
   if (!value) {
     return "-";
@@ -180,6 +202,7 @@ export function InvestmentPreviewClient({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const portfolioReport = buildInvestmentPortfolioReport(investmentAccountHoldings);
 
   const canSaveToWorkspace = workspaceCurrency === "ILS";
   const canSubmitSave = Boolean(
@@ -337,6 +360,249 @@ export function InvestmentPreviewClient({
         <p className={saveState === "duplicate" ? "status warning" : "status"}>
           {message}
         </p>
+      ) : null}
+
+      {investmentAccountHoldings.length > 0 ? (
+        <>
+          <article className="card stack compact">
+            <div>
+              <h2>Portfolio summary</h2>
+              <p className="muted-text">
+                Based on the latest active snapshot for each saved investment account.
+              </p>
+            </div>
+
+            <div className="summary-strip">
+              <div>
+                <strong>
+                  {formatMoneyValue(portfolioReport.summary.totalMarketValue, workspaceCurrency)}
+                </strong>
+                <span>Total market value</span>
+              </div>
+              <div>
+                <strong>
+                  {formatSignedMoneyValue(portfolioReport.summary.totalGainLoss, workspaceCurrency)}
+                </strong>
+                <span>Unrealized gain/loss</span>
+              </div>
+              <div>
+                <strong>{portfolioReport.summary.accountCount}</strong>
+                <span>Investment accounts</span>
+              </div>
+              <div>
+                <strong>{portfolioReport.summary.holdingCount}</strong>
+                <span>Active holdings</span>
+              </div>
+            </div>
+
+            <div className="meta-grid">
+              <div>
+                <strong>Largest account</strong>
+                <p>{portfolioReport.summary.largestAccount?.accountDisplayName ?? "-"}</p>
+                {portfolioReport.summary.largestAccount ? (
+                  <p className="helper-text">
+                    {formatMoneyValue(
+                      portfolioReport.summary.largestAccount.totalMarketValue,
+                      workspaceCurrency,
+                    )}{" "}
+                    ·{" "}
+                    {formatPercentValue(
+                      portfolioReport.summary.largestAccount.portfolioSharePct,
+                    )}{" "}
+                    of portfolio
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <strong>Top holding</strong>
+                <p>{portfolioReport.summary.topHolding?.assetName ?? "-"}</p>
+                {portfolioReport.summary.topHolding ? (
+                  <p className="helper-text">
+                    {formatMoneyValue(
+                      portfolioReport.summary.topHolding.marketValue,
+                      workspaceCurrency,
+                    )}{" "}
+                    · {portfolioReport.summary.topHolding.accountDisplayName} ·{" "}
+                    {formatPercentValue(
+                      portfolioReport.summary.topHolding.portfolioWeightPct,
+                    )}{" "}
+                    of portfolio
+                  </p>
+                ) : null}
+              </div>
+              <div>
+                <strong>Snapshot coverage</strong>
+                <p>
+                  {portfolioReport.summary.oldestSnapshotDate
+                    && portfolioReport.summary.latestSnapshotDate ? (
+                      portfolioReport.summary.oldestSnapshotDate
+                      === portfolioReport.summary.latestSnapshotDate ? (
+                        formatSnapshotValue(portfolioReport.summary.latestSnapshotDate)
+                      ) : (
+                        `${formatSnapshotValue(
+                          portfolioReport.summary.oldestSnapshotDate,
+                        )} -> ${formatSnapshotValue(portfolioReport.summary.latestSnapshotDate)}`
+                      )
+                    ) : (
+                      "-"
+                    )}
+                </p>
+                <p className="helper-text">
+                  Each account contributes its latest active snapshot, so dates can vary.
+                </p>
+              </div>
+              <div>
+                <strong>Cost basis coverage</strong>
+                <p>
+                  {portfolioReport.summary.holdingsWithCostBasisCount} of{" "}
+                  {portfolioReport.summary.holdingCount} holdings include cost basis
+                </p>
+                <p className="helper-text">
+                  {portfolioReport.summary.totalCostBasis !== null ? (
+                    <>
+                      Known basis{" "}
+                      {formatMoneyValue(
+                        portfolioReport.summary.totalCostBasis,
+                        workspaceCurrency,
+                      )}{" "}
+                      ·{" "}
+                      {formatPercentValue(portfolioReport.summary.totalGainLossPct, {
+                        signed: true,
+                      })}{" "}
+                      gain/loss vs known basis
+                    </>
+                  ) : (
+                    "Percent gain/loss becomes available once a saved snapshot includes cost basis."
+                  )}
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <article className="card stack compact">
+            <div>
+              <h2>Account overview</h2>
+              <p className="muted-text">
+                Compare saved accounts before drilling into the full holdings tables.
+              </p>
+            </div>
+
+            <div className="stack">
+              {portfolioReport.accountOverviews.map((accountOverview) => (
+                <article className="card stack compact" key={`${accountOverview.accountId}-overview`}>
+                  <div className="page-actions">
+                    <div>
+                      <h3>{accountOverview.accountDisplayName}</h3>
+                      <p className="muted-text">
+                        {accountOverview.ownerDisplayName
+                          ? `${accountOverview.ownerDisplayName} · `
+                          : ""}
+                        {accountOverview.sourceName ?? "Investment"}
+                      </p>
+                    </div>
+                    <span
+                      className={`badge ${
+                        accountOverview.concentrationLevel === "watch"
+                          ? "badge-warning"
+                          : "badge-neutral"
+                      }`}
+                    >
+                      {accountOverview.concentrationHint}
+                    </span>
+                  </div>
+
+                  <div className="summary-strip">
+                    <div>
+                      <strong>
+                        {formatMoneyValue(accountOverview.totalMarketValue, workspaceCurrency)}
+                      </strong>
+                      <span>Total market value</span>
+                    </div>
+                    <div>
+                      <strong>
+                        {formatSignedMoneyValue(accountOverview.totalGainLoss, workspaceCurrency)}
+                      </strong>
+                      <span>Unrealized gain/loss</span>
+                    </div>
+                    <div>
+                      <strong>{accountOverview.holdingCount}</strong>
+                      <span>Holdings</span>
+                    </div>
+                    <div>
+                      <strong>{formatPercentValue(accountOverview.portfolioSharePct)}</strong>
+                      <span>Portfolio share</span>
+                    </div>
+                  </div>
+
+                  <div className="meta-grid">
+                    <div>
+                      <strong>Top holding</strong>
+                      <p>{accountOverview.topHoldingName ?? "-"}</p>
+                      <p className="helper-text">
+                        {accountOverview.topHoldingName ? (
+                          <>
+                            {accountOverview.topHoldingSymbol
+                              ? `${accountOverview.topHoldingSymbol} · `
+                              : ""}
+                            {formatMoneyValue(
+                              accountOverview.topHoldingMarketValue,
+                              workspaceCurrency,
+                            )}{" "}
+                            · {formatPercentValue(accountOverview.topHoldingWeightPct)} of
+                            account
+                          </>
+                        ) : (
+                          "No holding details are available for this snapshot."
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <strong>Concentration</strong>
+                      <p>{accountOverview.concentrationHint}</p>
+                      <p className="helper-text">
+                        Top 3 holdings:{" "}
+                        {formatPercentValue(accountOverview.topThreeHoldingsWeightPct)} of
+                        account
+                      </p>
+                    </div>
+                    <div>
+                      <strong>Snapshot</strong>
+                      <p>{formatSnapshotValue(accountOverview.snapshotDate)}</p>
+                      <p className="helper-text">
+                        Saved {formatTimestampValue(accountOverview.importCreatedAt)}
+                      </p>
+                    </div>
+                    <div>
+                      <strong>Cost basis coverage</strong>
+                      <p>
+                        {accountOverview.holdingsWithCostBasisCount} of{" "}
+                        {accountOverview.holdingCount} holdings include cost basis
+                      </p>
+                      <p className="helper-text">
+                        {accountOverview.totalCostBasis !== null ? (
+                          <>
+                            Known basis{" "}
+                            {formatMoneyValue(
+                              accountOverview.totalCostBasis,
+                              workspaceCurrency,
+                            )}{" "}
+                            ·{" "}
+                            {formatPercentValue(accountOverview.totalGainLossPct, {
+                              signed: true,
+                            })}{" "}
+                            gain/loss vs known basis
+                          </>
+                        ) : (
+                          "Percent gain/loss is unavailable until cost basis is present."
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </article>
+        </>
       ) : null}
 
       <article className="card stack compact">
