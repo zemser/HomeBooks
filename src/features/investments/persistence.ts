@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -8,11 +8,13 @@ import {
   imports,
   investmentAccounts,
   importSources,
+  users,
   workspaceMembers,
 } from "@/db/schema";
 import { ensureExcellenceInvestmentImportSource } from "@/features/investments/catalog";
 import { parseInvestmentWorkbookToPreview } from "@/features/investments/parse-investment-workbook";
 import type {
+  InvestmentAccountHoldingsSnapshot,
   InvestmentImportSummary,
   InvestmentPreviewHolding,
   SaveInvestmentImportResult,
@@ -53,6 +55,23 @@ async function acquireAdvisoryLock(
 
 function formatNumeric(value: number | null, scale: number) {
   return value === null ? null : value.toFixed(scale);
+}
+
+function toNullableNumber(value: string | number | null) {
+  if (value === null) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function addNullableNumber(current: number | null, next: number | null) {
+  if (next === null) {
+    return current;
+  }
+
+  return (current ?? 0) + next;
 }
 
 function buildHoldingSnapshotValues(input: {
@@ -315,6 +334,117 @@ export async function listInvestmentImports(
       snapshotDate: stat?.snapshotDate ?? null,
     };
   });
+}
+
+export async function listInvestmentAccountHoldings(
+  context: CurrentWorkspaceContext,
+): Promise<InvestmentAccountHoldingsSnapshot[]> {
+  const db = getDb();
+  const latestSnapshotDates = db
+    .select({
+      investmentAccountId: holdingSnapshots.investmentAccountId,
+      latestSnapshotDate: sql<string>`max(${holdingSnapshots.snapshotDate})`.as(
+        "latest_snapshot_date",
+      ),
+    })
+    .from(holdingSnapshots)
+    .where(eq(holdingSnapshots.workspaceId, context.workspaceId))
+    .groupBy(holdingSnapshots.investmentAccountId)
+    .as("latest_snapshot_dates");
+
+  const rows = await db
+    .select({
+      accountId: investmentAccounts.id,
+      accountDisplayName: investmentAccounts.displayName,
+      ownerMemberId: investmentAccounts.ownerMemberId,
+      ownerDisplayNameOverride: workspaceMembers.displayNameOverride,
+      ownerUserDisplayName: users.displayName,
+      sourceName: importSources.name,
+      snapshotDate: holdingSnapshots.snapshotDate,
+      importId: imports.id,
+      importCreatedAt: imports.createdAt,
+      importOriginalFilename: imports.originalFilename,
+      assetName: holdingSnapshots.assetName,
+      assetSymbol: holdingSnapshots.assetSymbol,
+      assetType: holdingSnapshots.assetType,
+      quantity: holdingSnapshots.quantity,
+      marketValue: holdingSnapshots.marketValue,
+      marketValueCurrency: holdingSnapshots.marketValueCurrency,
+      normalizedMarketValue: holdingSnapshots.normalizedMarketValue,
+      costBasis: holdingSnapshots.costBasis,
+      gainLoss: holdingSnapshots.gainLoss,
+    })
+    .from(holdingSnapshots)
+    .innerJoin(
+      latestSnapshotDates,
+      and(
+        eq(holdingSnapshots.investmentAccountId, latestSnapshotDates.investmentAccountId),
+        eq(holdingSnapshots.snapshotDate, latestSnapshotDates.latestSnapshotDate),
+      ),
+    )
+    .innerJoin(investmentAccounts, eq(investmentAccounts.id, holdingSnapshots.investmentAccountId))
+    .innerJoin(imports, eq(imports.id, holdingSnapshots.importId))
+    .leftJoin(importSources, eq(importSources.id, investmentAccounts.importSourceId))
+    .leftJoin(workspaceMembers, eq(workspaceMembers.id, investmentAccounts.ownerMemberId))
+    .leftJoin(users, eq(users.id, workspaceMembers.userId))
+    .where(eq(holdingSnapshots.workspaceId, context.workspaceId))
+    .orderBy(
+      desc(holdingSnapshots.snapshotDate),
+      desc(imports.createdAt),
+      asc(investmentAccounts.displayName),
+      desc(holdingSnapshots.normalizedMarketValue),
+      asc(holdingSnapshots.assetName),
+    );
+
+  const snapshotsByAccountId = new Map<string, InvestmentAccountHoldingsSnapshot>();
+
+  for (const row of rows) {
+    const quantity = toNullableNumber(row.quantity);
+    const marketValue = toNullableNumber(row.marketValue) ?? 0;
+    const normalizedMarketValue = toNullableNumber(row.normalizedMarketValue) ?? marketValue;
+    const costBasis = toNullableNumber(row.costBasis);
+    const gainLoss = toNullableNumber(row.gainLoss);
+    const ownerDisplayName =
+      row.ownerDisplayNameOverride?.trim() || row.ownerUserDisplayName?.trim() || null;
+    const existing =
+      snapshotsByAccountId.get(row.accountId)
+      ?? {
+        accountId: row.accountId,
+        accountDisplayName: row.accountDisplayName,
+        ownerMemberId: row.ownerMemberId,
+        ownerDisplayName,
+        sourceName: row.sourceName ?? null,
+        snapshotDate: row.snapshotDate,
+        importId: row.importId,
+        importCreatedAt: row.importCreatedAt.toISOString(),
+        importOriginalFilename: row.importOriginalFilename,
+        holdingCount: 0,
+        totalMarketValue: 0,
+        totalCostBasis: null,
+        totalGainLoss: null,
+        holdings: [],
+      } satisfies InvestmentAccountHoldingsSnapshot;
+
+    existing.holdings.push({
+      assetName: row.assetName,
+      assetSymbol: row.assetSymbol,
+      assetType: row.assetType,
+      quantity,
+      marketValue,
+      marketValueCurrency: row.marketValueCurrency,
+      normalizedMarketValue,
+      costBasis,
+      gainLoss,
+    });
+    existing.holdingCount += 1;
+    existing.totalMarketValue += marketValue;
+    existing.totalCostBasis = addNullableNumber(existing.totalCostBasis, costBasis);
+    existing.totalGainLoss = addNullableNumber(existing.totalGainLoss, gainLoss);
+
+    snapshotsByAccountId.set(row.accountId, existing);
+  }
+
+  return [...snapshotsByAccountId.values()];
 }
 
 export async function persistInvestmentImport(input: {
