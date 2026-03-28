@@ -57,3 +57,30 @@ export type InvestmentPreviewResult = {
 export type InvestmentPreviewParser = {
   parse: (workbook: WorkbookData) => InvestmentPreviewResult;
 };
+
+export type InvestmentImportSummary = {
+  id: string;
+  originalFilename: string;
+  importStatus: string;
+  createdAt: string;
+  completedAt: string | null;
+  sourceName: string | null;
+  holdingCount: number;
+  snapshotDate: string | null;
+};
+
+export type SaveInvestmentImportResult =
+  | {
+      status: "saved";
+      importId: string;
+      importStatus: string;
+      holdingCount: number;
+      duplicateOfImportId?: undefined;
+    }
+  | {
+      status: "duplicate";
+      importId: string;
+      importStatus: string;
+      holdingCount: number;
+      duplicateOfImportId: string;
+    };

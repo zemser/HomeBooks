@@ -69,3 +69,17 @@ export function normalizeMetadataValue(value: string, prefix: string) {
 
   return normalizeOptionalText(normalized.slice(prefix.length));
 }
+
+export function normalizeInvestmentAccountLabel(value: string) {
+  const normalized = value
+    .normalize("NFKC")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("en-US");
+
+  if (!normalized) {
+    throw new Error("Account label is required.");
+  }
+
+  return normalized;
+}

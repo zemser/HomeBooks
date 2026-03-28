@@ -457,17 +457,31 @@ export const sharedExpenseSplits = pgTable(
   }),
 );
 
-export const investmentAccounts = pgTable("investment_accounts", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workspaceId: uuid("workspace_id")
-    .notNull()
-    .references(() => workspaces.id),
-  ownerMemberId: uuid("owner_member_id").references(() => workspaceMembers.id),
-  displayName: text("display_name").notNull(),
-  importSourceId: uuid("import_source_id").references(() => importSources.id),
-  accountCurrency: char("account_currency", { length: 3 }),
-  ...timestamps,
-});
+export const investmentAccounts = pgTable(
+  "investment_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    ownerMemberId: uuid("owner_member_id").references(() => workspaceMembers.id),
+    displayName: text("display_name").notNull(),
+    canonicalDisplayName: text("canonical_display_name").notNull(),
+    importSourceId: uuid("import_source_id").references(() => importSources.id),
+    accountCurrency: char("account_currency", { length: 3 }),
+    ...timestamps,
+  },
+  (table) => ({
+    workspaceOwnerSourceCanonicalUnique: unique(
+      "investment_accounts_workspace_owner_source_canonical_unique",
+    ).on(
+      table.workspaceId,
+      table.ownerMemberId,
+      table.importSourceId,
+      table.canonicalDisplayName,
+    ),
+  }),
+);
 
 export const investmentActivities = pgTable("investment_activities", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -499,6 +513,9 @@ export const holdingSnapshots = pgTable(
     workspaceId: uuid("workspace_id")
       .notNull()
       .references(() => workspaces.id),
+    importId: uuid("import_id")
+      .notNull()
+      .references(() => imports.id),
     investmentAccountId: uuid("investment_account_id")
       .notNull()
       .references(() => investmentAccounts.id),
@@ -520,6 +537,11 @@ export const holdingSnapshots = pgTable(
   (table) => ({
     workspaceSnapshotDateIdx: index("holding_snapshots_workspace_date_idx").on(
       table.workspaceId,
+      table.snapshotDate,
+    ),
+    importIdx: index("holding_snapshots_import_idx").on(table.importId),
+    accountSnapshotDateIdx: index("holding_snapshots_account_date_idx").on(
+      table.investmentAccountId,
       table.snapshotDate,
     ),
   }),

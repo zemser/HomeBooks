@@ -15,6 +15,13 @@
       "when": 1774046787415,
       "tag": "0001_special_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774213580768,
+      "tag": "0002_lethal_ironclad",
+      "breakpoints": true
     }
   ]
 }
