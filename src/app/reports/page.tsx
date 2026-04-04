@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { syncExpenseEventsForRange } from "@/features/reporting/expense-events";
 import {
   getMonthlyReport,
@@ -161,6 +163,26 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             Compare payment-date cash flow with adjusted-period allocations without
             leaving the same report surface.
           </p>
+        </section>
+
+        <section className="card">
+          <div className="page-actions">
+            <div>
+              <h2>Analysis surface</h2>
+              <p className="muted-text">
+                Reports are now the end of the main workflow, not a second home competing with the
+                rest of the app.
+              </p>
+            </div>
+            <div className="action-row">
+              <Link className="button button-secondary" href="/expenses">
+                Open ledger
+              </Link>
+              <Link className="button" href="/recurring">
+                Open recurring
+              </Link>
+            </div>
+          </div>
         </section>
 
         <section className="card">

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const context = await resolveCurrentWorkspaceContext();
-    const savedImports = await listSavedImports(context);
+    const savedImports = await listSavedImports(context, { type: "bank" });
 
     return NextResponse.json({
       workspaceCurrency: context.baseCurrency,
@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       fileBuffer: Buffer.from(arrayBuffer),
       context,
     });
-    const savedImports = await listSavedImports(context);
+    const savedImports = await listSavedImports(context, { type: "bank" });
     const savedImport = savedImports.find((item) => item.id === result.importId) ?? null;
 
     return NextResponse.json(
