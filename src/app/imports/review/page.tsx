@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { ReviewQueueClient } from "@/components/expenses/review-queue-client";
 
 type ReviewPageProps = {
@@ -21,6 +23,25 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
             This queue focuses on transactions without a saved classification, while still
             letting you jump in from the expenses page to correct a reviewed row.
           </p>
+        </section>
+
+        <section className="card">
+          <div className="page-actions">
+            <div>
+              <h2>Keep the workflow moving</h2>
+              <p className="muted-text">
+                Review is the bridge between raw imports and a ledger that actually feels usable.
+              </p>
+            </div>
+            <div className="action-row">
+              <Link className="button button-secondary" href="/imports">
+                Back to imports
+              </Link>
+              <Link className="button" href="/expenses">
+                Continue to expenses
+              </Link>
+            </div>
+          </div>
         </section>
 
         <ReviewQueueClient initialTransactionId={transactionId} />

@@ -187,7 +187,10 @@ async function findOrCreateFinancialAccount(input: {
   return created;
 }
 
-export async function listSavedImports(context: CurrentImportContext) {
+export async function listSavedImports(
+  context: CurrentImportContext,
+  input?: { type?: "bank" | "investment" },
+) {
   const db = getDb();
   const savedImports = await db
     .select({
@@ -202,7 +205,12 @@ export async function listSavedImports(context: CurrentImportContext) {
     .from(imports)
     .leftJoin(importTemplates, eq(importTemplates.id, imports.importTemplateId))
     .leftJoin(importSources, eq(importSources.id, imports.importSourceId))
-    .where(eq(imports.workspaceId, context.workspaceId))
+    .where(
+      and(
+        eq(imports.workspaceId, context.workspaceId),
+        input?.type ? eq(imports.type, input.type) : undefined,
+      ),
+    )
     .orderBy(desc(imports.createdAt));
 
   if (savedImports.length === 0) {

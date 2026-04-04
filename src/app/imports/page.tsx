@@ -1,4 +1,8 @@
+import Link from "next/link";
+
 import { ImportPreviewClient } from "@/components/imports/import-preview-client";
+import { listSavedImports } from "@/features/imports/persistence";
+import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 const importSteps = [
   "Upload CSV or Excel export",
@@ -15,54 +19,76 @@ const supportedExpenseTemplates = [
   "Cal recent transactions reports",
 ];
 
-const nextParserTargets = [
-  "Poalim / Isracard style variants from the examples folder",
-  "Investment account Excel imports",
-  "CSV-based exports once we have real samples",
-];
+export const dynamic = "force-dynamic";
 
-export default function ImportsPage() {
+export default async function ImportsPage() {
+  const context = await resolveCurrentWorkspaceContext();
+  const savedImports = await listSavedImports(context, { type: "bank" });
+
   return (
     <main>
       <div className="page-shell stack">
         <section className="hero">
           <span className="eyebrow">Imports</span>
-          <h1>Bank and investment files land here first.</h1>
+          <h1>Bank files land here first, then the rest of the workflow unfolds.</h1>
           <p>
-            The import pipeline is the backbone of the product. This area will manage
-            uploads, parsing, template matching, and reprocessing.
+            Use this route to upload a real statement, inspect the parsed rows, save the
+            import into the workspace, and then continue into the review queue.
           </p>
         </section>
 
         <section className="card">
-          <h2>First implementation flow</h2>
+          <div className="page-actions">
+            <div>
+              <h2>Import workflow</h2>
+              <p className="muted-text">
+                This is the operational start of the expense story, not a detached file tool.
+              </p>
+            </div>
+            <div className="action-row">
+              <Link className="button" href="/imports/review">
+                Open review queue
+              </Link>
+              <Link className="button button-secondary" href="/expenses">
+                Open ledger
+              </Link>
+            </div>
+          </div>
+
+          <div className="home-workflow-list">
+            {importSteps.map((item, index) => (
+              <div className="home-workflow-step" key={item}>
+                <span
+                  className={`home-step-state ${index < 4 ? "home-step-state-current" : "home-step-state-up-next"}`}
+                >
+                  {index < 4 ? "This page" : "Next"}
+                </span>
+                <div>
+                  <strong>{item}</strong>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <ImportPreviewClient savedImports={savedImports} />
+
+        <article className="card">
+          <div className="page-actions">
+            <div>
+              <h2>Supported parser templates</h2>
+              <p className="muted-text">
+                The current expense-first dogfooding path is intentionally narrow so it is easier
+                to judge behavior before broadening parser coverage.
+              </p>
+            </div>
+          </div>
           <ul>
-            {importSteps.map((item) => (
+            {supportedExpenseTemplates.map((item) => (
               <li key={item}>{item}</li>
             ))}
           </ul>
-        </section>
-
-        <ImportPreviewClient savedImports={[]} />
-
-        <section className="two-up">
-          <article className="card">
-            <h2>Supported in code now</h2>
-            <ul>
-              {supportedExpenseTemplates.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </article>
-          <article className="card">
-            <h2>Next parser targets</h2>
-            <ul>
-              {nextParserTargets.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </article>
-        </section>
+        </article>
       </div>
     </main>
   );

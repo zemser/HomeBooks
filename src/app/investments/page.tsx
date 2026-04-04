@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { InvestmentPreviewClient } from "@/components/investments/investment-preview-client";
 import {
   listInvestmentAccountHoldings,
@@ -27,6 +29,26 @@ export default async function InvestmentsPage() {
             parsed rows, and latest portfolio summaries before you save the snapshot
             into the workspace.
           </p>
+        </section>
+
+        <section className="card">
+          <div className="page-actions">
+            <div>
+              <h2>Secondary beta area</h2>
+              <p className="muted-text">
+                Investments stay accessible in the main shell, but they deliberately sit outside
+                the primary expense workflow until their reporting surfaces mature.
+              </p>
+            </div>
+            <div className="action-row">
+              <Link className="button button-secondary" href="/reports">
+                Open reports
+              </Link>
+              <Link className="button" href="/">
+                Back home
+              </Link>
+            </div>
+          </div>
         </section>
 
         <InvestmentPreviewClient
