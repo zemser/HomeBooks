@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { ImportPreviewClient } from "@/components/imports/import-preview-client";
 import { listSavedImports } from "@/features/imports/persistence";
+import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 const importSteps = [
@@ -24,6 +25,12 @@ export const dynamic = "force-dynamic";
 export default async function ImportsPage() {
   const context = await resolveCurrentWorkspaceContext();
   const savedImports = await listSavedImports(context, { type: "bank" });
+  const reviewPendingCount = savedImports.reduce(
+    (sum, item) => sum + item.reviewPendingCount,
+    0,
+  );
+  const latestImportMonth =
+    savedImports[0]?.latestTransactionDate?.slice(0, 7) ?? null;
 
   return (
     <main>
@@ -47,10 +54,14 @@ export default async function ImportsPage() {
             </div>
             <div className="action-row">
               <Link className="button" href="/imports/review">
-                Open review queue
+                {reviewPendingCount > 0
+                  ? `Review ${reviewPendingCount} pending row${reviewPendingCount === 1 ? "" : "s"}`
+                  : "Open review queue"}
               </Link>
               <Link className="button button-secondary" href="/expenses">
-                Open ledger
+                {latestImportMonth
+                  ? `Open ${formatReportMonthLabel(`${latestImportMonth}-01`)} ledger`
+                  : "Open ledger"}
               </Link>
             </div>
           </div>
@@ -71,7 +82,10 @@ export default async function ImportsPage() {
           </div>
         </section>
 
-        <ImportPreviewClient savedImports={savedImports} />
+        <ImportPreviewClient
+          savedImports={savedImports}
+          workspaceCurrency={context.baseCurrency}
+        />
 
         <article className="card">
           <div className="page-actions">

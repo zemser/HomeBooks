@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -44,6 +44,10 @@ export type SavedImportSummary = {
   templateName: string | null;
   sourceName: string | null;
   transactionCount: number;
+  reviewedTransactionCount: number;
+  reviewPendingCount: number;
+  earliestTransactionDate: string | null;
+  latestTransactionDate: string | null;
 };
 
 export type SaveImportResult =
@@ -217,17 +221,73 @@ export async function listSavedImports(
     return [];
   }
 
-  const transactionCounts = await Promise.all(
-    savedImports.map(async (savedImport) => ({
-      importId: savedImport.id,
-      count: await db.$count(transactions, eq(transactions.importId, savedImport.id)),
-    })),
-  );
+  const importIds = savedImports.map((savedImport) => savedImport.id);
+  const [transactionCounts, pendingReviewCounts, transactionDateRanges] = await Promise.all([
+    db
+      .select({
+        importId: transactions.importId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(transactions)
+      .where(inArray(transactions.importId, importIds))
+      .groupBy(transactions.importId),
+    db
+      .select({
+        importId: transactions.importId,
+        count: sql<number>`count(*)::int`,
+      })
+      .from(transactions)
+      .leftJoin(
+        transactionClassifications,
+        eq(transactionClassifications.transactionId, transactions.id),
+      )
+      .where(
+        and(
+          inArray(transactions.importId, importIds),
+          isNull(transactionClassifications.id),
+        ),
+      )
+      .groupBy(transactions.importId),
+    db
+      .select({
+        importId: transactions.importId,
+        earliestTransactionDate: sql<string | null>`min(${transactions.transactionDate})::text`,
+        latestTransactionDate: sql<string | null>`max(${transactions.transactionDate})::text`,
+      })
+      .from(transactions)
+      .where(inArray(transactions.importId, importIds))
+      .groupBy(transactions.importId),
+  ]);
   const countByImportId = new Map(
-    transactionCounts.map((item) => [item.importId, item.count]),
+    transactionCounts.map((item) => [item.importId, Number(item.count)]),
+  );
+  const pendingCountByImportId = new Map(
+    pendingReviewCounts.map((item) => [item.importId, Number(item.count)]),
+  );
+  const dateRangeByImportId = new Map(
+    transactionDateRanges.map((item) => [
+      item.importId,
+      {
+        earliestTransactionDate: item.earliestTransactionDate,
+        latestTransactionDate: item.latestTransactionDate,
+      },
+    ]),
   );
 
   return savedImports.map<SavedImportSummary>((savedImport) => ({
+    ...(() => {
+      const transactionCount = countByImportId.get(savedImport.id) ?? 0;
+      const reviewPendingCount = pendingCountByImportId.get(savedImport.id) ?? 0;
+      const dateRange = dateRangeByImportId.get(savedImport.id);
+
+      return {
+        transactionCount,
+        reviewedTransactionCount: Math.max(transactionCount - reviewPendingCount, 0),
+        reviewPendingCount,
+        earliestTransactionDate: dateRange?.earliestTransactionDate ?? null,
+        latestTransactionDate: dateRange?.latestTransactionDate ?? null,
+      };
+    })(),
     id: savedImport.id,
     originalFilename: savedImport.originalFilename,
     importStatus: savedImport.importStatus,
@@ -235,7 +295,6 @@ export async function listSavedImports(
     completedAt: savedImport.completedAt?.toISOString() ?? null,
     templateName: savedImport.templateName,
     sourceName: savedImport.sourceName,
-    transactionCount: countByImportId.get(savedImport.id) ?? 0,
   }));
 }
 

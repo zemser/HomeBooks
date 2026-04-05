@@ -12,6 +12,10 @@ export type WorkspaceHomeImportActivity = {
   completedAt: string | null;
   sourceName: string | null;
   transactionCount: number;
+  reviewedTransactionCount: number;
+  reviewPendingCount: number;
+  earliestTransactionDate: string | null;
+  latestTransactionDate: string | null;
 };
 
 export type WorkspaceHomeNotableState = {

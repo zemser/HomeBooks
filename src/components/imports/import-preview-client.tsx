@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 
 type PreviewTransaction = {
@@ -36,13 +37,19 @@ type SavedImportSummary = {
   originalFilename: string;
   importStatus: string;
   createdAt: string;
+  completedAt: string | null;
   sourceName?: string | null;
   templateName?: string | null;
-  transactionCount?: number | null;
+  transactionCount: number;
+  reviewedTransactionCount: number;
+  reviewPendingCount: number;
+  earliestTransactionDate: string | null;
+  latestTransactionDate: string | null;
 };
 
 type ImportPreviewClientProps = {
   savedImports?: SavedImportSummary[];
+  workspaceCurrency: string;
 };
 
 type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
@@ -66,57 +73,57 @@ function formatSavedAt(value: string) {
   }).format(date);
 }
 
-export function ImportPreviewClient({ savedImports = [] }: ImportPreviewClientProps) {
+function formatImportActivityRange(item: SavedImportSummary) {
+  if (!item.earliestTransactionDate || !item.latestTransactionDate) {
+    return "No transaction dates recorded yet";
+  }
+
+  const earliest = item.earliestTransactionDate.slice(0, 7);
+  const latest = item.latestTransactionDate.slice(0, 7);
+
+  if (earliest === latest) {
+    return new Intl.DateTimeFormat("en", {
+      month: "long",
+      year: "numeric",
+      timeZone: "UTC",
+    }).format(new Date(`${earliest}-01T00:00:00.000Z`));
+  }
+
+  return `${earliest} to ${latest}`;
+}
+
+function describeImportNextStep(item: SavedImportSummary) {
+  if (item.reviewPendingCount > 0) {
+    return `${item.reviewPendingCount} still need review`;
+  }
+
+  if (item.transactionCount > 0) {
+    return "Ready for ledger and reports";
+  }
+
+  return "Saved without normalized transactions";
+}
+
+export function ImportPreviewClient({
+  savedImports = [],
+  workspaceCurrency: initialWorkspaceCurrency,
+}: ImportPreviewClientProps) {
   const [isPending, startTransition] = useTransition();
-  const [workspaceCurrency, setWorkspaceCurrency] = useState("ILS");
+  const [workspaceCurrency, setWorkspaceCurrency] = useState(initialWorkspaceCurrency);
   const [result, setResult] = useState<PreviewResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedImportList, setSavedImportList] = useState(savedImports);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadSavedImports() {
-      try {
-        const response = await fetch("/api/imports");
-
-        if (!response.ok) {
-          return;
-        }
-
-        const data = (await response.json()) as {
-          workspaceCurrency?: string;
-          savedImports?: SavedImportSummary[];
-        };
-
-        if (cancelled) {
-          return;
-        }
-
-        if (data.workspaceCurrency) {
-          setWorkspaceCurrency(data.workspaceCurrency);
-        }
-
-        if (data.savedImports) {
-          setSavedImportList(data.savedImports);
-        }
-      } catch {
-        // Keep the page usable even when persistence isn't configured yet.
-      }
-    }
-
-    void loadSavedImports();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const [lastSavedImportId, setLastSavedImportId] = useState<string | null>(null);
 
   useEffect(() => {
     setSavedImportList(savedImports);
   }, [savedImports]);
+
+  useEffect(() => {
+    setWorkspaceCurrency(initialWorkspaceCurrency);
+  }, [initialWorkspaceCurrency]);
 
   async function handleSubmit(formData: FormData) {
     setError(null);
@@ -189,11 +196,22 @@ export function ImportPreviewClient({ savedImports = [] }: ImportPreviewClientPr
         error?: string;
         import?: SavedImportSummary | null;
       };
+      const savedImport = data.import ?? null;
+
+      if (savedImport) {
+        setSavedImportList((current) => [
+          savedImport,
+          ...current.filter((item) => item.id !== savedImport.id),
+        ]);
+        setLastSavedImportId(savedImport.id);
+      }
 
       if (!response.ok) {
         if (response.status === 404 || response.status === 405) {
           setSaveState("error");
-          setError("Saving is not connected yet. The preview works, but the persisted import endpoint is not available.");
+          setError(
+            "Saving is not connected yet. The preview works, but the persisted import endpoint is not available.",
+          );
           return;
         }
 
@@ -212,18 +230,19 @@ export function ImportPreviewClient({ savedImports = [] }: ImportPreviewClientPr
         return;
       }
 
-      const savedImport = data.import;
-
-      if (savedImport) {
-        setSavedImportList((current) => [savedImport, ...current.filter((item) => item.id !== savedImport.id)]);
-      }
-
       setSaveState("saved");
     } catch {
       setSaveState("error");
       setError("Could not save this import right now.");
     }
   }
+
+  const totalPendingReviewCount = savedImportList.reduce(
+    (sum, item) => sum + item.reviewPendingCount,
+    0,
+  );
+  const highlightedImport =
+    savedImportList.find((item) => item.id === lastSavedImportId) ?? savedImportList[0] ?? null;
 
   return (
     <section className="stack">
@@ -325,6 +344,37 @@ export function ImportPreviewClient({ savedImports = [] }: ImportPreviewClientPr
             </div>
           </article>
 
+          {(saveState === "saved" || saveState === "duplicate") && highlightedImport ? (
+            <article className="card">
+              <div className="home-focus-card">
+                <span
+                  className={`badge ${saveState === "saved" ? "badge-neutral" : "badge-warning"}`}
+                >
+                  {saveState === "saved" ? "Import saved" : "Already imported"}
+                </span>
+                <h3>{highlightedImport.originalFilename}</h3>
+                <p>
+                  {saveState === "saved"
+                    ? `Saved ${highlightedImport.transactionCount} normalized transaction${highlightedImport.transactionCount === 1 ? "" : "s"}.`
+                    : "This file is already in the workspace."}{" "}
+                  {highlightedImport.reviewPendingCount > 0
+                    ? `${highlightedImport.reviewPendingCount} still need review before the ledger and reports will feel trustworthy.`
+                    : "Nothing from this import is waiting in the review queue."}
+                </p>
+                <div className="action-row">
+                  <Link className="button" href="/imports/review">
+                    {totalPendingReviewCount > 0
+                      ? `Open review queue (${totalPendingReviewCount})`
+                      : "Open review queue"}
+                  </Link>
+                  <Link className="button button-secondary" href="/expenses">
+                    Open ledger
+                  </Link>
+                </div>
+              </div>
+            </article>
+          ) : null}
+
           <article className="card">
             <h2>Normalized preview</h2>
             <p>Showing up to 50 parsed rows.</p>
@@ -371,36 +421,63 @@ export function ImportPreviewClient({ savedImports = [] }: ImportPreviewClientPr
 
       {savedImportList.length > 0 ? (
         <article className="card">
-          <h2>Saved imports</h2>
-          <p>Recent imports already persisted for the current workspace.</p>
+          <div className="page-actions">
+            <div>
+              <h2>Saved imports</h2>
+              <p>Recent imports already persisted for the current workspace.</p>
+            </div>
+            {totalPendingReviewCount > 0 ? (
+              <span className="badge badge-warning">
+                {totalPendingReviewCount} still need review
+              </span>
+            ) : (
+              <span className="badge badge-neutral">Queue is clear</span>
+            )}
+          </div>
+
           <div className="stack">
             {savedImportList.map((savedImport) => (
-              <div className="card" key={savedImport.id}>
-                <div className="meta-grid">
+              <div className="card stack compact" key={savedImport.id}>
+                <div className="page-actions">
                   <div>
-                    <strong>File</strong>
-                    <p>{savedImport.originalFilename}</p>
+                    <h3>{savedImport.originalFilename}</h3>
+                    <p className="muted-text">
+                      {savedImport.sourceName ?? "Unknown source"} · {savedImport.templateName ?? "Unknown template"} ·{" "}
+                      {formatImportActivityRange(savedImport)}
+                    </p>
+                  </div>
+                  <div className="activity-meta">
+                    <span className="badge badge-neutral">{savedImport.importStatus}</span>
+                    <span>{formatSavedAt(savedImport.createdAt)}</span>
+                  </div>
+                </div>
+
+                <div className="summary-strip">
+                  <div>
+                    <strong>{savedImport.transactionCount}</strong>
+                    <span>Normalized rows</span>
                   </div>
                   <div>
-                    <strong>Status</strong>
-                    <p>{savedImport.importStatus}</p>
+                    <strong>{savedImport.reviewPendingCount}</strong>
+                    <span>Still need review</span>
                   </div>
                   <div>
-                    <strong>Saved</strong>
-                    <p>{formatSavedAt(savedImport.createdAt)}</p>
+                    <strong>{savedImport.reviewedTransactionCount}</strong>
+                    <span>Already reviewed</span>
                   </div>
-                  <div>
-                    <strong>Template</strong>
-                    <p>{savedImport.templateName ?? "-"}</p>
-                  </div>
-                  <div>
-                    <strong>Source</strong>
-                    <p>{savedImport.sourceName ?? "-"}</p>
-                  </div>
-                  <div>
-                    <strong>Rows</strong>
-                    <p>{savedImport.transactionCount ?? "-"}</p>
-                  </div>
+                </div>
+
+                <p className="helper-text">{describeImportNextStep(savedImport)}.</p>
+
+                <div className="action-row">
+                  <Link className="link-button" href="/imports/review">
+                    {savedImport.reviewPendingCount > 0
+                      ? `Review ${savedImport.reviewPendingCount} row${savedImport.reviewPendingCount === 1 ? "" : "s"}`
+                      : "Open review queue"}
+                  </Link>
+                  <Link className="link-button" href="/expenses">
+                    Open ledger
+                  </Link>
                 </div>
               </div>
             ))}
