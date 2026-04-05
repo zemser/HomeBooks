@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 
 import {
@@ -18,11 +19,14 @@ import {
 } from "@/features/expenses/presentation";
 import type {
   ExpenseTransactionItem,
+  ReviewQueueImportSummary,
   ReviewQueueResponse,
+  ReviewQueueSummary,
   WorkspaceMemberOption,
 } from "@/features/expenses/types";
 
 type ReviewQueueClientProps = {
+  initialData: ReviewQueueResponse;
   initialTransactionId: string | null;
 };
 
@@ -52,6 +56,14 @@ const emptyBulkForm: BulkFormState = {
   memberOwnerId: "",
 };
 
+const emptyReviewSummary: ReviewQueueSummary = {
+  totalTransactionCount: 0,
+  reviewedCount: 0,
+  queueCount: 0,
+  completionPercentage: 100,
+  remainingByImport: [],
+};
+
 function getSelectedTransaction(input: {
   queue: ExpenseTransactionItem[];
   focusTransaction: ExpenseTransactionItem | null;
@@ -67,24 +79,79 @@ function getSelectedTransaction(input: {
   );
 }
 
-export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientProps) {
-  const [queue, setQueue] = useState<ExpenseTransactionItem[]>([]);
-  const [focusTransaction, setFocusTransaction] =
-    useState<ExpenseTransactionItem | null>(null);
-  const [members, setMembers] = useState<WorkspaceMemberOption[]>([]);
+function formatReviewImportRange(item: ReviewQueueImportSummary) {
+  if (!item.earliestTransactionDate || !item.latestTransactionDate) {
+    return "Unknown period";
+  }
+
+  const earliest = item.earliestTransactionDate.slice(0, 7);
+  const latest = item.latestTransactionDate.slice(0, 7);
+
+  const formatter = new Intl.DateTimeFormat("en", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+  if (earliest === latest) {
+    return formatter.format(new Date(`${earliest}-01T00:00:00.000Z`));
+  }
+
+  return `${formatter.format(new Date(`${earliest}-01T00:00:00.000Z`))} to ${formatter.format(
+    new Date(`${latest}-01T00:00:00.000Z`),
+  )}`;
+}
+
+export function ReviewQueueClient({
+  initialData,
+  initialTransactionId,
+}: ReviewQueueClientProps) {
+  const [queue, setQueue] = useState<ExpenseTransactionItem[]>(initialData.queue);
+  const [focusTransaction, setFocusTransaction] = useState<ExpenseTransactionItem | null>(
+    initialData.focusTransaction,
+  );
+  const [members, setMembers] = useState<WorkspaceMemberOption[]>(initialData.members);
+  const [summary, setSummary] = useState<ReviewQueueSummary>(initialData.summary);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(
-    initialTransactionId,
+    initialTransactionId ?? initialData.focusTransaction?.id ?? initialData.queue[0]?.id ?? null,
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [singleForm, setSingleForm] = useState<SingleFormState>(emptySingleForm);
   const [bulkForm, setBulkForm] = useState<BulkFormState>(emptyBulkForm);
   const [allocationForm, setAllocationForm] = useState<AllocationFormState>(emptyAllocationForm);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isSavingSingle, startSavingSingle] = useTransition();
   const [isSavingBulk, startSavingBulk] = useTransition();
   const [isSavingAllocation, startSavingAllocation] = useTransition();
+
+  function applyQueueData(data: ReviewQueueResponse, focusId?: string | null) {
+    setQueue(data.queue);
+    setFocusTransaction(data.focusTransaction ?? null);
+    setMembers(data.members);
+    setSummary(data.summary);
+    setSelectedIds((current) =>
+      current.filter((transactionId) =>
+        data.queue.some((transaction) => transaction.id === transactionId),
+      ),
+    );
+    setSelectedTransactionId((current) => {
+      if (
+        current &&
+        (data.queue.some((transaction) => transaction.id === current) ||
+          data.focusTransaction?.id === current)
+      ) {
+        return current;
+      }
+
+      if (focusId && data.focusTransaction?.id === focusId) {
+        return focusId;
+      }
+
+      return data.focusTransaction?.id ?? data.queue[0]?.id ?? null;
+    });
+  }
 
   async function loadQueue(focusId?: string | null) {
     setError(null);
@@ -98,38 +165,15 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
         throw new Error(data.error ?? "Could not load the review queue.");
       }
 
-      setQueue(data.queue);
-      setFocusTransaction(data.focusTransaction ?? null);
-      setMembers(data.members);
-      setSelectedIds((current) =>
-        current.filter((transactionId) =>
-          data.queue.some((transaction) => transaction.id === transactionId),
-        ),
-      );
-      setSelectedTransactionId((current) => {
-        if (
-          current &&
-          (data.queue.some((transaction) => transaction.id === current) ||
-            data.focusTransaction?.id === current)
-        ) {
-          return current;
-        }
-
-        if (focusId && data.focusTransaction?.id === focusId) {
-          return focusId;
-        }
-
-        return data.focusTransaction?.id ?? data.queue[0]?.id ?? null;
-      });
+      applyQueueData(data, focusId);
     } catch (loadError) {
       setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Could not load the review queue.",
+        loadError instanceof Error ? loadError.message : "Could not load the review queue.",
       );
       setQueue([]);
       setFocusTransaction(null);
       setMembers([]);
+      setSummary(emptyReviewSummary);
       setSelectedTransactionId(null);
     } finally {
       setIsLoading(false);
@@ -137,9 +181,20 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
   }
 
   useEffect(() => {
-    setIsLoading(true);
-    void loadQueue(initialTransactionId);
-  }, [initialTransactionId]);
+    setQueue(initialData.queue);
+    setFocusTransaction(initialData.focusTransaction ?? null);
+    setMembers(initialData.members);
+    setSummary(initialData.summary);
+    setSelectedIds([]);
+    setSelectedTransactionId(
+      initialTransactionId ??
+        initialData.focusTransaction?.id ??
+        initialData.queue[0]?.id ??
+        null,
+    );
+    setError(null);
+    setIsLoading(false);
+  }, [initialData, initialTransactionId]);
 
   const selectedTransaction = getSelectedTransaction({
     queue,
@@ -148,7 +203,8 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
   });
   const allQueueIds = queue.map((transaction) => transaction.id);
   const allVisibleSelected =
-    allQueueIds.length > 0 && allQueueIds.every((transactionId) => selectedIds.includes(transactionId));
+    allQueueIds.length > 0 &&
+    allQueueIds.every((transactionId) => selectedIds.includes(transactionId));
 
   useEffect(() => {
     if (!selectedTransaction) {
@@ -321,25 +377,79 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
   const selectedTransactionInQueue = Boolean(
     selectedTransaction && queue.some((transaction) => transaction.id === selectedTransaction.id),
   );
+  const selectedQueuePosition =
+    selectedTransactionInQueue && selectedTransaction
+      ? queue.findIndex((transaction) => transaction.id === selectedTransaction.id) + 1
+      : null;
   const merchantCanCreateRule = Boolean(selectedTransaction?.merchantRaw?.trim());
   const allocationEditable =
     selectedTransaction?.classification &&
     selectedTransaction.classification.classificationType !== "transfer" &&
     selectedTransaction.classification.classificationType !== "ignore";
+  const selectedLedgerHref = selectedTransaction
+    ? `/expenses?transactionId=${selectedTransaction.id}`
+    : "/expenses";
+  const selectedReportHref =
+    selectedTransaction?.classification &&
+    selectedTransaction.transactionDate.length >= 7
+      ? `/reports?month=${selectedTransaction.transactionDate.slice(0, 7)}`
+      : null;
 
   return (
     <section className="stack">
-      <article className="card">
+      <article className="card stack compact">
         <div className="summary-strip">
           <div>
-            <strong>{queue.length}</strong>
-            <span>Transactions waiting for review</span>
+            <strong>{summary.queueCount}</strong>
+            <span>Transactions left to review</span>
           </div>
           <div>
-            <strong>{selectedIds.length}</strong>
-            <span>Selected for bulk action</span>
+            <strong>{summary.reviewedCount}</strong>
+            <span>Already reviewed</span>
+          </div>
+          <div>
+            <strong>{summary.completionPercentage}%</strong>
+            <span>Queue cleared</span>
+          </div>
+          <div>
+            <strong>{selectedQueuePosition ? `${selectedQueuePosition}/${summary.queueCount}` : "-"}</strong>
+            <span>Selected position</span>
           </div>
         </div>
+
+        <div className="progress-meter" aria-hidden="true">
+          <span
+            className="progress-meter-fill"
+            style={{ width: `${summary.completionPercentage}%` }}
+          />
+        </div>
+
+        {summary.remainingByImport.length > 0 ? (
+          <div className="stack compact">
+            <p className="helper-text">What&apos;s left by import</p>
+            {summary.remainingByImport.map((item) => (
+              <div className="activity-row" key={item.importId}>
+                <div>
+                  <strong>{item.originalFilename}</strong>
+                  <p>
+                    {item.sourceName ?? "Unknown source"} · {item.remainingCount} left ·{" "}
+                    {item.reviewedCount} reviewed
+                  </p>
+                </div>
+                <div className="activity-meta">
+                  <span
+                    className={`badge ${
+                      item.reviewedCount > 0 ? "badge-warning" : "badge-neutral"
+                    }`}
+                  >
+                    {item.reviewedCount > 0 ? "In progress" : "Unstarted"}
+                  </span>
+                  <span>{formatReviewImportRange(item)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </article>
 
       {error ? <p className="status error">{error}</p> : null}
@@ -414,27 +524,51 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
               </label>
             </div>
 
-            <div className="action-row">
-              <button
-                className="button"
-                type="button"
-                disabled={isSavingBulk}
-                onClick={() => startSavingBulk(() => void submitBulkClassification())}
-              >
-                {isSavingBulk ? "Applying..." : "Apply to selected rows"}
-              </button>
-              <button className="link-button" type="button" onClick={toggleAllVisible}>
-                {allVisibleSelected ? "Clear visible selection" : "Select all visible rows"}
-              </button>
+            <div className="page-actions">
+              <p className="helper-text">
+                {selectedIds.length > 0
+                  ? `${selectedIds.length} queue row${selectedIds.length === 1 ? "" : "s"} selected for bulk review.`
+                  : "Select matching rows when you want to clear a batch in one decision."}
+              </p>
+              <div className="action-row">
+                <button
+                  className="button"
+                  type="button"
+                  disabled={isSavingBulk}
+                  onClick={() => startSavingBulk(() => void submitBulkClassification())}
+                >
+                  {isSavingBulk ? "Applying..." : "Apply to selected rows"}
+                </button>
+                <button className="link-button" type="button" onClick={toggleAllVisible}>
+                  {allVisibleSelected ? "Clear visible selection" : "Select all visible rows"}
+                </button>
+              </div>
             </div>
           </div>
 
           {isLoading ? <p className="status">Loading review queue...</p> : null}
 
           {!isLoading && queue.length === 0 ? (
-            <p className="empty-state">
-              No transactions are waiting for review right now.
-            </p>
+            summary.totalTransactionCount > 0 ? (
+              <div className="home-focus-card">
+                <span className="badge badge-neutral">Queue clear</span>
+                <h3>Imported transactions no longer need review.</h3>
+                <p>
+                  The review bridge is done for now, so the next useful stop is the ledger
+                  or the matching report month.
+                </p>
+                <div className="action-row">
+                  <Link className="button" href="/expenses">
+                    Open ledger
+                  </Link>
+                  <Link className="button button-secondary" href="/reports">
+                    Open reports
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <p className="empty-state">No transactions are waiting for review right now.</p>
+            )
           ) : null}
 
           {!isLoading && queue.length > 0 ? (
@@ -567,6 +701,10 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
                   <strong>Import source</strong>
                   <p>{selectedTransaction.importSourceName ?? "Unknown source"}</p>
                 </div>
+                <div>
+                  <strong>Import file</strong>
+                  <p>{selectedTransaction.importOriginalFilename}</p>
+                </div>
               </div>
 
               <div className="stack compact">
@@ -578,6 +716,11 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
                 {selectedTransaction.classification ? (
                   <p className="table-note">
                     {formatDecisionSourceLabel(selectedTransaction.classification.decidedBy)}
+                  </p>
+                ) : null}
+                {selectedQueuePosition ? (
+                  <p className="table-note">
+                    Item {selectedQueuePosition} of {summary.queueCount} left in the queue.
                   </p>
                 ) : null}
                 <p className="table-note">
@@ -673,6 +816,14 @@ export function ReviewQueueClient({ initialTransactionId }: ReviewQueueClientPro
                 >
                   {isSavingSingle ? "Saving..." : "Save classification"}
                 </button>
+                <Link className="button button-secondary" href={selectedLedgerHref}>
+                  Open in ledger
+                </Link>
+                {selectedReportHref ? (
+                  <Link className="link-button" href={selectedReportHref}>
+                    Open report month
+                  </Link>
+                ) : null}
               </div>
 
               <div className="card stack compact">

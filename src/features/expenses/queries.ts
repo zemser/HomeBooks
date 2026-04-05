@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -13,7 +13,9 @@ import {
 import { listTransactionAllocationStates } from "@/features/expenses/allocation";
 import type {
   ExpenseTransactionItem,
+  ReviewQueueImportSummary,
   ReviewQueueResponse,
+  ReviewQueueSummary,
   WorkspaceMemberOption,
 } from "@/features/expenses/types";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
@@ -211,7 +213,7 @@ export async function listReviewQueue(
   context: CurrentWorkspaceContext,
   transactionId?: string,
 ): Promise<ReviewQueueResponse> {
-  const [queue, focusTransaction, members] = await Promise.all([
+  const [queue, focusTransaction, members, summary] = await Promise.all([
     listTransactionsByWorkspace({
       context,
       workspaceId: context.workspaceId,
@@ -225,11 +227,91 @@ export async function listReviewQueue(
         }).then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
     listWorkspaceMembers(context),
+    getReviewQueueSummary(context),
   ]);
 
   return {
     queue,
     focusTransaction,
     members,
+    summary,
+  };
+}
+
+async function getReviewQueueSummary(
+  context: CurrentWorkspaceContext,
+): Promise<ReviewQueueSummary> {
+  const db = getDb();
+  const [totalTransactionCount, totalByImportRows, remainingByImportRows] = await Promise.all([
+    db.$count(transactions, eq(transactions.workspaceId, context.workspaceId)),
+    db
+      .select({
+        importId: imports.id,
+        totalCount: sql<number>`count(*)::int`,
+      })
+      .from(transactions)
+      .innerJoin(imports, eq(imports.id, transactions.importId))
+      .where(eq(transactions.workspaceId, context.workspaceId))
+      .groupBy(imports.id),
+    db
+      .select({
+        importId: imports.id,
+        originalFilename: imports.originalFilename,
+        sourceName: importSources.name,
+        remainingCount: sql<number>`count(*)::int`,
+        earliestTransactionDate: sql<string | null>`min(${transactions.transactionDate})::text`,
+        latestTransactionDate: sql<string | null>`max(${transactions.transactionDate})::text`,
+      })
+      .from(transactions)
+      .innerJoin(imports, eq(imports.id, transactions.importId))
+      .leftJoin(importSources, eq(importSources.id, imports.importSourceId))
+      .leftJoin(
+        transactionClassifications,
+        eq(transactionClassifications.transactionId, transactions.id),
+      )
+      .where(
+        and(
+          eq(transactions.workspaceId, context.workspaceId),
+          isNull(transactionClassifications.id),
+        ),
+      )
+      .groupBy(imports.id, imports.originalFilename, importSources.name)
+      .orderBy(
+        desc(sql`max(${transactions.transactionDate})`),
+        desc(sql`count(*)`),
+        desc(imports.createdAt),
+      ),
+  ]);
+
+  const totalCountByImportId = new Map(
+    totalByImportRows.map((row) => [row.importId, Number(row.totalCount)]),
+  );
+  const remainingByImport: ReviewQueueImportSummary[] = remainingByImportRows.map((row) => {
+    const totalCount = totalCountByImportId.get(row.importId) ?? Number(row.remainingCount);
+
+    return {
+      importId: row.importId,
+      originalFilename: row.originalFilename,
+      sourceName: row.sourceName,
+      totalCount,
+      reviewedCount: Math.max(totalCount - Number(row.remainingCount), 0),
+      remainingCount: Number(row.remainingCount),
+      earliestTransactionDate: row.earliestTransactionDate ?? null,
+      latestTransactionDate: row.latestTransactionDate ?? null,
+    };
+  });
+  const queueCount = remainingByImport.reduce((sum, row) => sum + row.remainingCount, 0);
+  const reviewedCount = Math.max(totalTransactionCount - queueCount, 0);
+  const completionPercentage =
+    totalTransactionCount === 0
+      ? 100
+      : Math.round((reviewedCount / totalTransactionCount) * 100);
+
+  return {
+    totalTransactionCount,
+    reviewedCount,
+    queueCount,
+    completionPercentage,
+    remainingByImport,
   };
 }

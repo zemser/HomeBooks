@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useState, useTransition } from "react";
 
 import {
   AllocationEditor,
@@ -28,6 +28,11 @@ import {
   type OneTimeManualEntryEventKind,
 } from "@/features/manual-entries/constants";
 import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
+
+type ExpensesPageClientProps = {
+  initialData: ExpensesPageData;
+  initialTransactionId: string | null;
+};
 
 type ExpensesResponse = Partial<ExpensesPageData> & {
   error?: string;
@@ -58,6 +63,8 @@ type LoadExpensesOptions = {
   manualEntryId?: string | null;
   transactionId?: string | null;
 };
+
+type ReviewStatusFilter = "all" | "needs_review" | "reviewed";
 
 const EXPENSE_CLASSIFICATION_OPTIONS: OneTimeManualEntryClassificationType[] = [
   "household",
@@ -112,14 +119,33 @@ function allocationSuccessMessage(form: AllocationFormState) {
     : "Allocation reset to payment month.";
 }
 
-export function ExpensesPageClient() {
-  const [transactions, setTransactions] = useState<ExpenseTransactionItem[]>([]);
-  const [oneTimeManualEntries, setOneTimeManualEntries] = useState<OneTimeManualEntryItem[]>(
-    [],
+function transactionMonth(value: string) {
+  return value.slice(0, 7);
+}
+
+function formatLedgerMonthLabel(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}-01T00:00:00.000Z`));
+}
+
+export function ExpensesPageClient({
+  initialData,
+  initialTransactionId,
+}: ExpensesPageClientProps) {
+  const [transactions, setTransactions] = useState<ExpenseTransactionItem[]>(
+    initialData.transactions,
   );
-  const [members, setMembers] = useState<WorkspaceMemberOption[]>([]);
+  const [oneTimeManualEntries, setOneTimeManualEntries] = useState<OneTimeManualEntryItem[]>(
+    initialData.oneTimeManualEntries,
+  );
+  const [members, setMembers] = useState<WorkspaceMemberOption[]>(initialData.members);
   const [selectedManualEntryId, setSelectedManualEntryId] = useState<string | null>(null);
-  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
+  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(
+    initialTransactionId,
+  );
   const [manualEntryForm, setManualEntryForm] = useState<ManualEntryFormState>(
     createInitialManualEntryFormState(),
   );
@@ -127,7 +153,11 @@ export function ExpensesPageClient() {
     useState<AllocationFormState>(emptyAllocationForm);
   const [transactionAllocationForm, setTransactionAllocationForm] =
     useState<AllocationFormState>(emptyAllocationForm);
-  const [isLoading, setIsLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<ReviewStatusFilter>("all");
+  const [monthFilter, setMonthFilter] = useState("all");
+  const [importFilter, setImportFilter] = useState("all");
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -135,6 +165,44 @@ export function ExpensesPageClient() {
   const [isDeletingManualEntry, startDeletingManualEntry] = useTransition();
   const [isSavingManualAllocation, startSavingManualAllocation] = useTransition();
   const [isSavingTransactionAllocation, startSavingTransactionAllocation] = useTransition();
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
+  function applyExpensesData(
+    data: ExpensesPageData,
+    options?: LoadExpensesOptions,
+  ) {
+    const nextTransactions = data.transactions;
+    const nextOneTimeManualEntries = data.oneTimeManualEntries;
+    const nextMembers = data.members;
+
+    setTransactions(nextTransactions);
+    setOneTimeManualEntries(nextOneTimeManualEntries);
+    setMembers(nextMembers);
+    setSelectedManualEntryId((current) => {
+      if (options?.manualEntryId !== undefined) {
+        return options.manualEntryId &&
+          nextOneTimeManualEntries.some((entry) => entry.id === options.manualEntryId)
+          ? options.manualEntryId
+          : null;
+      }
+
+      return current && nextOneTimeManualEntries.some((entry) => entry.id === current)
+        ? current
+        : null;
+    });
+    setSelectedTransactionId((current) => {
+      if (options?.transactionId !== undefined) {
+        return options.transactionId &&
+          nextTransactions.some((transaction) => transaction.id === options.transactionId)
+          ? options.transactionId
+          : null;
+      }
+
+      return current && nextTransactions.some((transaction) => transaction.id === current)
+        ? current
+        : null;
+    });
+  }
 
   async function loadExpenses(options?: LoadExpensesOptions) {
     setError(null);
@@ -147,37 +215,14 @@ export function ExpensesPageClient() {
         throw new Error(data.error ?? "Could not load expenses.");
       }
 
-      const nextTransactions = data.transactions ?? [];
-      const nextOneTimeManualEntries = data.oneTimeManualEntries ?? [];
-      const nextMembers = data.members ?? [];
-
-      setTransactions(nextTransactions);
-      setOneTimeManualEntries(nextOneTimeManualEntries);
-      setMembers(nextMembers);
-      setSelectedManualEntryId((current) => {
-        if (options?.manualEntryId !== undefined) {
-          return options.manualEntryId &&
-            nextOneTimeManualEntries.some((entry) => entry.id === options.manualEntryId)
-            ? options.manualEntryId
-            : null;
-        }
-
-        return current && nextOneTimeManualEntries.some((entry) => entry.id === current)
-          ? current
-          : null;
-      });
-      setSelectedTransactionId((current) => {
-        if (options?.transactionId !== undefined) {
-          return options.transactionId &&
-            nextTransactions.some((transaction) => transaction.id === options.transactionId)
-            ? options.transactionId
-            : null;
-        }
-
-        return current && nextTransactions.some((transaction) => transaction.id === current)
-          ? current
-          : null;
-      });
+      applyExpensesData(
+        {
+          transactions: data.transactions ?? [],
+          oneTimeManualEntries: data.oneTimeManualEntries ?? [],
+          members: data.members ?? [],
+        },
+        options,
+      );
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load expenses.");
       setTransactions([]);
@@ -191,8 +236,14 @@ export function ExpensesPageClient() {
   }
 
   useEffect(() => {
-    void loadExpenses();
-  }, []);
+    setTransactions(initialData.transactions);
+    setOneTimeManualEntries(initialData.oneTimeManualEntries);
+    setMembers(initialData.members);
+    setSelectedManualEntryId(null);
+    setSelectedTransactionId(initialTransactionId);
+    setError(null);
+    setIsLoading(false);
+  }, [initialData, initialTransactionId]);
 
   const selectedManualEntry =
     oneTimeManualEntries.find((entry) => entry.id === selectedManualEntryId) ?? null;
@@ -211,6 +262,55 @@ export function ExpensesPageClient() {
         0.000001 ||
         manualEntryForm.eventDate !== selectedManualEntry.eventDate),
   );
+  const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
+  const visibleTransactions = transactions.filter((transaction) => {
+    const matchesReviewStatus =
+      reviewStatusFilter === "all" ||
+      (reviewStatusFilter === "needs_review" && !transaction.classification) ||
+      (reviewStatusFilter === "reviewed" && Boolean(transaction.classification));
+    const matchesMonth =
+      monthFilter === "all" || transactionMonth(transaction.transactionDate) === monthFilter;
+    const matchesImport =
+      importFilter === "all" || transaction.importOriginalFilename === importFilter;
+    const matchesSearch =
+      normalizedSearchQuery.length === 0 ||
+      [
+        getTransactionMerchant(transaction),
+        transaction.description,
+        transaction.accountDisplayName,
+        transaction.importSourceName ?? "",
+        transaction.importOriginalFilename,
+        transaction.classification?.category ?? "",
+        transaction.classification?.memberOwnerName ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedSearchQuery);
+
+    return matchesReviewStatus && matchesMonth && matchesImport && matchesSearch;
+  });
+  const availableMonths = Array.from(
+    new Set(transactions.map((transaction) => transactionMonth(transaction.transactionDate))),
+  ).sort((left, right) => right.localeCompare(left));
+  const availableImportFiles = Array.from(
+    new Set(transactions.map((transaction) => transaction.importOriginalFilename)),
+  ).sort((left, right) => left.localeCompare(right));
+  const filtersActive =
+    searchQuery.trim().length > 0 ||
+    reviewStatusFilter !== "all" ||
+    monthFilter !== "all" ||
+    importFilter !== "all";
+  const preferredReportMonth =
+    (selectedTransaction ? transactionMonth(selectedTransaction.transactionDate) : null) ??
+    (monthFilter !== "all" ? monthFilter : null) ??
+    (visibleTransactions[0]
+      ? transactionMonth(visibleTransactions[0].transactionDate)
+      : null) ??
+    (transactions[0] ? transactionMonth(transactions[0].transactionDate) : null);
+  const reportHref = preferredReportMonth ? `/reports?month=${preferredReportMonth}` : "/reports";
+  const reportLabel = preferredReportMonth
+    ? `Open ${formatLedgerMonthLabel(preferredReportMonth)} report`
+    : "Open reports";
 
   useEffect(() => {
     setManualEntryForm(
@@ -241,12 +341,28 @@ export function ExpensesPageClient() {
     );
   }, [selectedTransaction]);
 
+  useEffect(() => {
+    if (
+      selectedTransactionId &&
+      !visibleTransactions.some((transaction) => transaction.id === selectedTransactionId)
+    ) {
+      setSelectedTransactionId(null);
+    }
+  }, [selectedTransactionId, visibleTransactions]);
+
   function startNewManualEntry() {
     setSelectedManualEntryId(null);
     setManualEntryForm(createInitialManualEntryFormState());
     setManualEntryAllocationForm(emptyAllocationForm);
     setError(null);
     setMessage(null);
+  }
+
+  function clearLedgerFilters() {
+    setSearchQuery("");
+    setReviewStatusFilter("all");
+    setMonthFilter("all");
+    setImportFilter("all");
   }
 
   function handleManualEntryKindChange(eventKind: OneTimeManualEntryEventKind) {
@@ -404,6 +520,10 @@ export function ExpensesPageClient() {
             <span>Persisted transactions</span>
           </div>
           <div>
+            <strong>{visibleTransactions.length}</strong>
+            <span>Visible in ledger</span>
+          </div>
+          <div>
             <strong>{oneTimeManualEntries.length}</strong>
             <span>One-time manual entries</span>
           </div>
@@ -414,6 +534,13 @@ export function ExpensesPageClient() {
         </div>
       </article>
 
+      {reviewCount > 0 ? (
+        <p className="status warning">
+          {reviewCount} imported transaction{reviewCount === 1 ? "" : "s"} still need review.
+          Use the filters below to focus on the rows you&apos;ve already checked, or jump back to
+          the queue when you want to keep clearing it.
+        </p>
+      ) : null}
       {error ? <p className="status error">{error}</p> : null}
       {message ? <p className="status">{message}</p> : null}
 
@@ -635,6 +762,13 @@ export function ExpensesPageClient() {
             </div>
           </div>
 
+          {oneTimeManualEntries.length > 0 ? (
+            <p className="helper-text">
+              Click any saved row to load it into the editor. Delete stays in the
+              actions column.
+            </p>
+          ) : null}
+
           {isLoading ? <p className="status">Loading manual entries...</p> : null}
 
           {!isLoading && oneTimeManualEntries.length === 0 ? (
@@ -655,21 +789,39 @@ export function ExpensesPageClient() {
                     <th>Amount</th>
                     <th>Classification</th>
                     <th>Reporting</th>
-                    <th />
+                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {oneTimeManualEntries.map((entry) => (
                     <tr
-                      className={
-                        selectedManualEntryId === entry.id ? "table-row-active" : undefined
-                      }
+                      className={`table-row-interactive ${
+                        selectedManualEntryId === entry.id ? "table-row-active" : ""
+                      }`.trim()}
                       key={entry.id}
+                      onClick={() => setSelectedManualEntryId(entry.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedManualEntryId(entry.id);
+                        }
+                      }}
+                      tabIndex={0}
                     >
                       <td>{entry.eventDate}</td>
                       <td>
                         <strong>{entry.title}</strong>
                         <div className="table-note">{entry.payerMemberName ?? "Unassigned"}</div>
+                        <button
+                          className="link-button"
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setSelectedManualEntryId(entry.id);
+                          }}
+                        >
+                          {selectedManualEntryId === entry.id ? "Editing now" : "Edit this entry"}
+                        </button>
                       </td>
                       <td>{entry.eventKind}</td>
                       <td>{formatMoneyDisplay(entry.normalizedAmount, entry.workspaceCurrency)}</td>
@@ -680,7 +832,11 @@ export function ExpensesPageClient() {
                       </td>
                       <td>
                         <span
-                          className={`badge ${entry.allocation?.reportingMode === "allocated_period" ? "badge-warning" : "badge-neutral"}`}
+                          className={`badge ${
+                            entry.allocation?.reportingMode === "allocated_period"
+                              ? "badge-warning"
+                              : "badge-neutral"
+                          }`}
                         >
                           {formatAllocationSummary(entry.allocation)}
                         </span>
@@ -690,7 +846,10 @@ export function ExpensesPageClient() {
                           <button
                             className="link-button"
                             type="button"
-                            onClick={() => setSelectedManualEntryId(entry.id)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedManualEntryId(entry.id);
+                            }}
                           >
                             {selectedManualEntryId === entry.id ? "Editing" : "Edit"}
                           </button>
@@ -698,11 +857,12 @@ export function ExpensesPageClient() {
                             className="link-button"
                             disabled={isDeletingManualEntry && pendingDeleteId === entry.id}
                             type="button"
-                            onClick={() =>
+                            onClick={(event) => {
+                              event.stopPropagation();
                               startDeletingManualEntry(() => {
                                 void deleteManualEntry(entry.id);
-                              })
-                            }
+                              });
+                            }}
                           >
                             {isDeletingManualEntry && pendingDeleteId === entry.id
                               ? "Deleting..."
@@ -728,9 +888,84 @@ export function ExpensesPageClient() {
               can have their allocation corrected here without leaving `/expenses`.
             </p>
           </div>
-          <Link className="button" href="/imports/review">
-            Open review queue
-          </Link>
+          <div className="action-row">
+            <Link className="button button-secondary" href="/imports/review">
+              {reviewCount > 0 ? `Review ${reviewCount} left` : "Open review queue"}
+            </Link>
+            <Link className="button" href={reportHref}>
+              {reportLabel}
+            </Link>
+          </div>
+        </div>
+
+        <div className="stack compact">
+          <div className="inline-form">
+            <label className="field">
+              <span>Search</span>
+              <input
+                className="input"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Merchant, description, account, or import file"
+              />
+            </label>
+            <label className="field">
+              <span>Review status</span>
+              <select
+                className="input"
+                value={reviewStatusFilter}
+                onChange={(event) =>
+                  setReviewStatusFilter(event.target.value as ReviewStatusFilter)
+                }
+              >
+                <option value="all">All rows</option>
+                <option value="needs_review">Needs review</option>
+                <option value="reviewed">Reviewed</option>
+              </select>
+            </label>
+            <label className="field">
+              <span>Month</span>
+              <select
+                className="input"
+                value={monthFilter}
+                onChange={(event) => setMonthFilter(event.target.value)}
+              >
+                <option value="all">All months</option>
+                {availableMonths.map((month) => (
+                  <option key={month} value={month}>
+                    {formatLedgerMonthLabel(month)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="field">
+              <span>Import file</span>
+              <select
+                className="input"
+                value={importFilter}
+                onChange={(event) => setImportFilter(event.target.value)}
+              >
+                <option value="all">All imports</option>
+                {availableImportFiles.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="page-actions">
+            <p className="helper-text">
+              Showing {visibleTransactions.length} of {transactions.length} imported
+              transaction{transactions.length === 1 ? "" : "s"}.
+            </p>
+            {filtersActive ? (
+              <button className="link-button" type="button" onClick={clearLedgerFilters}>
+                Clear filters
+              </button>
+            ) : null}
+          </div>
         </div>
 
         {isLoading ? <p className="status">Loading expenses...</p> : null}
@@ -741,7 +976,13 @@ export function ExpensesPageClient() {
           </p>
         ) : null}
 
-        {!isLoading && transactions.length > 0 ? (
+        {!isLoading && transactions.length > 0 && visibleTransactions.length === 0 ? (
+          <p className="empty-state">
+            No imported rows match the current search or filters.
+          </p>
+        ) : null}
+
+        {!isLoading && visibleTransactions.length > 0 ? (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -759,7 +1000,7 @@ export function ExpensesPageClient() {
                 </tr>
               </thead>
               <tbody>
-                {transactions.map((transaction) => (
+                {visibleTransactions.map((transaction) => (
                   <tr
                     className={
                       selectedTransactionId === transaction.id ? "table-row-active" : undefined
@@ -799,7 +1040,9 @@ export function ExpensesPageClient() {
                     </td>
                     <td>
                       <span
-                        className={`badge ${transaction.classification ? "badge-neutral" : "badge-warning"}`}
+                        className={`badge ${
+                          transaction.classification ? "badge-neutral" : "badge-warning"
+                        }`}
                       >
                         {formatClassificationSummary(transaction.classification)}
                       </span>
@@ -811,7 +1054,11 @@ export function ExpensesPageClient() {
                     </td>
                     <td>
                       <span
-                        className={`badge ${transaction.allocation?.reportingMode === "allocated_period" ? "badge-warning" : "badge-neutral"}`}
+                        className={`badge ${
+                          transaction.allocation?.reportingMode === "allocated_period"
+                            ? "badge-warning"
+                            : "badge-neutral"
+                        }`}
                       >
                         {formatAllocationSummary(transaction.allocation)}
                       </span>
@@ -850,7 +1097,7 @@ export function ExpensesPageClient() {
 
           {!selectedTransaction ? (
             <p className="helper-text">
-              Pick a transaction row to edit its allocation here.
+              Pick a visible transaction row to edit its allocation here.
             </p>
           ) : !transactionAllocationEditable ? (
             <p className="helper-text">

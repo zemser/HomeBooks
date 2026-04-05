@@ -36,10 +36,30 @@ export type WorkspaceMemberOption = {
   displayName: string;
 };
 
+export type ReviewQueueImportSummary = {
+  importId: string;
+  originalFilename: string;
+  sourceName: string | null;
+  totalCount: number;
+  reviewedCount: number;
+  remainingCount: number;
+  earliestTransactionDate: string | null;
+  latestTransactionDate: string | null;
+};
+
+export type ReviewQueueSummary = {
+  totalTransactionCount: number;
+  reviewedCount: number;
+  queueCount: number;
+  completionPercentage: number;
+  remainingByImport: ReviewQueueImportSummary[];
+};
+
 export type ReviewQueueResponse = {
   queue: ExpenseTransactionItem[];
   focusTransaction: ExpenseTransactionItem | null;
   members: WorkspaceMemberOption[];
+  summary: ReviewQueueSummary;
 };
 
 export type ExpensesPageData = {

@@ -1,8 +1,7 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
-  importSources,
   imports,
   manualEntries,
   manualRecurringExpenses,
@@ -22,6 +21,7 @@ import type {
   WorkspaceHomeNotableState,
   WorkspaceHomeSnapshot,
 } from "@/features/home/types";
+import { listSavedImports } from "@/features/imports/persistence";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { getWorkspaceSettingsSnapshot } from "@/features/workspaces/settings";
@@ -67,50 +67,8 @@ async function listLatestBankImports(
   context: CurrentWorkspaceContext,
   limit = 3,
 ): Promise<WorkspaceHomeImportActivity[]> {
-  const db = getDb();
-  const recentImports = await db
-    .select({
-      id: imports.id,
-      originalFilename: imports.originalFilename,
-      importStatus: imports.importStatus,
-      createdAt: imports.createdAt,
-      completedAt: imports.completedAt,
-      sourceName: importSources.name,
-    })
-    .from(imports)
-    .leftJoin(importSources, eq(importSources.id, imports.importSourceId))
-    .where(
-      and(
-        eq(imports.workspaceId, context.workspaceId),
-        eq(imports.type, "bank"),
-      ),
-    )
-    .orderBy(desc(imports.createdAt))
-    .limit(limit);
-
-  if (recentImports.length === 0) {
-    return [];
-  }
-
-  const transactionCounts = await Promise.all(
-    recentImports.map(async (item) => ({
-      importId: item.id,
-      count: await db.$count(transactions, eq(transactions.importId, item.id)),
-    })),
-  );
-  const countsByImportId = new Map(
-    transactionCounts.map((item) => [item.importId, item.count]),
-  );
-
-  return recentImports.map((item) => ({
-    id: item.id,
-    originalFilename: item.originalFilename,
-    importStatus: item.importStatus,
-    createdAt: item.createdAt.toISOString(),
-    completedAt: item.completedAt?.toISOString() ?? null,
-    sourceName: item.sourceName,
-    transactionCount: countsByImportId.get(item.id) ?? 0,
-  }));
+  const recentImports = await listSavedImports(context, { type: "bank" });
+  return recentImports.slice(0, limit);
 }
 
 export async function getAppShellSnapshot(

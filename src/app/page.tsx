@@ -81,6 +81,10 @@ function getNextAction(snapshot: WorkspaceHomeSnapshot) {
 }
 
 function getWorkflowSteps(snapshot: WorkspaceHomeSnapshot): HomeStep[] {
+  const hasImportedTransactions = snapshot.workflow.transactionCount > 0;
+  const ledgerAvailable = hasImportedTransactions || snapshot.workflow.hasManualEntries;
+  const reviewBlocking = hasImportedTransactions && snapshot.workflow.reviewQueueCount > 0;
+
   return [
     {
       title: "Setup",
@@ -123,16 +127,13 @@ function getWorkflowSteps(snapshot: WorkspaceHomeSnapshot): HomeStep[] {
     {
       title: "Ledger",
       href: "/expenses",
-      status:
-        snapshot.workflow.transactionCount > 0 || snapshot.workflow.hasManualEntries
-          ? "complete"
-          : snapshot.workflow.importCount > 0
-            ? "current"
-            : "up-next",
+      status: ledgerAvailable ? (reviewBlocking ? "up-next" : "complete") : "up-next",
       description:
-        snapshot.workflow.transactionCount > 0 || snapshot.workflow.hasManualEntries
-          ? "Imported and manual cashflow entries are available."
-          : "Use the ledger after imports or manual entries exist.",
+        !ledgerAvailable
+          ? "Use the ledger after imports or manual entries exist."
+          : reviewBlocking
+            ? `${snapshot.workflow.reviewQueueCount} imported transaction${snapshot.workflow.reviewQueueCount === 1 ? "" : "s"} still need review before the ledger feels trustworthy.`
+            : "Imported and manual cashflow entries are available.",
     },
     {
       title: "Recurring",
@@ -145,9 +146,12 @@ function getWorkflowSteps(snapshot: WorkspaceHomeSnapshot): HomeStep[] {
     {
       title: "Reports",
       href: "/reports",
-      status: snapshot.reporting.available ? "complete" : "up-next",
+      status:
+        snapshot.reporting.available && !reviewBlocking ? "complete" : "up-next",
       description: snapshot.reporting.available
-        ? "Adjusted-period reporting is ready to inspect."
+        ? reviewBlocking
+          ? "Reports already render, but they stay secondary until imported rows are reviewed."
+          : "Adjusted-period reporting is ready to inspect."
         : "Reports become useful once reviewed or manual items feed the summaries.",
     },
   ];
@@ -393,7 +397,10 @@ export default async function HomePage() {
                       <strong>{item.originalFilename}</strong>
                       <p>
                         {item.sourceName ?? "Unknown source"} · {item.transactionCount} normalized
-                        transaction{item.transactionCount === 1 ? "" : "s"}
+                        transaction{item.transactionCount === 1 ? "" : "s"} ·{" "}
+                        {item.reviewPendingCount > 0
+                          ? `${item.reviewPendingCount} still need review`
+                          : "ready for ledger and reports"}
                       </p>
                     </div>
                     <div className="activity-meta">
