@@ -22,6 +22,7 @@ export type WorkspaceHomeNotableState = {
   title: string;
   description: string;
   href: string;
+  actionLabel: string;
   tone: "neutral" | "warning";
 };
 
@@ -37,6 +38,7 @@ export type WorkspaceHomeSnapshot = {
   workflow: {
     importCount: number;
     transactionCount: number;
+    latestTransactionMonth: string | null;
     reviewQueueCount: number;
     manualEntryCount: number;
     recurringRuleCount: number;

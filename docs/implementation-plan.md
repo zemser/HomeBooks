@@ -50,20 +50,52 @@ Completed in code:
   - imported transactions
   - one-time manual entries
 - shared settlements v1 with:
-  - pairwise shared expense selection from classified expense events
+  - pairwise shared expense selection from classified expense events, including one-time manual shared expenses
   - equal, percentage, and fixed split rules
   - open, settled, and ignored tracking states
   - running open balance summary
+  - fixed-split reset when a tracked shared manual expense amount changes
 - workspace settings polish with:
   - safe base-currency editing before financial data exists
   - owner/member role management
   - member deactivation guardrails
   - settlement-readiness guidance in `/settings`
+- shared workflow shell and home hub with:
+  - DB-backed `/` home surface for setup, next actions, reporting teaser, and recent activity
+  - persistent desktop sidebar plus compact mobile navigation
+  - review-count badges and investments beta labeling in shared navigation
+  - workflow cross-links between settings, imports, review, expenses, recurring, reports, settlements, and investments
+  - `/dashboard` redirected into `/` so there is one clear product home
+- expense-workflow dogfooding pass with real `examples/` imports through `/`, plus the first high-value usability fixes:
+  - clearer saved-import history with reviewed vs pending counts and stronger next actions after save
+  - stronger review-queue progress cues, including reviewed totals, remaining totals, and per-import “what is left” breakdowns
+  - ledger filtering and search on `/expenses`, plus smoother deep links from review into ledger and month-specific reports
+  - easier reopening of saved one-time manual entries from the expenses surface
+  - explicit FX transparency across imports, review, ledger, reports, and home follow-up cues so placeholder-normalized foreign rows are visibly labeled instead of silently blended into the workspace currency
+  - clearer queue-cleared handoff into month-aware reports from review, ledger, and `/`
+- investment snapshot persistence sidecar with:
+  - dedicated `/investments` upload, preview, and save flow
+  - Excellence workbook detection by holdings header
+  - holdings snapshot parsing from current sample files
+  - confirmed owner/account save contract
+  - persisted `investment` imports with local file retention
+  - canonicalized `investment_accounts` resolution
+  - `holding_snapshots` persistence linked back to `imports`
+  - duplicate checksum protection plus same-account/same-date replacement
+  - investment-only import history shown inside `/investments`
+  - latest active holdings view on `/investments`, grouped by investment account and hydrated server-side
+  - manual account-label guidance when a workbook does not expose that metadata
+  - portfolio summary strip on top of saved holdings
+  - account overview cards with portfolio share, top holding, concentration hints, and cost-basis coverage
 
 Next up:
 
-- investment import sidecar
-- broader one-time manual shared-entry and settlement coverage
+- keep the expense workflow as the top priority with one more narrow polish pass for:
+  - any remaining manual-entry, ledger, or home/report affordance issues found during another real-file pass
+  - small workflow-copy or CTA refinements only if dogfooding still exposes confusion
+- keep investment composition follow-ups secondary until the expense workflow feels stable
+- activity import support once we have a real activity export sample
+- durable upload storage for a cleaner hosted deployment path once hosted deployment becomes a priority
 - auth planning and provider selection once early deployment direction is clearer
 
 ## Recommended repo structure
@@ -74,19 +106,21 @@ finApp/
   examples/
   src/
     app/
-      (marketing)/
       (auth)/
-      dashboard/
       imports/
       reports/
       settings/
+      expenses/
+      recurring/
+      settlements/
+      investments/
     components/
-      ui/
-      dashboard/
+      app-shell/
       imports/
       reports/
     features/
       auth/
+      home/
       workspaces/
       imports/
       expenses/
@@ -208,7 +242,7 @@ Build this first:
 3. review and classification
 4. recurring manual entries
 5. period reporting
-6. yearly average dashboard
+6. guided home shell and workflow navigation
 
 Do not build first:
 
@@ -219,13 +253,25 @@ Do not build first:
 
 ## MVP screens
 
-## 1. Workspace setup
+## 1. Home hub
+
+Path:
+
+- `/`
+
+Needs:
+
+- setup status
+- next recommended action
+- review queue attention state
+- reporting teaser
+- recent imports and notable system state
+
+## 2. Workspace setup
 
 Path ideas:
 
-- `/`
-- `/onboarding`
-- `/settings/workspace`
+- `/settings`
 
 Needs:
 
@@ -233,7 +279,7 @@ Needs:
 - add members
 - choose base currency
 
-## 2. Imports list
+## 3. Imports list
 
 Path:
 
@@ -246,7 +292,7 @@ Needs:
 - processing errors
 - re-run action
 
-## 3. Import wizard
+## 4. Import wizard
 
 Path:
 
@@ -260,7 +306,7 @@ Needs:
 - confirm column mapping if needed
 - confirm account owner and account label
 
-## 4. Review queue
+## 5. Review queue
 
 Path:
 
@@ -274,7 +320,7 @@ Needs:
 - assign member ownership
 - mark as shared or household
 
-## 5. Transactions page
+## 6. Transactions page
 
 Path:
 
@@ -287,7 +333,7 @@ Needs:
 - view original currency and normalized amount
 - edit classification
 
-## 6. Recurring entries page
+## 7. Recurring entries page
 
 Path:
 
@@ -301,7 +347,7 @@ Needs:
 - edit amount from a future month only
 - view rule history
 
-## 7. Reports page
+## 8. Reports page
 
 Path:
 
@@ -469,7 +515,7 @@ Success criteria:
 
 Status:
 
-- completed for payment-date and broader adjusted-period reporting plus dashboard views
+- completed for payment-date and broader adjusted-period reporting, with reporting data now teased from the shared home surface
 
 Deliverables:
 
@@ -477,7 +523,7 @@ Deliverables:
 - adjusted-period summaries backed by `expense_events` and `expense_allocations`
 - reports UI
 - yearly and trailing-period summaries
-- dashboard cards backed by real data
+- reporting cards backed by real data
 - review-driven transaction allocation editing
 - manual split month allocations for imported transactions
 - inline allocation editing from `/expenses` for imported and one-time manual rows
@@ -513,7 +559,35 @@ Success criteria:
 Remaining:
 
 - shared settlement is intentionally pairwise only in v1
-- one-time manual shared entries and reimbursement-ledger history are still future work
+- reimbursement-ledger history is still future work
+
+## Milestone 8: Workflow shell and home UX
+
+Status:
+
+- completed for the first connected app-shell pass
+
+Deliverables:
+
+- shared app shell with desktop and mobile navigation
+- DB-backed home hub on `/`
+- review and settings attention states in navigation
+- page-level cross-links that make the expense workflow read as one connected journey
+- `/dashboard` redirected into `/`
+
+Success criteria:
+
+- user can land on `/` and understand what to do next
+- user can reach the main workflow routes without guessing URLs
+- review attention is visible from both home and shared navigation
+- investments remain accessible without interrupting the expense-first story
+
+Immediate handoff target:
+
+- settlement coverage for one-time manual shared expenses is now completed
+- investment preview and persistence for Excellence are now completed as an isolated sidecar
+- the next investment product slice is reading saved holdings back into `/investments`
+- durable upload storage is the main deployment-hardening follow-up before import-heavy hosted usage
 
 ## MVP acceptance checklist
 
@@ -528,8 +602,8 @@ The MVP is useful if a household can:
 Still needed for the fuller vision:
 
 - handle foreign-currency expenses in reporting beyond placeholder rates
-- settle shared expenses on top of classified data
-- support one-time manual shared entries and settlement coverage
+- expand shared settlements beyond pairwise v1 and add reimbursement-ledger history
+- persist investment imports into holdings/activity tables and build holdings/activity views
 
 ## Recommended implementation sequence inside the codebase
 
@@ -559,8 +633,13 @@ What actually happened in code so far:
 9. pairwise shared settlements v1 plus initial member-management settings
 10. DB-backed validation checkpoint completed against local PostgreSQL, including first-run bootstrap hardening and dynamic API freshness fixes
 11. workspace settings polish with guarded base-currency editing, role management, and stronger member-state guardrails
+12. one-time manual shared-expense settlement coverage inside the existing pairwise flow
+13. Excellence investment preview sidecar with dedicated API and `/investments` UI
+14. Excellence investment persistence with confirmed owner/account resolution, import history, and `holding_snapshots` writes
+15. investment portfolio summaries and account overview reporting on top of the latest active holdings snapshots
+16. shared app shell and hybrid home hub on `/`, including workflow navigation and route reframing across the existing expense product surfaces
 
-The DB-backed validation checkpoint and settings polish slices are now completed, so the next architectural work can move back to shared-expense depth, investments, and later auth planning.
+The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, and the first connected workflow shell are now completed, so the next product work should focus on real dogfooding and usability follow-ups across imports, review, expenses, and reports before expanding farther into sidecar domains.
 
 ## Completed validation checkpoint
 
@@ -576,10 +655,11 @@ Verified:
 6. one-time manual entry CRUD and allocation editing from `/expenses` work end-to-end
 7. mutable GET routes now return fresh database state after edits instead of stale cached responses
 8. `npm run lint` and `npm run build` both pass after the DB-backed fixes
+9. `/` now renders a DB-backed home hub and the shared shell routes users through the main product surfaces
 
 Still optional:
 
-- smoke-test `/imports` with a real bank file when one is available
+- smoke-test the full workflow from `/` through imports, review, expenses, recurring, and reports with a real bank file
 
 ## Early deployment note
 
@@ -607,7 +687,7 @@ Important caveat:
 
 - the current import flow writes uploaded files to local disk, so a production Vercel deployment should either avoid import-heavy usage initially or replace local file persistence with durable object storage first
 
-With that checkpoint green and settings tightened, the next architectural step is broader manual/shared-expense coverage on top of the now-stable classified, allocated, settlement-aware, and settings-backed expense model.
+With that checkpoint green and the home shell now connecting the product surfaces into one flow, the next local-first product expansion should be a real dogfooding pass across the expense workflow, while durable upload storage remains the main hosted-deployment hardening follow-up for later.
 
 ## What to postpone on purpose
 
@@ -625,9 +705,35 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. expand one-time manual shared-entry and settlement coverage
-2. continue investment import foundation as an isolated sidecar
-3. scope the later auth slice once early deployment direction and provider choices are clearer
-4. replace local import-file persistence before any import-heavy Vercel deployment
+1. run another real-file dogfooding pass now that FX transparency and queue-cleared report handoffs are in place
+2. fix only the remaining highest-signal expense workflow friction that still shows up there
+3. move to lightweight investment composition follow-ups once the expense path feels steady
+4. defer durable upload storage until hosted deployment becomes a near-term priority
+5. scope the later auth slice once early deployment direction and provider choices are clearer
 
-That keeps the product moving from fuller non-imported input coverage into broader household finance completeness.
+That keeps the product moving on the main household workflow first while still preserving a clear hosted-deployment hardening path for later.
+
+## Next handoff slice
+
+The FX transparency pass and the queue-cleared report handoff are now completed, so the next implementation slice should stay expense-first and use another real-file pass to confirm whether any manual-entry, ledger, or home/report follow-up polish is still needed before shifting attention to investment composition.
+
+Goal:
+
+- make the connected workflow feel genuinely usable with real household data, not only navigable in theory
+
+Recommended scope:
+
+1. run the workflow from `/` through imports, review, expenses, recurring, and reports using real files from `examples/`
+2. confirm that FX labels, queue-cleared guidance, and report drill-ins are obvious with real imported data
+3. add only the remaining practical expense UX improvements that still show up after that pass
+4. preserve checksum behavior, duplicate handling, and current reporting/settlement contracts
+5. keep investment activity persistence and broader investment analytics out of scope
+6. leave durable storage, hosted DB decisions, and auth out of scope for this slice
+
+Definition of done:
+
+- the workflow can be exercised end-to-end from `/` without guessing where to go next
+- FX transparency and queue-cleared report handoffs remain obvious during real-file use
+- at least one more real-file dogfooding pass confirms or narrows the next remaining expense-path fixes
+- current import preview, save, duplicate-detection, and history flows keep working
+- existing expense import, reporting, and settlement behavior does not regress

@@ -9,7 +9,9 @@ import {
   emptyAllocationForm,
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
+import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import {
+  buildTransactionReportTargets,
   formatAllocationSummary,
   formatClassificationSummary,
   formatDecisionSourceLabel,
@@ -300,6 +302,13 @@ export function ExpensesPageClient({
     reviewStatusFilter !== "all" ||
     monthFilter !== "all" ||
     importFilter !== "all";
+  const selectedTransactionCurrencyState = selectedTransaction
+    ? getCurrencyNormalizationDisplayState(selectedTransaction)
+    : null;
+  const selectedTransactionReportTargets = selectedTransaction
+    ? buildTransactionReportTargets(selectedTransaction)
+    : [];
+  const selectedTransactionPrimaryReportTarget = selectedTransactionReportTargets[0] ?? null;
   const preferredReportMonth =
     (selectedTransaction ? transactionMonth(selectedTransaction.transactionDate) : null) ??
     (monthFilter !== "all" ? monthFilter : null) ??
@@ -307,10 +316,14 @@ export function ExpensesPageClient({
       ? transactionMonth(visibleTransactions[0].transactionDate)
       : null) ??
     (transactions[0] ? transactionMonth(transactions[0].transactionDate) : null);
-  const reportHref = preferredReportMonth ? `/reports?month=${preferredReportMonth}` : "/reports";
-  const reportLabel = preferredReportMonth
-    ? `Open ${formatLedgerMonthLabel(preferredReportMonth)} report`
-    : "Open reports";
+  const reportHref =
+    selectedTransactionPrimaryReportTarget?.href ??
+    (preferredReportMonth ? `/reports?month=${preferredReportMonth}` : "/reports");
+  const reportLabel =
+    selectedTransactionPrimaryReportTarget?.label ??
+    (preferredReportMonth
+      ? `Open ${formatLedgerMonthLabel(preferredReportMonth)} report`
+      : "Open reports");
 
   useEffect(() => {
     setManualEntryForm(
@@ -540,6 +553,20 @@ export function ExpensesPageClient({
           Use the filters below to focus on the rows you&apos;ve already checked, or jump back to
           the queue when you want to keep clearing it.
         </p>
+      ) : transactions.length > 0 ? (
+        <div className="home-focus-card">
+          <span className="badge badge-neutral">Queue clear</span>
+          <h3>Imported transactions no longer need review.</h3>
+          <p>
+            The ledger is now the place to spot-check allocations and jump into the matching
+            report month without the queue getting in the way.
+          </p>
+          <div className="action-row">
+            <Link className="button" href={reportHref}>
+              {reportLabel}
+            </Link>
+          </div>
+        </div>
       ) : null}
       {error ? <p className="status error">{error}</p> : null}
       {message ? <p className="status">{message}</p> : null}
@@ -1000,88 +1027,108 @@ export function ExpensesPageClient({
                 </tr>
               </thead>
               <tbody>
-                {visibleTransactions.map((transaction) => (
-                  <tr
-                    className={
-                      selectedTransactionId === transaction.id ? "table-row-active" : undefined
-                    }
-                    key={transaction.id}
-                  >
-                    <td>{transaction.transactionDate}</td>
-                    <td>
-                      <strong>{getTransactionMerchant(transaction)}</strong>
-                      <div className="table-note">{transaction.description}</div>
-                    </td>
-                    <td>
-                      {formatMoneyDisplay(
-                        transaction.originalAmount,
-                        transaction.originalCurrency,
-                        transaction.direction,
-                      )}
-                    </td>
-                    <td>
-                      {formatMoneyDisplay(
-                        transaction.settlementAmount,
-                        transaction.settlementCurrency,
-                        transaction.direction,
-                      )}
-                    </td>
-                    <td>
-                      {formatMoneyDisplay(
-                        transaction.normalizedAmount,
-                        transaction.workspaceCurrency,
-                        transaction.direction,
-                      )}
-                    </td>
-                    <td>{transaction.accountDisplayName}</td>
-                    <td>
-                      <strong>{transaction.importSourceName ?? "Unknown source"}</strong>
-                      <div className="table-note">{transaction.importOriginalFilename}</div>
-                    </td>
-                    <td>
-                      <span
-                        className={`badge ${
-                          transaction.classification ? "badge-neutral" : "badge-warning"
-                        }`}
-                      >
-                        {formatClassificationSummary(transaction.classification)}
-                      </span>
-                      {transaction.classification ? (
-                        <div className="table-note">
-                          {formatDecisionSourceLabel(transaction.classification.decidedBy)}
+                {visibleTransactions.map((transaction) => {
+                  const transactionCurrencyState =
+                    getCurrencyNormalizationDisplayState(transaction);
+
+                  return (
+                    <tr
+                      className={
+                        selectedTransactionId === transaction.id ? "table-row-active" : undefined
+                      }
+                      key={transaction.id}
+                    >
+                      <td>{transaction.transactionDate}</td>
+                      <td>
+                        <strong>{getTransactionMerchant(transaction)}</strong>
+                        <div className="table-note">{transaction.description}</div>
+                      </td>
+                      <td>
+                        {formatMoneyDisplay(
+                          transaction.originalAmount,
+                          transaction.originalCurrency,
+                          transaction.direction,
+                        )}
+                      </td>
+                      <td>
+                        {formatMoneyDisplay(
+                          transaction.settlementAmount,
+                          transaction.settlementCurrency,
+                          transaction.direction,
+                        )}
+                      </td>
+                      <td>
+                        <div className="stack compact">
+                          <span>
+                            {formatMoneyDisplay(
+                              transaction.normalizedAmount,
+                              transaction.workspaceCurrency,
+                              transaction.direction,
+                            )}
+                          </span>
+                          {transactionCurrencyState.label ? (
+                            <span
+                              className={`badge ${
+                                transactionCurrencyState.tone === "warning"
+                                  ? "badge-warning"
+                                  : "badge-neutral"
+                              }`}
+                            >
+                              {transactionCurrencyState.label}
+                            </span>
+                          ) : null}
                         </div>
-                      ) : null}
-                    </td>
-                    <td>
-                      <span
-                        className={`badge ${
-                          transaction.allocation?.reportingMode === "allocated_period"
-                            ? "badge-warning"
-                            : "badge-neutral"
-                        }`}
-                      >
-                        {formatAllocationSummary(transaction.allocation)}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="action-row">
-                        <button
-                          className="link-button"
-                          type="button"
-                          onClick={() => setSelectedTransactionId(transaction.id)}
+                      </td>
+                      <td>{transaction.accountDisplayName}</td>
+                      <td>
+                        <strong>{transaction.importSourceName ?? "Unknown source"}</strong>
+                        <div className="table-note">{transaction.importOriginalFilename}</div>
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${
+                            transaction.classification ? "badge-neutral" : "badge-warning"
+                          }`}
                         >
-                          {selectedTransactionId === transaction.id ? "Selected" : "Allocation"}
-                        </button>
-                        <Link
-                          className="link-button"
-                          href={`/imports/review?transactionId=${transaction.id}`}
+                          {formatClassificationSummary(transaction.classification)}
+                        </span>
+                        {transaction.classification ? (
+                          <div className="table-note">
+                            {formatDecisionSourceLabel(transaction.classification.decidedBy)}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td>
+                        <span
+                          className={`badge ${
+                            transaction.allocation?.reportingMode === "allocated_period"
+                              ? "badge-warning"
+                              : "badge-neutral"
+                          }`}
                         >
-                          Review
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                          {formatAllocationSummary(transaction.allocation)}
+                        </span>
+                      </td>
+                      <td>
+                        <div className="action-row">
+                          <button
+                            className="link-button"
+                            type="button"
+                            onClick={() => setSelectedTransactionId(transaction.id)}
+                          >
+                            {selectedTransactionId === transaction.id ? "Selected" : "Allocation"}
+                          </button>
+                          <Link
+                            className="link-button"
+                            href={`/imports/review?transactionId=${transaction.id}`}
+                          >
+                            Review
+                          </Link>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1099,7 +1146,46 @@ export function ExpensesPageClient({
             <p className="helper-text">
               Pick a visible transaction row to edit its allocation here.
             </p>
-          ) : !transactionAllocationEditable ? (
+          ) : (
+            <div className="stack compact">
+              {selectedTransactionCurrencyState?.label ? (
+                <div className="stack compact">
+                  <span
+                    className={`badge ${
+                      selectedTransactionCurrencyState.tone === "warning"
+                        ? "badge-warning"
+                        : "badge-neutral"
+                    }`}
+                  >
+                    {selectedTransactionCurrencyState.label}
+                  </span>
+                  {selectedTransactionCurrencyState.fullDescription ? (
+                    <p className="helper-text">
+                      {selectedTransactionCurrencyState.fullDescription}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {selectedTransactionReportTargets.length > 0 ? (
+                <div className="stack compact">
+                  <p className="helper-text">
+                    {selectedTransactionReportTargets.length === 1
+                      ? "This row is already lined up with its matching report."
+                      : "This adjusted row lands in multiple report months."}
+                  </p>
+                  <div className="action-row">
+                    {selectedTransactionReportTargets.map((target) => (
+                      <Link className="link-button" href={target.href} key={target.href}>
+                        {target.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+
+          {!selectedTransaction ? null : !transactionAllocationEditable ? (
             <p className="helper-text">
               Save a reportable classification in the review queue before editing this
               transaction&apos;s allocation.

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { syncExpenseEventsForRange } from "@/features/reporting/expense-events";
 import {
   getMonthlyReport,
@@ -40,6 +41,10 @@ function getModeDescription(reportingMode: ReportingViewMode) {
   }
 
   return "Payment-date reporting reads imported transaction dates and manual-entry event dates directly.";
+}
+
+function formatFxAmount(amount: number | null, currency: string | null) {
+  return amount === null || currency === null ? null : formatReportMoney(amount, currency);
 }
 
 function PeriodSummarySection({
@@ -152,6 +157,27 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
       mode: reportingMode,
     }),
   ]);
+  const fxLineItemCount = report.lineItems.filter((item) => {
+    if (!item.fxDetails) {
+      return false;
+    }
+
+    return getCurrencyNormalizationDisplayState({
+      ...item.fxDetails,
+      workspaceCurrency: item.workspaceCurrency,
+    }).label;
+  }).length;
+  const placeholderFxLineItemCount = report.lineItems.filter((item) => {
+    if (!item.fxDetails) {
+      return false;
+    }
+
+    return getCurrencyNormalizationDisplayState({
+      ...item.fxDetails,
+      workspaceCurrency: item.workspaceCurrency,
+    }).usesPlaceholderRate;
+  }).length;
+  const showFxColumn = fxLineItemCount > 0;
 
   return (
     <main>
@@ -246,6 +272,19 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             </div>
           </div>
         </section>
+
+        {showFxColumn ? (
+          <section className="card">
+            <div>
+              <h2>FX transparency</h2>
+              <p className="muted-text">
+                {placeholderFxLineItemCount > 0
+                  ? `${placeholderFxLineItemCount} imported line item${placeholderFxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} still use Placeholder FX. Full multicurrency reporting is not finished yet, so those amounts remain normalized into ${report.summary.workspaceCurrency}.`
+                  : `${fxLineItemCount} imported line item${fxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} came from foreign-currency activity. They are still shown in ${report.summary.workspaceCurrency} while full multicurrency reporting is unfinished.`}
+              </p>
+            </div>
+          </section>
+        ) : null}
 
         <PeriodSummarySection
           title="Year to date"
@@ -349,26 +388,80 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
                     <th>Category</th>
                     <th>Member</th>
                     <th>Amount</th>
+                    {showFxColumn ? <th>FX</th> : null}
                   </tr>
                 </thead>
                 <tbody>
-                  {report.lineItems.map((item) => (
-                    <tr key={item.id}>
-                      <td>{item.eventDate}</td>
-                      <td>{item.title}</td>
-                      <td>
-                        <span
-                          className={`badge ${item.sourceKind === "recurring_generated" ? "badge-warning" : "badge-neutral"}`}
-                        >
-                          {formatSourceKind(item.sourceKind)}
-                        </span>
-                      </td>
-                      <td>{formatClassificationTypeLabel(item.classificationType)}</td>
-                      <td>{item.category ?? "Uncategorized"}</td>
-                      <td>{item.memberName ?? "-"}</td>
-                      <td>{formatReportMoney(item.normalizedAmount, item.workspaceCurrency)}</td>
-                    </tr>
-                  ))}
+                  {report.lineItems.map((item) => {
+                    const fxState = item.fxDetails
+                      ? getCurrencyNormalizationDisplayState({
+                          ...item.fxDetails,
+                          workspaceCurrency: item.workspaceCurrency,
+                        })
+                      : null;
+                    const originalFxAmount = item.fxDetails
+                      ? formatFxAmount(
+                          item.fxDetails.originalAmount,
+                          item.fxDetails.originalCurrency,
+                        )
+                      : null;
+                    const settlementFxAmount = item.fxDetails
+                      ? formatFxAmount(
+                          item.fxDetails.settlementAmount,
+                          item.fxDetails.settlementCurrency,
+                        )
+                      : null;
+                    const showSettlementAmount =
+                      settlementFxAmount !== null && settlementFxAmount !== originalFxAmount;
+
+                    return (
+                      <tr key={item.id}>
+                        <td>{item.eventDate}</td>
+                        <td>{item.title}</td>
+                        <td>
+                          <span
+                            className={`badge ${item.sourceKind === "recurring_generated" ? "badge-warning" : "badge-neutral"}`}
+                          >
+                            {formatSourceKind(item.sourceKind)}
+                          </span>
+                        </td>
+                        <td>{formatClassificationTypeLabel(item.classificationType)}</td>
+                        <td>{item.category ?? "Uncategorized"}</td>
+                        <td>{item.memberName ?? "-"}</td>
+                        <td>{formatReportMoney(item.normalizedAmount, item.workspaceCurrency)}</td>
+                        {showFxColumn ? (
+                          <td>
+                            {fxState?.label ? (
+                              <div className="stack compact">
+                                <span
+                                  className={`badge ${
+                                    fxState.tone === "warning"
+                                      ? "badge-warning"
+                                      : "badge-neutral"
+                                  }`}
+                                >
+                                  {fxState.label}
+                                </span>
+                                {originalFxAmount ? (
+                                  <div className="table-note">Original {originalFxAmount}</div>
+                                ) : null}
+                                {showSettlementAmount ? (
+                                  <div className="table-note">
+                                    Settlement {settlementFxAmount}
+                                  </div>
+                                ) : null}
+                                {!originalFxAmount && !showSettlementAmount && fxState.shortDescription ? (
+                                  <div className="table-note">{fxState.shortDescription}</div>
+                                ) : null}
+                              </div>
+                            ) : (
+                              "-"
+                            )}
+                          </td>
+                        ) : null}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

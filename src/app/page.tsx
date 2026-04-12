@@ -17,6 +17,24 @@ type HomeStep = {
   description: string;
 };
 
+function buildPaymentDateReportTarget(month: string) {
+  const normalizedMonth = month.slice(0, 7);
+
+  return {
+    href: `/reports?month=${normalizedMonth}&mode=payment_date`,
+    label: `Open ${formatReportMonthLabel(`${normalizedMonth}-01`)} payment-date report`,
+  };
+}
+
+function buildAdjustedReportTarget(month: string) {
+  const normalizedMonth = month.slice(0, 7);
+
+  return {
+    href: `/reports?month=${normalizedMonth}&mode=allocated_period`,
+    label: `Open ${formatReportMonthLabel(`${normalizedMonth}-01`)} adjusted report`,
+  };
+}
+
 function getNextAction(snapshot: WorkspaceHomeSnapshot) {
   if (!snapshot.setup.pairwiseSettlementReady) {
     return {
@@ -45,6 +63,17 @@ function getNextAction(snapshot: WorkspaceHomeSnapshot) {
     };
   }
 
+  if (snapshot.reporting.available && snapshot.workflow.latestTransactionMonth) {
+    const reportTarget = buildPaymentDateReportTarget(snapshot.workflow.latestTransactionMonth);
+
+    return {
+      href: reportTarget.href,
+      label: reportTarget.label,
+      description:
+        "The queue is clear, so validate the reviewed month in reports. If something looks off, jump back to the ledger from there.",
+    };
+  }
+
   if (snapshot.workflow.transactionCount > 0 && !snapshot.workflow.hasManualEntries) {
     return {
       href: "/expenses",
@@ -64,9 +93,11 @@ function getNextAction(snapshot: WorkspaceHomeSnapshot) {
   }
 
   if (snapshot.reporting.available) {
+    const reportTarget = buildAdjustedReportTarget(snapshot.reporting.selectedMonth);
+
     return {
-      href: "/reports",
-      label: "Open reports",
+      href: reportTarget.href,
+      label: reportTarget.label,
       description:
         "Check the adjusted-period month view and rolling trend now that the workflow has enough data to be useful.",
     };
@@ -84,6 +115,9 @@ function getWorkflowSteps(snapshot: WorkspaceHomeSnapshot): HomeStep[] {
   const hasImportedTransactions = snapshot.workflow.transactionCount > 0;
   const ledgerAvailable = hasImportedTransactions || snapshot.workflow.hasManualEntries;
   const reviewBlocking = hasImportedTransactions && snapshot.workflow.reviewQueueCount > 0;
+  const latestTransactionMonthLabel = snapshot.workflow.latestTransactionMonth
+    ? formatReportMonthLabel(`${snapshot.workflow.latestTransactionMonth}-01`)
+    : null;
 
   return [
     {
@@ -151,7 +185,9 @@ function getWorkflowSteps(snapshot: WorkspaceHomeSnapshot): HomeStep[] {
       description: snapshot.reporting.available
         ? reviewBlocking
           ? "Reports already render, but they stay secondary until imported rows are reviewed."
-          : "Adjusted-period reporting is ready to inspect."
+          : latestTransactionMonthLabel
+            ? `${latestTransactionMonthLabel} is ready to inspect in reports.`
+            : "Adjusted-period reporting is ready to inspect."
         : "Reports become useful once reviewed or manual items feed the summaries.",
     },
   ];
@@ -169,6 +205,9 @@ export default async function HomePage() {
   const snapshot = await getWorkspaceHomeSnapshot(context);
   const nextAction = getNextAction(snapshot);
   const steps = getWorkflowSteps(snapshot);
+  const reportingTarget = snapshot.reporting.available
+    ? buildAdjustedReportTarget(snapshot.reporting.selectedMonth)
+    : null;
   const summaryValue =
     snapshot.reporting.available && snapshot.reporting.monthSummary
       ? formatReportMoney(
@@ -193,9 +232,9 @@ export default async function HomePage() {
             </Link>
             <Link
               className="button button-secondary"
-              href={snapshot.reporting.available ? "/reports" : "/settings"}
+              href={reportingTarget?.href ?? "/settings"}
             >
-              {snapshot.reporting.available ? "Open reports" : "Open settings"}
+              {reportingTarget?.label ?? "Open settings"}
             </Link>
           </div>
         </section>
@@ -320,8 +359,8 @@ export default async function HomePage() {
                   natural next place to validate behavior and architecture.
                 </p>
               </div>
-              <Link className="link-button" href="/reports">
-                Open reports
+              <Link className="link-button" href={reportingTarget?.href ?? "/reports"}>
+                {reportingTarget?.label ?? "Open reports"}
               </Link>
             </div>
 
@@ -438,7 +477,7 @@ export default async function HomePage() {
                 </div>
                 <p>{item.description}</p>
                 <Link className="link-button" href={item.href}>
-                  Open related page
+                  {item.actionLabel}
                 </Link>
               </article>
             ))}

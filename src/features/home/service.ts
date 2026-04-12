@@ -15,6 +15,7 @@ import {
   normalizeMonthInput,
 } from "@/features/reporting/monthly-report";
 import { buildRollingTwelveWindow } from "@/features/reporting/periods";
+import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import type {
   AppShellSnapshot,
   WorkspaceHomeImportActivity,
@@ -71,6 +72,10 @@ async function listLatestBankImports(
   return recentImports.slice(0, limit);
 }
 
+function buildPaymentDateReportHref(month: string) {
+  return `/reports?month=${month}&mode=payment_date`;
+}
+
 export async function getAppShellSnapshot(
   context: CurrentWorkspaceContext,
 ): Promise<AppShellSnapshot> {
@@ -97,7 +102,18 @@ export async function getWorkspaceHomeSnapshot(
 ): Promise<WorkspaceHomeSnapshot> {
   const db = getDb();
   const selectedMonth = normalizeMonthInput();
-  const [workspaceName, settings, members, importCount, transactionCount, reviewQueueCount, manualEntryCount, recurringRuleCount, latestImports] =
+  const [
+    workspaceName,
+    settings,
+    members,
+    importCount,
+    transactionCount,
+    latestTransactionRow,
+    reviewQueueCount,
+    manualEntryCount,
+    recurringRuleCount,
+    latestImports,
+  ] =
     await Promise.all([
       getWorkspaceName(context),
       getWorkspaceSettingsSnapshot(context),
@@ -110,6 +126,13 @@ export async function getWorkspaceHomeSnapshot(
         ),
       ),
       db.$count(transactions, eq(transactions.workspaceId, context.workspaceId)),
+      db
+        .select({
+          latestTransactionDate: sql<string | null>`max(${transactions.transactionDate})::text`,
+        })
+        .from(transactions)
+        .where(eq(transactions.workspaceId, context.workspaceId))
+        .then((rows) => rows[0] ?? null),
       getReviewQueueCount(context),
       db.$count(manualEntries, eq(manualEntries.workspaceId, context.workspaceId)),
       db.$count(
@@ -122,6 +145,8 @@ export async function getWorkspaceHomeSnapshot(
   const activeOwners = activeMembers.filter((member) => member.role === "owner");
   const pairwiseSettlementReady = activeMembers.length === 2;
   const hasPotentialReportingInputs = transactionCount > 0 || manualEntryCount > 0;
+  const latestTransactionMonth =
+    latestTransactionRow?.latestTransactionDate?.slice(0, 7) ?? null;
 
   let monthSummary: WorkspaceHomeSnapshot["reporting"]["monthSummary"] = null;
   let rollingTwelveSummary: WorkspaceHomeSnapshot["reporting"]["rollingTwelveSummary"] = null;
@@ -158,13 +183,23 @@ export async function getWorkspaceHomeSnapshot(
       title: "Review queue",
       description: `${reviewQueueCount} transaction${reviewQueueCount === 1 ? "" : "s"} still need a human decision before the reports tell the right story.`,
       href: "/imports/review",
+      actionLabel: "Open review queue",
       tone: "warning",
     });
   } else if (importCount > 0) {
+    const latestReviewedMonthLabel = latestTransactionMonth
+      ? formatReportMonthLabel(`${latestTransactionMonth}-01`)
+      : null;
+
     notableStates.push({
       title: "Review queue",
-      description: "Imported transactions are no longer waiting in the queue, so you can move on to the ledger and reports.",
-      href: "/expenses",
+      description: latestReviewedMonthLabel
+        ? `Imported transactions are no longer waiting in the queue, so the next useful check is the ${latestReviewedMonthLabel} payment-date report.`
+        : "Imported transactions are no longer waiting in the queue, so you can move on to the ledger and reports.",
+      href: latestTransactionMonth ? buildPaymentDateReportHref(latestTransactionMonth) : "/expenses",
+      actionLabel: latestTransactionMonth
+        ? `Open ${latestReviewedMonthLabel} payment-date report`
+        : "Open ledger",
       tone: "neutral",
     });
   }
@@ -175,6 +210,7 @@ export async function getWorkspaceHomeSnapshot(
       ? "Exactly two active household members are in place, so shared settlements are ready when you need them."
       : "Shared settlements stay blocked until exactly two active household members are configured.",
     href: pairwiseSettlementReady ? "/settlements" : "/settings",
+    actionLabel: pairwiseSettlementReady ? "Open settlements" : "Open settings",
     tone: pairwiseSettlementReady ? "neutral" : "warning",
   });
 
@@ -184,6 +220,7 @@ export async function getWorkspaceHomeSnapshot(
       ? `Base currency is still editable, so you can change ${settings.baseCurrency} before the workspace locks onto real financial data.`
       : `Base currency is locked to ${settings.baseCurrency} because financial records already exist in the workspace.`,
     href: "/settings",
+    actionLabel: "Open settings",
     tone: settings.canUpdateBaseCurrency ? "neutral" : "warning",
   });
 
@@ -199,6 +236,7 @@ export async function getWorkspaceHomeSnapshot(
     workflow: {
       importCount,
       transactionCount,
+      latestTransactionMonth,
       reviewQueueCount,
       manualEntryCount,
       recurringRuleCount,

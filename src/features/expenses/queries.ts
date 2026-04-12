@@ -32,6 +32,7 @@ type RawTransactionRow = {
   settlementCurrency: string | null;
   normalizedAmount: string;
   workspaceCurrency: string;
+  normalizationRateSource: string | null;
   direction: string;
   accountDisplayName: string;
   importSourceName: string | null;
@@ -103,6 +104,7 @@ async function mapTransactionRows(
     settlementCurrency: row.settlementCurrency,
     normalizedAmount: row.normalizedAmount,
     workspaceCurrency: row.workspaceCurrency,
+    normalizationRateSource: row.normalizationRateSource,
     direction: row.direction,
     accountDisplayName: row.accountDisplayName,
     importSourceName: row.importSourceName,
@@ -153,6 +155,7 @@ async function listTransactionsByWorkspace(input: {
       settlementCurrency: transactions.settlementCurrency,
       normalizedAmount: transactions.normalizedAmount,
       workspaceCurrency: transactions.workspaceCurrency,
+      normalizationRateSource: transactions.normalizationRateSource,
       direction: transactions.direction,
       accountDisplayName: financialAccounts.displayName,
       importSourceName: importSources.name,
@@ -242,7 +245,12 @@ async function getReviewQueueSummary(
   context: CurrentWorkspaceContext,
 ): Promise<ReviewQueueSummary> {
   const db = getDb();
-  const [totalTransactionCount, totalByImportRows, remainingByImportRows] = await Promise.all([
+  const [
+    totalTransactionCount,
+    totalByImportRows,
+    remainingByImportRows,
+    latestTransactionRow,
+  ] = await Promise.all([
     db.$count(transactions, eq(transactions.workspaceId, context.workspaceId)),
     db
       .select({
@@ -281,6 +289,13 @@ async function getReviewQueueSummary(
         desc(sql`count(*)`),
         desc(imports.createdAt),
       ),
+    db
+      .select({
+        latestTransactionDate: sql<string | null>`max(${transactions.transactionDate})::text`,
+      })
+      .from(transactions)
+      .where(eq(transactions.workspaceId, context.workspaceId))
+      .then((rows) => rows[0] ?? null),
   ]);
 
   const totalCountByImportId = new Map(
@@ -312,6 +327,7 @@ async function getReviewQueueSummary(
     reviewedCount,
     queueCount,
     completionPercentage,
+    latestTransactionMonth: latestTransactionRow?.latestTransactionDate?.slice(0, 7) ?? null,
     remainingByImport,
   };
 }

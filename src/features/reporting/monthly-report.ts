@@ -59,6 +59,7 @@ export type MonthlyMemberBreakdownItem = {
 export type MonthlyReportLineItem = {
   id: string;
   sourceKind: "imported_transaction" | "one_time_manual" | "recurring_generated";
+  sourceRecordId: string | null;
   title: string;
   eventDate: string;
   direction: ReportDirection;
@@ -67,6 +68,13 @@ export type MonthlyReportLineItem = {
   classificationType: ClassificationType;
   category: string | null;
   memberName: string | null;
+  fxDetails: {
+    originalAmount: number;
+    originalCurrency: string | null;
+    settlementAmount: number | null;
+    settlementCurrency: string | null;
+    normalizationRateSource: string | null;
+  } | null;
 };
 
 export type MonthlyReportData = {
@@ -125,6 +133,7 @@ export type DashboardSnapshot = {
 type ReportRecord = {
   id: string;
   sourceKind: MonthlyReportLineItem["sourceKind"];
+  sourceRecordId: string | null;
   title: string;
   eventDate: string;
   direction: ReportDirection;
@@ -132,6 +141,7 @@ type ReportRecord = {
   classificationType: ClassificationType;
   category: string | null;
   memberId: string | null;
+  fxDetails: MonthlyReportLineItem["fxDetails"];
 };
 
 export function normalizeMonthInput(value?: string) {
@@ -166,7 +176,7 @@ function buildMonthWindow(selectedMonth: string) {
   };
 }
 
-function toNumber(amount: string) {
+function toNumber(amount: string | number | null | undefined) {
   const parsed = Number(amount);
   return Number.isFinite(parsed) ? parsed : 0;
 }
@@ -361,7 +371,12 @@ async function listPaymentDateReportRecordsForRange(
         merchantRaw: transactions.merchantRaw,
         description: transactions.description,
         transactionDate: transactions.transactionDate,
+        originalAmount: transactions.originalAmount,
+        originalCurrency: transactions.originalCurrency,
+        settlementAmount: transactions.settlementAmount,
+        settlementCurrency: transactions.settlementCurrency,
         normalizedAmount: transactions.normalizedAmount,
+        normalizationRateSource: transactions.normalizationRateSource,
         classificationType: transactionClassifications.classificationType,
         category: transactionClassifications.category,
         memberOwnerId: transactionClassifications.memberOwnerId,
@@ -407,6 +422,7 @@ async function listPaymentDateReportRecordsForRange(
   const importedRecords: ReportRecord[] = importedTransactions.map((transaction) => ({
     id: transaction.id,
     sourceKind: "imported_transaction",
+    sourceRecordId: transaction.id,
     title: transaction.merchantRaw?.trim() || transaction.description,
     eventDate: transaction.transactionDate,
     direction: normalizeImportedDirection(transaction.classificationType),
@@ -414,11 +430,22 @@ async function listPaymentDateReportRecordsForRange(
     classificationType: transaction.classificationType,
     category: transaction.category,
     memberId: transaction.memberOwnerId,
+    fxDetails: {
+      originalAmount: toNumber(transaction.originalAmount),
+      originalCurrency: transaction.originalCurrency,
+      settlementAmount:
+        transaction.settlementAmount === null
+          ? null
+          : toNumber(transaction.settlementAmount),
+      settlementCurrency: transaction.settlementCurrency,
+      normalizationRateSource: transaction.normalizationRateSource,
+    },
   }));
 
   const manualRecords: ReportRecord[] = rangedManualEntries.map((entry) => ({
     id: entry.id,
     sourceKind: entry.sourceType,
+    sourceRecordId: entry.id,
     title: entry.title,
     eventDate: entry.eventDate,
     direction: entry.eventKind,
@@ -426,6 +453,7 @@ async function listPaymentDateReportRecordsForRange(
     classificationType: entry.classificationType,
     category: entry.category,
     memberId: entry.payerMemberId,
+    fxDetails: null,
   }));
 
   return [...importedRecords, ...manualRecords].sort((left, right) => {
@@ -448,6 +476,7 @@ async function listAllocatedPeriodReportRecordsForRange(
   const allocatedRows = await db
     .select({
       id: expenseAllocations.id,
+      sourceId: expenseEvents.sourceId,
       sourceType: expenseEvents.sourceType,
       reportMonth: expenseAllocations.reportMonth,
       allocatedAmount: expenseAllocations.allocatedAmount,
@@ -456,9 +485,22 @@ async function listAllocatedPeriodReportRecordsForRange(
       classificationType: expenseEvents.classificationType,
       category: expenseEvents.category,
       payerMemberId: expenseEvents.payerMemberId,
+      originalAmount: transactions.originalAmount,
+      originalCurrency: transactions.originalCurrency,
+      settlementAmount: transactions.settlementAmount,
+      settlementCurrency: transactions.settlementCurrency,
+      normalizationRateSource: transactions.normalizationRateSource,
     })
     .from(expenseAllocations)
     .innerJoin(expenseEvents, eq(expenseEvents.id, expenseAllocations.expenseEventId))
+    .leftJoin(
+      transactions,
+      and(
+        eq(expenseEvents.sourceType, "transaction"),
+        eq(transactions.workspaceId, context.workspaceId),
+        eq(transactions.id, expenseEvents.sourceId),
+      ),
+    )
     .where(
       and(
         eq(expenseEvents.workspaceId, context.workspaceId),
@@ -473,6 +515,7 @@ async function listAllocatedPeriodReportRecordsForRange(
     .map<ReportRecord>((row) => ({
       id: row.id,
       sourceKind: expenseEventSourceToLineItemSourceKind(row.sourceType),
+      sourceRecordId: row.sourceId,
       title: row.title,
       eventDate: row.reportMonth,
       direction: row.eventKind,
@@ -480,6 +523,17 @@ async function listAllocatedPeriodReportRecordsForRange(
       classificationType: row.classificationType,
       category: row.category,
       memberId: row.payerMemberId,
+      fxDetails:
+        row.sourceType === "transaction"
+          ? {
+              originalAmount: toNumber(row.originalAmount),
+              originalCurrency: row.originalCurrency,
+              settlementAmount:
+                row.settlementAmount === null ? null : toNumber(row.settlementAmount),
+              settlementCurrency: row.settlementCurrency,
+              normalizationRateSource: row.normalizationRateSource,
+            }
+          : null,
     }))
     .sort((left, right) => {
       if (left.eventDate !== right.eventDate) {
@@ -543,6 +597,7 @@ export async function getMonthlyReport(
     lineItems: allRecords.map((record) => ({
       id: record.id,
       sourceKind: record.sourceKind,
+      sourceRecordId: record.sourceRecordId,
       title: record.title,
       eventDate: record.eventDate,
       direction: record.direction,
@@ -551,6 +606,7 @@ export async function getMonthlyReport(
       classificationType: record.classificationType,
       category: record.category,
       memberName: record.memberId ? memberNames.get(record.memberId) ?? "Unknown member" : null,
+      fxDetails: record.fxDetails,
     })),
   };
 }

@@ -23,6 +23,7 @@ export type ExpenseTransactionItem = {
   settlementCurrency: string | null;
   normalizedAmount: string;
   workspaceCurrency: string;
+  normalizationRateSource: string | null;
   direction: string;
   accountDisplayName: string;
   importSourceName: string | null;
@@ -52,6 +53,7 @@ export type ReviewQueueSummary = {
   reviewedCount: number;
   queueCount: number;
   completionPercentage: number;
+  latestTransactionMonth: string | null;
   remainingByImport: ReviewQueueImportSummary[];
 };
 
