@@ -23,7 +23,7 @@ function buildPreviewWarnings(input: {
     )
   ) {
     warnings.push(
-      "Foreign-currency transactions are currently shown with a placeholder conversion until the historical FX sync is wired in.",
+      "Foreign-currency rows are still normalized into the workspace currency for now. Full multicurrency reporting is not finished yet.",
     );
   }
 
@@ -33,7 +33,7 @@ function buildPreviewWarnings(input: {
     )
   ) {
     warnings.push(
-      "Preview normalization is temporary right now. The final import flow will use stored monthly exchange rates.",
+      "Rows marked Placeholder FX are still estimates in the workspace currency until historical FX support lands.",
     );
   }
 
@@ -98,4 +98,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

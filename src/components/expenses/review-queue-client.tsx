@@ -9,8 +9,10 @@ import {
   emptyAllocationForm,
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
+import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expenses/constants";
 import {
+  buildTransactionReportTargets,
   formatAllocationSummary,
   formatClassificationSummary,
   formatDecisionSourceLabel,
@@ -61,6 +63,7 @@ const emptyReviewSummary: ReviewQueueSummary = {
   reviewedCount: 0,
   queueCount: 0,
   completionPercentage: 100,
+  latestTransactionMonth: null,
   remainingByImport: [],
 };
 
@@ -100,6 +103,14 @@ function formatReviewImportRange(item: ReviewQueueImportSummary) {
   return `${formatter.format(new Date(`${earliest}-01T00:00:00.000Z`))} to ${formatter.format(
     new Date(`${latest}-01T00:00:00.000Z`),
   )}`;
+}
+
+function formatReviewReportMonth(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}-01T00:00:00.000Z`));
 }
 
 export function ReviewQueueClient({
@@ -386,14 +397,21 @@ export function ReviewQueueClient({
     selectedTransaction?.classification &&
     selectedTransaction.classification.classificationType !== "transfer" &&
     selectedTransaction.classification.classificationType !== "ignore";
+  const selectedTransactionCurrencyState = selectedTransaction
+    ? getCurrencyNormalizationDisplayState(selectedTransaction)
+    : null;
   const selectedLedgerHref = selectedTransaction
     ? `/expenses?transactionId=${selectedTransaction.id}`
     : "/expenses";
-  const selectedReportHref =
-    selectedTransaction?.classification &&
-    selectedTransaction.transactionDate.length >= 7
-      ? `/reports?month=${selectedTransaction.transactionDate.slice(0, 7)}`
-      : null;
+  const selectedReportTargets = selectedTransaction
+    ? buildTransactionReportTargets(selectedTransaction)
+    : [];
+  const queueClearReportHref = summary.latestTransactionMonth
+    ? `/reports?month=${summary.latestTransactionMonth}&mode=payment_date`
+    : "/reports";
+  const queueClearReportLabel = summary.latestTransactionMonth
+    ? `Open ${formatReviewReportMonth(summary.latestTransactionMonth)} report`
+    : "Open reports";
 
   return (
     <section className="stack">
@@ -552,17 +570,18 @@ export function ReviewQueueClient({
             summary.totalTransactionCount > 0 ? (
               <div className="home-focus-card">
                 <span className="badge badge-neutral">Queue clear</span>
-                <h3>Imported transactions no longer need review.</h3>
+                <h3>All imported transactions are reviewed.</h3>
                 <p>
-                  The review bridge is done for now, so the next useful stop is the ledger
-                  or the matching report month.
+                  {summary.reviewedCount} reviewed transaction
+                  {summary.reviewedCount === 1 ? "" : "s"} are ready for the ledger and the
+                  matching report month.
                 </p>
                 <div className="action-row">
-                  <Link className="button" href="/expenses">
-                    Open ledger
+                  <Link className="button" href={queueClearReportHref}>
+                    {queueClearReportLabel}
                   </Link>
-                  <Link className="button button-secondary" href="/reports">
-                    Open reports
+                  <Link className="button button-secondary" href="/expenses">
+                    Open ledger
                   </Link>
                 </div>
               </div>
@@ -593,46 +612,66 @@ export function ReviewQueueClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {queue.map((transaction) => (
-                    <tr
-                      className={
-                        selectedTransactionId === transaction.id ? "table-row-active" : undefined
-                      }
-                      key={transaction.id}
-                    >
-                      <td className="checkbox-cell">
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.includes(transaction.id)}
-                          onChange={() => toggleSelectedTransaction(transaction.id)}
-                          aria-label={`Select ${getTransactionMerchant(transaction)}`}
-                        />
-                      </td>
-                      <td>{transaction.transactionDate}</td>
-                      <td>
-                        <strong>{getTransactionMerchant(transaction)}</strong>
-                        <div className="table-note">{transaction.description}</div>
-                      </td>
-                      <td>
-                        {formatMoneyDisplay(
-                          transaction.normalizedAmount,
-                          transaction.workspaceCurrency,
-                          transaction.direction,
-                        )}
-                      </td>
-                      <td>{transaction.accountDisplayName}</td>
-                      <td>{transaction.importSourceName ?? "Unknown source"}</td>
-                      <td>
-                        <button
-                          className="link-button"
-                          type="button"
-                          onClick={() => setSelectedTransactionId(transaction.id)}
-                        >
-                          Review
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {queue.map((transaction) => {
+                    const transactionCurrencyState =
+                      getCurrencyNormalizationDisplayState(transaction);
+
+                    return (
+                      <tr
+                        className={
+                          selectedTransactionId === transaction.id ? "table-row-active" : undefined
+                        }
+                        key={transaction.id}
+                      >
+                        <td className="checkbox-cell">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.includes(transaction.id)}
+                            onChange={() => toggleSelectedTransaction(transaction.id)}
+                            aria-label={`Select ${getTransactionMerchant(transaction)}`}
+                          />
+                        </td>
+                        <td>{transaction.transactionDate}</td>
+                        <td>
+                          <strong>{getTransactionMerchant(transaction)}</strong>
+                          <div className="table-note">{transaction.description}</div>
+                        </td>
+                        <td>
+                          <div className="stack compact">
+                            <span>
+                              {formatMoneyDisplay(
+                                transaction.normalizedAmount,
+                                transaction.workspaceCurrency,
+                                transaction.direction,
+                              )}
+                            </span>
+                            {transactionCurrencyState.label ? (
+                              <span
+                                className={`badge ${
+                                  transactionCurrencyState.tone === "warning"
+                                    ? "badge-warning"
+                                    : "badge-neutral"
+                                }`}
+                              >
+                                {transactionCurrencyState.label}
+                              </span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>{transaction.accountDisplayName}</td>
+                        <td>{transaction.importSourceName ?? "Unknown source"}</td>
+                        <td>
+                          <button
+                            className="link-button"
+                            type="button"
+                            onClick={() => setSelectedTransactionId(transaction.id)}
+                          >
+                            Review
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -728,6 +767,25 @@ export function ReviewQueueClient({
                 </p>
               </div>
 
+              {selectedTransactionCurrencyState?.label ? (
+                <div className="stack compact">
+                  <span
+                    className={`badge ${
+                      selectedTransactionCurrencyState.tone === "warning"
+                        ? "badge-warning"
+                        : "badge-neutral"
+                    }`}
+                  >
+                    {selectedTransactionCurrencyState.label}
+                  </span>
+                  {selectedTransactionCurrencyState.fullDescription ? (
+                    <p className="helper-text">
+                      {selectedTransactionCurrencyState.fullDescription}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               <div className="stack compact">
                 <label className="field">
                   <span>Classification type</span>
@@ -819,12 +877,24 @@ export function ReviewQueueClient({
                 <Link className="button button-secondary" href={selectedLedgerHref}>
                   Open in ledger
                 </Link>
-                {selectedReportHref ? (
-                  <Link className="link-button" href={selectedReportHref}>
-                    Open report month
-                  </Link>
-                ) : null}
               </div>
+
+              {selectedReportTargets.length > 0 ? (
+                <div className="stack compact">
+                  <p className="helper-text">
+                    {selectedReportTargets.length === 1
+                      ? "This row is ready for the matching report."
+                      : "This adjusted row lands in multiple report months."}
+                  </p>
+                  <div className="action-row">
+                    {selectedReportTargets.map((target) => (
+                      <Link className="link-button" href={target.href} key={target.href}>
+                        {target.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="card stack compact">
                 <div>

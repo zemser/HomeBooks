@@ -110,6 +110,56 @@ export function getTransactionMerchant(item: ExpenseTransactionItem) {
   return item.merchantRaw?.trim() || item.description;
 }
 
+function formatReportDrillInMonthLabel(value: string) {
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${value}-01T00:00:00.000Z`));
+}
+
+export type TransactionReportTarget = {
+  month: string;
+  mode: "payment_date" | "allocated_period";
+  href: string;
+  label: string;
+};
+
+export function buildTransactionReportTargets(
+  item: Pick<ExpenseTransactionItem, "transactionDate" | "allocation">,
+): TransactionReportTarget[] {
+  const adjustedMonths =
+    item.allocation?.reportingMode === "allocated_period"
+      ? Array.from(
+          new Set(item.allocation.reportMonths.map((value) => value.slice(0, 7))),
+        ).sort((left, right) => left.localeCompare(right))
+      : [];
+
+  if (adjustedMonths.length > 0) {
+    return adjustedMonths.map((month) => ({
+      month,
+      mode: "allocated_period",
+      href: `/reports?month=${month}&mode=allocated_period`,
+      label: `Open ${formatReportDrillInMonthLabel(month)} adjusted report`,
+    }));
+  }
+
+  const paymentMonth = item.transactionDate.slice(0, 7);
+
+  if (!paymentMonth) {
+    return [];
+  }
+
+  return [
+    {
+      month: paymentMonth,
+      mode: "payment_date",
+      href: `/reports?month=${paymentMonth}&mode=payment_date`,
+      label: `Open ${formatReportDrillInMonthLabel(paymentMonth)} payment-date report`,
+    },
+  ];
+}
+
 export function formatManualEntryClassificationSummary(
   item: Pick<OneTimeManualEntryItem, "classificationType" | "payerMemberName" | "category">,
 ) {

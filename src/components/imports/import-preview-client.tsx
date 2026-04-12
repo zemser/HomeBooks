@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useEffect, useState, useTransition } from "react";
 
+import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
+
 type PreviewTransaction = {
   transactionDate: string;
   bookingDate?: string;
@@ -392,26 +394,50 @@ export function ImportPreviewClient({
                   </tr>
                 </thead>
                 <tbody>
-                  {result.previewTransactions.map((transaction, index) => (
-                    <tr key={`${transaction.transactionDate}-${transaction.merchantRaw}-${index}`}>
-                      <td>{transaction.transactionDate}</td>
-                      <td>{transaction.merchantRaw}</td>
-                      <td>{transaction.category ?? "-"}</td>
-                      <td>
-                        {transaction.direction === "credit" ? "-" : ""}
-                        {transaction.originalAmount.toFixed(2)} {transaction.originalCurrency}
-                      </td>
-                      <td>
-                        {transaction.settlementAmount
-                          ? `${transaction.direction === "credit" ? "-" : ""}${transaction.settlementAmount.toFixed(2)} ${transaction.settlementCurrency ?? transaction.originalCurrency}`
-                          : "-"}
-                      </td>
-                      <td>
-                        {transaction.normalizedAmount.toFixed(2)} {transaction.workspaceCurrency}
-                      </td>
-                      <td>{transaction.statementSection ?? "-"}</td>
-                    </tr>
-                  ))}
+                  {result.previewTransactions.map((transaction, index) => {
+                    const currencyState = getCurrencyNormalizationDisplayState(transaction);
+
+                    return (
+                      <tr key={`${transaction.transactionDate}-${transaction.merchantRaw}-${index}`}>
+                        <td>{transaction.transactionDate}</td>
+                        <td>{transaction.merchantRaw}</td>
+                        <td>{transaction.category ?? "-"}</td>
+                        <td>
+                          {transaction.direction === "credit" ? "-" : ""}
+                          {transaction.originalAmount.toFixed(2)} {transaction.originalCurrency}
+                        </td>
+                        <td>
+                          {transaction.settlementAmount
+                            ? `${transaction.direction === "credit" ? "-" : ""}${transaction.settlementAmount.toFixed(2)} ${transaction.settlementCurrency ?? transaction.originalCurrency}`
+                            : "-"}
+                        </td>
+                        <td>
+                          <div className="stack compact">
+                            <span>
+                              {transaction.normalizedAmount.toFixed(2)} {transaction.workspaceCurrency}
+                            </span>
+                            {currencyState.label ? (
+                              <>
+                                <span
+                                  className={`badge ${
+                                    currencyState.tone === "warning"
+                                      ? "badge-warning"
+                                      : "badge-neutral"
+                                  }`}
+                                >
+                                  {currencyState.label}
+                                </span>
+                                {currencyState.shortDescription ? (
+                                  <div className="table-note">{currencyState.shortDescription}</div>
+                                ) : null}
+                              </>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>{transaction.statementSection ?? "-"}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
