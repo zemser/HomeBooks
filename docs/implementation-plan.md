@@ -90,12 +90,16 @@ Completed in code:
   - manual account-label guidance when a workbook does not expose that metadata
   - portfolio summary strip on top of saved holdings
   - account overview cards with portfolio share, top holding, concentration hints, and cost-basis coverage
+  - lightweight portfolio composition on top of saved holdings, including:
+    - estimated asset-type mix when the workbook only exposes holding names
+    - household owner split across saved investment accounts
+    - top positions combined across the latest active account snapshots
+    - name-based asset-type fallback for older saved snapshots that predate the inference pass
 
 Next up:
 
-- move to lightweight investment composition follow-ups now that the expense-path smoke pass came back clean enough
-- keep expense-path fixes opportunistic only if a new real-file blocker appears
 - activity import support once we have a real activity export sample
+- keep expense-path and investment-composition fixes opportunistic only if a new real-file blocker appears
 - durable upload storage for a cleaner hosted deployment path once hosted deployment becomes a priority
 - auth planning and provider selection once early deployment direction is clearer
 
@@ -641,8 +645,9 @@ What actually happened in code so far:
 16. shared app shell and hybrid home hub on `/`, including workflow navigation and route reframing across the existing expense product surfaces
 17. explicit FX transparency and month-aware report handoffs across imports, review, ledger, reports, and `/`, including queue-cleared home cues and report drill-ins
 18. recurring definitions simplified into one saved flow, with automatic report materialization plus pause/delete behavior that updates the current report month
+19. lightweight investment composition views on top of saved holdings, including heuristic asset typing, owner split, top positions, and fallback classification for older snapshots
 
-The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, shared workflow shell, FX/report-handoff usability pass, and the recurring-flow simplification are now completed. The latest real-file smoke pass came back clean enough that the next product work should move to lightweight investment composition while keeping the expense workflow stable.
+The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, shared workflow shell, FX/report-handoff usability pass, the recurring-flow simplification, and the saved-holdings composition pass are now completed. The next investment expansion should wait for a real activity export sample while the current expense and investment surfaces stay stable.
 
 ## Completed validation checkpoint
 
@@ -708,33 +713,32 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. move to lightweight investment composition follow-ups now that the connected expense workflow and recurring/report path have passed a real smoke test
-2. keep expense-path follow-up work limited to newly observed blockers rather than another broad polish sweep
-3. leave activity imports for later until we have a real export sample to design against
-4. defer durable upload storage until hosted deployment becomes a near-term priority
-5. scope the later auth slice once early deployment direction and provider choices are clearer
+1. design investment activity import support around a real export sample instead of guessing at the format upfront
+2. keep expense-path and investment-composition follow-up work limited to newly observed blockers rather than another broad polish sweep
+3. defer durable upload storage until hosted deployment becomes a near-term priority
+4. scope the later auth slice once early deployment direction and provider choices are clearer
 
 That keeps the product moving on the main household workflow first while still preserving a clear hosted-deployment hardening path for later.
 
 ## Next handoff slice
 
-The FX transparency pass, the queue-cleared report handoff, and the recurring-flow simplification are now completed, so the next implementation slice should move to lightweight investment composition rather than another expense-workflow verification pass.
+The saved-holdings composition pass is now completed, so the next implementation slice should only reopen investments when we have a real activity export sample to work from.
 
 Goal:
 
-- make `/investments` feel meaningfully useful on top of the saved holdings that already persist today
+- add investment activity import support without disturbing the current holdings-snapshot and composition workflow
 
 Recommended scope:
 
-1. build read-oriented investment composition improvements on top of the latest active saved holdings
-2. keep the work scoped to current persisted holdings and import history rather than opening activity persistence
+1. anchor the parser and persistence design to a real activity export sample instead of speculative schema/UI work
+2. keep the existing saved-holdings replacement logic, composition summaries, and import history behavior intact
 3. preserve current account resolution, duplicate replacement, and latest-active-holdings behavior
 4. avoid dragging the expense workflow back into active scope unless a new blocker appears during regression testing
 5. leave durable storage, hosted DB decisions, and auth out of scope for this slice
 
 Definition of done:
 
-- `/investments` becomes more informative than import history plus summary strips alone
+- activity imports persist cleanly beside the existing holdings snapshots without regressing the current saved-holdings composition view
 - latest active holdings remain trustworthy after replacement imports
 - current expense import, review, recurring, reporting, and settlement behavior do not regress
-- activity imports remain out of scope until a real sample exists
+- the implementation is grounded in a real sample rather than guessed workbook structure

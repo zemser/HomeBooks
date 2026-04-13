@@ -20,14 +20,15 @@ The current product loop is:
 3. review uncertain classifications in `/imports/review`
 4. validate the ledger and manual-entry flow in `/expenses`
 5. confirm recurring definitions and month-aware reporting behave like one connected flow in `/recurring` and `/reports`
-6. keep the expense workflow steady while shifting the next product slice to lightweight investment composition
+6. review saved household investment composition on `/investments`, including estimated asset mix, owner split, and top positions
 7. leave durable upload storage and auth planning as later slices
 
 ## Current caveats
 
 - foreign-currency rows are now explicitly labeled, but they are still normalized into the workspace currency using placeholder FX behavior
 - the app preserves original and settlement amounts, but full multicurrency reporting is not finished yet
-- investment persistence exists as a sidecar, but investment follow-ups are intentionally secondary for now
+- investment composition is currently estimated from holding names when the source workbook does not expose a dedicated asset-type field
+- investment activity imports are still out of scope until we have a real sample export to design against
 
 ## Environment note
 
@@ -64,3 +65,4 @@ Suggested smoke-test flow:
 6. Create a one-time manual entry and save an adjusted-period allocation.
 7. Open `/recurring`, save a recurring definition, confirm it appears in reports without a separate generate step, then pause it once and confirm the current report month clears.
 8. Open `/reports` and verify payment-date and adjusted-period views render for the month you just reviewed, including any FX transparency cues for imported rows, recurring rows that were prepared automatically, and the expected queue-cleared/month-aware handoff paths.
+9. Open `/investments` and confirm the saved holdings render with estimated asset mix, owner split, top positions, and account-level detail.

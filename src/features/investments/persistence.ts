@@ -12,6 +12,10 @@ import {
   workspaceMembers,
 } from "@/db/schema";
 import { ensureExcellenceInvestmentImportSource } from "@/features/investments/catalog";
+import {
+  inferInvestmentAssetType,
+  resolveInvestmentAssetType,
+} from "@/features/investments/classification";
 import { parseInvestmentWorkbookToPreview } from "@/features/investments/parse-investment-workbook";
 import type {
   InvestmentAccountHoldingsSnapshot,
@@ -100,7 +104,7 @@ function buildHoldingSnapshotValues(input: {
       snapshotDate: input.snapshotDate,
       assetName: holding.assetName,
       assetSymbol: holding.securityId,
-      assetType: "other" as const,
+      assetType: inferInvestmentAssetType(holding.assetName, holding.securityId),
       quantity: formatNumeric(holding.quantity, 8),
       marketValue: formatNumeric(holding.marketValueIls, 6) ?? "0.000000",
       marketValueCurrency: "ILS",
@@ -404,6 +408,11 @@ export async function listInvestmentAccountHoldings(
     const normalizedMarketValue = toNullableNumber(row.normalizedMarketValue) ?? marketValue;
     const costBasis = toNullableNumber(row.costBasis);
     const gainLoss = toNullableNumber(row.gainLoss);
+    const resolvedAssetType = resolveInvestmentAssetType({
+      assetName: row.assetName,
+      assetSymbol: row.assetSymbol,
+      storedAssetType: row.assetType,
+    });
     const ownerDisplayName =
       row.ownerDisplayNameOverride?.trim() || row.ownerUserDisplayName?.trim() || null;
     const existing =
@@ -428,7 +437,8 @@ export async function listInvestmentAccountHoldings(
     existing.holdings.push({
       assetName: row.assetName,
       assetSymbol: row.assetSymbol,
-      assetType: row.assetType,
+      assetType: resolvedAssetType.assetType,
+      assetTypeSource: resolvedAssetType.assetTypeSource,
       quantity,
       marketValue,
       marketValueCurrency: row.marketValueCurrency,

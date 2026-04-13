@@ -69,10 +69,21 @@ export type InvestmentImportSummary = {
   snapshotDate: string | null;
 };
 
+export type InvestmentAssetType =
+  | "cash"
+  | "index"
+  | "stock"
+  | "fund"
+  | "bond"
+  | "other";
+
+export type InvestmentAssetTypeSource = "saved" | "estimated";
+
 export type PersistedInvestmentHolding = {
   assetName: string;
   assetSymbol: string | null;
-  assetType: string;
+  assetType: InvestmentAssetType;
+  assetTypeSource: InvestmentAssetTypeSource;
   quantity: number | null;
   marketValue: number;
   marketValueCurrency: string;
@@ -114,6 +125,41 @@ export type InvestmentPortfolioHoldingLeader = {
   portfolioWeightPct: number | null;
 };
 
+export type InvestmentAssetMixItem = {
+  assetType: InvestmentAssetType;
+  assetTypeLabel: string;
+  totalMarketValue: number;
+  portfolioSharePct: number | null;
+  holdingCount: number;
+  accountCount: number;
+  estimatedHoldingCount: number;
+};
+
+export type InvestmentOwnerOverview = {
+  ownerKey: string;
+  ownerMemberId: string | null;
+  ownerDisplayName: string;
+  accountCount: number;
+  holdingCount: number;
+  totalMarketValue: number;
+  portfolioSharePct: number | null;
+  latestSnapshotDate: string | null;
+  dominantAssetType: InvestmentAssetType | null;
+  dominantAssetTypeLabel: string | null;
+  dominantAssetTypeSharePct: number | null;
+};
+
+export type InvestmentTopPosition = {
+  positionKey: string;
+  assetName: string;
+  assetSymbol: string | null;
+  assetType: InvestmentAssetType;
+  assetTypeLabel: string;
+  totalMarketValue: number;
+  portfolioSharePct: number | null;
+  accountCount: number;
+};
+
 export type InvestmentAccountOverview = {
   accountId: string;
   accountDisplayName: string;
@@ -147,12 +193,16 @@ export type InvestmentPortfolioSummary = {
   totalGainLossPct: number | null;
   oldestSnapshotDate: string | null;
   latestSnapshotDate: string | null;
+  estimatedAssetTypeCount: number;
   largestAccount: InvestmentPortfolioAccountLeader | null;
   topHolding: InvestmentPortfolioHoldingLeader | null;
 };
 
 export type InvestmentPortfolioReport = {
   summary: InvestmentPortfolioSummary;
+  assetMix: InvestmentAssetMixItem[];
+  ownerOverviews: InvestmentOwnerOverview[];
+  topPositions: InvestmentTopPosition[];
   accountOverviews: InvestmentAccountOverview[];
 };
 
