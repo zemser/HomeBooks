@@ -87,25 +87,22 @@ export function RecurringPageClient() {
   const [createState, setCreateState] = useState<CreateRuleState>(initialCreateState);
   const [editState, setEditState] = useState<RuleFormState | null>(null);
   const [versionState, setVersionState] = useState<VersionFormState>(initialVersionState);
-  const [generationRange, setGenerationRange] = useState({
-    startMonth: todayMonthInputValue(),
-    endMonth: todayMonthInputValue(),
-  });
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSavingCreate, startSavingCreate] = useTransition();
   const [isSavingEdit, startSavingEdit] = useTransition();
   const [isSavingVersion, startSavingVersion] = useTransition();
-  const [isGenerating, startGenerating] = useTransition();
+  const [isDeleting, startDeleting] = useTransition();
 
-  async function loadPage(range = generationRange) {
+  async function loadPage() {
     setError(null);
 
     try {
+      const currentMonth = currentMonthString();
       const search = new URLSearchParams({
-        startMonth: `${range.startMonth}-01`,
-        endMonth: `${range.endMonth}-01`,
+        startMonth: currentMonth,
+        endMonth: currentMonth,
       });
       const response = await fetch(`/api/recurring?${search.toString()}`);
       const payload = (await response.json()) as RecurringResponse;
@@ -148,7 +145,6 @@ export function RecurringPageClient() {
 
   useEffect(() => {
     void loadPage();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedEntry = useMemo(
@@ -216,7 +212,11 @@ export function RecurringPageClient() {
       ...initialCreateState,
       currency: current.currency,
     }));
-    setMessage("Recurring entry created.");
+    setMessage(
+      createState.effectiveStartMonth <= todayMonthInputValue()
+        ? `Recurring definition saved. Applicable months through ${monthLabel(currentMonthString())} are ready for reports.`
+        : `Recurring definition saved. It will start in ${monthLabel(createState.effectiveStartMonth)}.`,
+    );
   }
 
   async function handleSaveRecurringEntry() {
@@ -245,7 +245,11 @@ export function RecurringPageClient() {
     }
 
     await loadPage();
-    setMessage("Recurring entry updated.");
+    setMessage(
+      editState.active
+        ? "Recurring definition updated."
+        : "Recurring definition paused. Current and future recurring rows were removed from reports.",
+    );
   }
 
   async function handleCreateVersion() {
@@ -275,39 +279,37 @@ export function RecurringPageClient() {
     }
 
     await loadPage();
-    setMessage("Future version saved.");
+    setMessage("Future change saved.");
   }
 
-  async function handleGenerateEntries() {
-    setError(null);
-    setMessage(null);
-
-    const response = await fetch("/api/recurring/generate", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        startMonth: `${generationRange.startMonth}-01`,
-        endMonth: `${generationRange.endMonth}-01`,
-      }),
-    });
-    const payload = (await response.json().catch(() => ({}))) as {
-      error?: string;
-      createdCount?: number;
-    };
-
-    if (!response.ok) {
-      setError(payload.error ?? "Could not generate manual entries.");
+  async function handleDeleteRecurringEntry() {
+    if (!selectedEntry) {
       return;
     }
 
-    await loadPage(generationRange);
-    setMessage(
-      payload.createdCount
-        ? `Generated ${payload.createdCount} recurring manual entries.`
-        : "No new recurring entries were generated for that range.",
+    const shouldDelete = window.confirm(
+      `Delete "${selectedEntry.title}" and remove its recurring rows from reports?`,
     );
+
+    if (!shouldDelete) {
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+
+    const response = await fetch(`/api/recurring/${selectedEntry.id}`, {
+      method: "DELETE",
+    });
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      setError(payload.error ?? "Could not delete the recurring entry.");
+      return;
+    }
+
+    await loadPage();
+    setMessage("Recurring definition deleted.");
   }
 
   return (
@@ -317,7 +319,11 @@ export function RecurringPageClient() {
 
       <section className="two-up">
         <article className="card">
-          <h2>Create recurring rule</h2>
+          <h2>Create recurring definition</h2>
+          <p className="muted-text">
+            Saving a recurring definition now prepares the applicable months automatically,
+            so reports can pick it up without a separate generate step.
+          </p>
           <div className="stack compact">
             <label className="field">
               <span>Title</span>
@@ -508,60 +514,20 @@ export function RecurringPageClient() {
               disabled={isSavingCreate}
               onClick={() => startSavingCreate(() => void handleCreateRecurringEntry())}
             >
-              {isSavingCreate ? "Saving..." : "Create recurring rule"}
+              {isSavingCreate ? "Saving..." : "Save recurring definition"}
             </button>
           </div>
         </article>
 
         <article className="card">
-          <h2>Generate manual entries</h2>
+          <h2>Automatic report entries</h2>
           <p className="muted-text">
-            Generation is idempotent for this slice. Existing generated rows are preserved,
-            and new future versions only affect months that have not been generated yet.
+            The app now prepares recurring rows for the current applicable month automatically.
+            Use this table to sanity-check what is feeding reports right now.
           </p>
           <div className="stack compact">
-            <div className="inline-form">
-              <label className="field">
-                <span>Start month</span>
-                <input
-                  className="input"
-                  type="month"
-                  value={generationRange.startMonth}
-                  onChange={(event) =>
-                    setGenerationRange((current) => ({
-                      ...current,
-                      startMonth: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>End month</span>
-                <input
-                  className="input"
-                  type="month"
-                  value={generationRange.endMonth}
-                  onChange={(event) =>
-                    setGenerationRange((current) => ({
-                      ...current,
-                      endMonth: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            </div>
-
-            <button
-              className="button"
-              type="button"
-              disabled={isGenerating}
-              onClick={() => startGenerating(() => void handleGenerateEntries())}
-            >
-              {isGenerating ? "Generating..." : "Generate entries for range"}
-            </button>
-
             <div className="stack compact">
-              <h3>Generated entries in range</h3>
+              <h3>{monthLabel(currentMonthString())} entries</h3>
               {data?.generatedEntries.length ? (
                 <div className="table-wrap">
                   <table className="data-table">
@@ -601,7 +567,7 @@ export function RecurringPageClient() {
                 </div>
               ) : (
                 <p className="empty-state">
-                  No generated recurring entries are stored for the selected range yet.
+                  No recurring rows are active for {monthLabel(currentMonthString())} yet.
                 </p>
               )}
             </div>
@@ -660,7 +626,12 @@ export function RecurringPageClient() {
           ) : (
             <div className="stack">
               <div className="stack compact">
-                <h3>Rule metadata</h3>
+                <h3>Definition</h3>
+                <p className="muted-text">
+                  Edit the recurring definition here. Effective months live in the version
+                  history below, while the active toggle removes current and future report rows without
+                  deleting the rule.
+                </p>
                 <label className="field">
                   <span>Title</span>
                   <input
@@ -768,25 +739,35 @@ export function RecurringPageClient() {
                         )
                       }
                     />
-                    <span>Rule is active</span>
+                    <span>Rule is active in reports</span>
                   </label>
                 </div>
 
-                <button
-                  className="button"
-                  type="button"
-                  disabled={isSavingEdit}
-                  onClick={() => startSavingEdit(() => void handleSaveRecurringEntry())}
-                >
-                  {isSavingEdit ? "Saving..." : "Save rule metadata"}
-                </button>
+                <div className="action-row">
+                  <button
+                    className="button"
+                    type="button"
+                    disabled={isSavingEdit}
+                    onClick={() => startSavingEdit(() => void handleSaveRecurringEntry())}
+                  >
+                    {isSavingEdit ? "Saving..." : "Save recurring definition"}
+                  </button>
+                  <button
+                    className="button button-secondary"
+                    type="button"
+                    disabled={isDeleting}
+                    onClick={() => startDeleting(() => void handleDeleteRecurringEntry())}
+                  >
+                    {isDeleting ? "Deleting..." : "Delete definition"}
+                  </button>
+                </div>
               </div>
 
               <div className="stack compact">
-                <h3>Add future version</h3>
+                <h3>Schedule future change</h3>
                 <p className="muted-text">
                   Use a new effective month when rent, salary, or another recurring amount
-                  changes. Existing generated months stay unchanged.
+                  changes. Existing prepared months stay unchanged.
                 </p>
                 <div className="inline-form">
                   <label className="field">
