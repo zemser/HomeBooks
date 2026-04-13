@@ -1,7 +1,12 @@
-import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
-import { manualEntries, manualRecurringExpenses, recurringEntryVersions } from "@/db/schema";
+import {
+  manualEntries,
+  manualEntryOverrides,
+  manualRecurringExpenses,
+  recurringEntryVersions,
+} from "@/db/schema";
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
 import type { ClassificationType } from "@/features/expenses/constants";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
@@ -60,6 +65,37 @@ type CreateRecurringVersionInput = {
 type GenerateEntriesInput = {
   startMonth: string;
   endMonth: string;
+};
+
+type DbClient = ReturnType<typeof getDb>;
+type DbTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
+type DbExecutor = DbClient | DbTransaction;
+
+type MaterializeRecurringEntriesInput = GenerateEntriesInput & {
+  recurringEntryIds?: string[];
+  allowFutureMonths?: boolean;
+};
+
+type ExistingGeneratedManualEntryRow = {
+  id: string;
+  sourceId: string | null;
+  eventDate: string;
+};
+
+type RecurringGeneratedRowSeed = {
+  sourceId: string;
+  eventDate: string;
+  eventKind: EventKind;
+  title: string;
+  originalCurrency: string;
+  originalAmount: string;
+  workspaceCurrency: string;
+  normalizedAmount: string;
+  normalizationRate: string;
+  normalizationRateSource: string;
+  payerMemberId: string | null;
+  classificationType: ClassificationType;
+  category: string | null;
 };
 
 function normalizeOptionalText(value?: string | null) {
@@ -174,6 +210,360 @@ function mapVersion(row: {
     recurrenceRule: row.recurrenceRule,
     notes: row.notes,
   };
+}
+
+function recurringGeneratedKey(sourceId: string, eventDate: string) {
+  return `${sourceId}:${eventDate}`;
+}
+
+function clampMaterializationRangeToCurrentMonth(
+  input: MaterializeRecurringEntriesInput,
+): { startMonth: string; endMonth: string } | null {
+  const startMonth = normalizeMonthString(input.startMonth);
+  const endMonth = normalizeMonthString(input.endMonth);
+
+  if (input.allowFutureMonths) {
+    assertMonthRange(startMonth, endMonth);
+
+    return {
+      startMonth,
+      endMonth,
+    };
+  }
+
+  const currentMonth = currentMonthString();
+
+  if (startMonth > currentMonth) {
+    return null;
+  }
+
+  const clampedEndMonth = endMonth > currentMonth ? currentMonth : endMonth;
+  assertMonthRange(startMonth, clampedEndMonth);
+
+  return {
+    startMonth,
+    endMonth: clampedEndMonth,
+  };
+}
+
+async function withRecurringMaterializationLock<T>(
+  context: CurrentWorkspaceContext,
+  run: (tx: DbTransaction) => Promise<T>,
+) {
+  const db = getDb();
+
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext('recurring_generated'), hashtext(${context.workspaceId}))`,
+    );
+
+    return run(tx);
+  });
+}
+
+async function deleteManualEntryRows(
+  tx: DbTransaction,
+  manualEntryIds: string[],
+) {
+  if (manualEntryIds.length === 0) {
+    return;
+  }
+
+  const overrideRows = await tx
+    .select({
+      id: manualEntryOverrides.id,
+    })
+    .from(manualEntryOverrides)
+    .where(inArray(manualEntryOverrides.manualEntryId, manualEntryIds));
+
+  if (overrideRows.length > 0) {
+    await tx
+      .delete(manualEntryOverrides)
+      .where(
+        inArray(
+          manualEntryOverrides.id,
+          overrideRows.map((row) => row.id),
+        ),
+      );
+  }
+
+  await tx.delete(manualEntries).where(inArray(manualEntries.id, manualEntryIds));
+}
+
+async function getRecurringGeneratedEntryBounds(
+  context: CurrentWorkspaceContext,
+  recurringEntryId: string,
+  db: DbExecutor = getDb(),
+) {
+  const [earliestVersionRow, earliestGeneratedRow, latestGeneratedRow] = await Promise.all([
+    db
+      .select({
+        effectiveStartMonth: recurringEntryVersions.effectiveStartMonth,
+      })
+      .from(recurringEntryVersions)
+      .where(eq(recurringEntryVersions.recurringEntryId, recurringEntryId))
+      .orderBy(asc(recurringEntryVersions.effectiveStartMonth))
+      .limit(1),
+    db
+      .select({
+        eventDate: manualEntries.eventDate,
+      })
+      .from(manualEntries)
+      .where(
+        and(
+          eq(manualEntries.workspaceId, context.workspaceId),
+          eq(manualEntries.sourceType, "recurring_generated"),
+          eq(manualEntries.sourceId, recurringEntryId),
+        ),
+      )
+      .orderBy(asc(manualEntries.eventDate))
+      .limit(1),
+    db
+      .select({
+        eventDate: manualEntries.eventDate,
+      })
+      .from(manualEntries)
+      .where(
+        and(
+          eq(manualEntries.workspaceId, context.workspaceId),
+          eq(manualEntries.sourceType, "recurring_generated"),
+          eq(manualEntries.sourceId, recurringEntryId),
+        ),
+      )
+      .orderBy(desc(manualEntries.eventDate))
+      .limit(1),
+  ]);
+
+  return {
+    earliestVersionMonth: earliestVersionRow[0]?.effectiveStartMonth ?? null,
+    earliestGeneratedMonth: earliestGeneratedRow[0]?.eventDate ?? null,
+    latestGeneratedMonth: latestGeneratedRow[0]?.eventDate ?? null,
+  };
+}
+
+export async function materializeRecurringEntriesForRange(
+  context: CurrentWorkspaceContext,
+  input: MaterializeRecurringEntriesInput,
+) {
+  const range = clampMaterializationRangeToCurrentMonth(input);
+
+  if (!range) {
+    return {
+      createdCount: 0,
+      updatedCount: 0,
+      deletedCount: 0,
+    };
+  }
+
+  const recurringEntries = await listRecurringEntries(context);
+  const activeEntries = recurringEntries.filter(
+    (entry) =>
+      entry.active &&
+      entry.versions.length > 0 &&
+      (!input.recurringEntryIds || input.recurringEntryIds.includes(entry.id)),
+  );
+
+  if (activeEntries.length === 0) {
+    return {
+      createdCount: 0,
+      updatedCount: 0,
+      deletedCount: 0,
+    };
+  }
+
+  const months = listMonthStringsBetween(range.startMonth, range.endMonth);
+  const desiredRows: RecurringGeneratedRowSeed[] = [];
+
+  for (const entry of activeEntries) {
+    for (const month of months) {
+      const version = entry.versions.find(
+        (candidate) =>
+          candidate.effectiveStartMonth <= month &&
+          (!candidate.effectiveEndMonth || candidate.effectiveEndMonth >= month),
+      );
+
+      if (!version || version.recurrenceRule !== "monthly") {
+        continue;
+      }
+
+      const amount = Number(version.amount);
+      const normalized = normalizeGeneratedAmount({
+        amount,
+        currency: version.currency,
+        workspaceCurrency: context.baseCurrency,
+        normalizationMode: version.normalizationMode,
+      });
+
+      desiredRows.push({
+        sourceId: entry.id,
+        eventDate: month,
+        eventKind: entry.eventKind,
+        title: entry.title,
+        originalCurrency: version.currency,
+        originalAmount: normalized.originalAmount.toFixed(6),
+        workspaceCurrency: context.baseCurrency,
+        normalizedAmount: normalized.normalizedAmount.toFixed(6),
+        normalizationRate: normalized.normalizationRate.toFixed(8),
+        normalizationRateSource: normalized.normalizationRateSource,
+        payerMemberId: entry.payerMemberId,
+        classificationType: entry.classificationType,
+        category: entry.category,
+      });
+    }
+  }
+
+  return withRecurringMaterializationLock(context, async (tx) => {
+    const existingRows = await tx
+      .select({
+        id: manualEntries.id,
+        sourceId: manualEntries.sourceId,
+        eventDate: manualEntries.eventDate,
+      })
+      .from(manualEntries)
+      .where(
+        and(
+          eq(manualEntries.workspaceId, context.workspaceId),
+          eq(manualEntries.sourceType, "recurring_generated"),
+          gte(manualEntries.eventDate, range.startMonth),
+          lte(manualEntries.eventDate, range.endMonth),
+          inArray(
+            manualEntries.sourceId,
+            activeEntries.map((entry) => entry.id),
+          ),
+        ),
+      );
+
+    const existingByKey = new Map<string, ExistingGeneratedManualEntryRow>();
+
+    for (const row of existingRows) {
+      if (!row.sourceId || !row.eventDate) {
+        continue;
+      }
+
+      existingByKey.set(recurringGeneratedKey(row.sourceId, row.eventDate), row);
+    }
+
+    const affectedManualEntryIds = new Set<string>();
+    let createdCount = 0;
+    let updatedCount = 0;
+
+    for (const row of desiredRows) {
+      const key = recurringGeneratedKey(row.sourceId, row.eventDate);
+      const existingRow = existingByKey.get(key);
+
+      if (existingRow) {
+        await tx
+          .update(manualEntries)
+          .set({
+            eventKind: row.eventKind,
+            title: row.title,
+            originalCurrency: row.originalCurrency,
+            originalAmount: row.originalAmount,
+            workspaceCurrency: row.workspaceCurrency,
+            normalizedAmount: row.normalizedAmount,
+            normalizationRate: row.normalizationRate,
+            normalizationRateSource: row.normalizationRateSource,
+            payerMemberId: row.payerMemberId,
+            classificationType: row.classificationType,
+            category: row.category,
+            updatedAt: new Date(),
+          })
+          .where(eq(manualEntries.id, existingRow.id));
+
+        existingByKey.delete(key);
+        affectedManualEntryIds.add(existingRow.id);
+        updatedCount += 1;
+        continue;
+      }
+
+      const [createdRow] = await tx
+        .insert(manualEntries)
+        .values({
+          workspaceId: context.workspaceId,
+          sourceType: "recurring_generated",
+          sourceId: row.sourceId,
+          eventKind: row.eventKind,
+          title: row.title,
+          originalCurrency: row.originalCurrency,
+          originalAmount: row.originalAmount,
+          workspaceCurrency: row.workspaceCurrency,
+          normalizedAmount: row.normalizedAmount,
+          normalizationRate: row.normalizationRate,
+          normalizationRateSource: row.normalizationRateSource,
+          payerMemberId: row.payerMemberId,
+          classificationType: row.classificationType,
+          category: row.category,
+          eventDate: row.eventDate,
+        })
+        .returning({
+          id: manualEntries.id,
+        });
+
+      affectedManualEntryIds.add(createdRow.id);
+      createdCount += 1;
+    }
+
+    const staleRows = Array.from(existingByKey.values());
+    const staleManualEntryIds = staleRows.map((row) => row.id);
+
+    if (staleManualEntryIds.length > 0) {
+      await deleteManualEntryRows(tx, staleManualEntryIds);
+      staleManualEntryIds.forEach((id) => affectedManualEntryIds.add(id));
+    }
+
+    if (affectedManualEntryIds.size > 0) {
+      await syncManualEntryExpenseEvents(
+        context,
+        Array.from(affectedManualEntryIds),
+        tx,
+      );
+    }
+
+    return {
+      createdCount,
+      updatedCount,
+      deletedCount: staleManualEntryIds.length,
+    };
+  });
+}
+
+async function deleteRecurringGeneratedEntriesFromMonth(
+  context: CurrentWorkspaceContext,
+  recurringEntryId: string,
+  startMonth: string,
+) {
+  const normalizedStartMonth = normalizeMonthString(startMonth);
+
+  return withRecurringMaterializationLock(context, async (tx) => {
+    const rows = await tx
+      .select({
+        id: manualEntries.id,
+      })
+      .from(manualEntries)
+      .where(
+        and(
+          eq(manualEntries.workspaceId, context.workspaceId),
+          eq(manualEntries.sourceType, "recurring_generated"),
+          eq(manualEntries.sourceId, recurringEntryId),
+          gte(manualEntries.eventDate, normalizedStartMonth),
+        ),
+      );
+
+    const manualEntryIds = rows.map((row) => row.id);
+
+    if (manualEntryIds.length === 0) {
+      return {
+        deletedCount: 0,
+      };
+    }
+
+    await deleteManualEntryRows(tx, manualEntryIds);
+    await syncManualEntryExpenseEvents(context, manualEntryIds, tx);
+
+    return {
+      deletedCount: manualEntryIds.length,
+    };
+  });
 }
 
 export async function listRecurringEntries(context: CurrentWorkspaceContext) {
@@ -326,7 +716,7 @@ export async function createRecurringEntry(
   });
   await assertWorkspaceMember(context, payerMemberId);
 
-  return db.transaction(async (tx) => {
+  const entry = await db.transaction(async (tx) => {
     const [entry] = await tx
       .insert(manualRecurringExpenses)
       .values({
@@ -355,6 +745,57 @@ export async function createRecurringEntry(
 
     return entry;
   });
+
+  if (effectiveStartMonth <= currentMonthString()) {
+    await materializeRecurringEntriesForRange(context, {
+      startMonth: effectiveStartMonth,
+      endMonth: currentMonthString(),
+      recurringEntryIds: [entry.id],
+    });
+  }
+
+  return entry;
+}
+
+export async function deleteRecurringEntry(
+  context: CurrentWorkspaceContext,
+  recurringEntryId: string,
+) {
+  await assertWorkspaceRecurringEntry(context, recurringEntryId);
+
+  await withRecurringMaterializationLock(context, async (tx) => {
+    const generatedRows = await tx
+      .select({
+        id: manualEntries.id,
+      })
+      .from(manualEntries)
+      .where(
+        and(
+          eq(manualEntries.workspaceId, context.workspaceId),
+          eq(manualEntries.sourceType, "recurring_generated"),
+          eq(manualEntries.sourceId, recurringEntryId),
+        ),
+      );
+
+    const manualEntryIds = generatedRows.map((row) => row.id);
+
+    if (manualEntryIds.length > 0) {
+      await deleteManualEntryRows(tx, manualEntryIds);
+      await syncManualEntryExpenseEvents(context, manualEntryIds, tx);
+    }
+
+    await tx
+      .delete(recurringEntryVersions)
+      .where(eq(recurringEntryVersions.recurringEntryId, recurringEntryId));
+
+    await tx
+      .delete(manualRecurringExpenses)
+      .where(eq(manualRecurringExpenses.id, recurringEntryId));
+  });
+
+  return {
+    recurringEntryId,
+  };
 }
 
 export async function updateRecurringEntry(
@@ -385,6 +826,31 @@ export async function updateRecurringEntry(
       updatedAt: new Date(),
     })
     .where(eq(manualRecurringExpenses.id, recurringEntryId));
+
+  if (input.active) {
+    const bounds = await getRecurringGeneratedEntryBounds(context, recurringEntryId, db);
+    const startMonth = bounds.earliestVersionMonth;
+    const currentMonth = currentMonthString();
+    const endMonth =
+      bounds.latestGeneratedMonth && bounds.latestGeneratedMonth > currentMonth
+        ? bounds.latestGeneratedMonth
+        : currentMonth;
+
+    if (startMonth && startMonth <= endMonth) {
+      await materializeRecurringEntriesForRange(context, {
+        startMonth,
+        endMonth,
+        recurringEntryIds: [recurringEntryId],
+        allowFutureMonths: true,
+      });
+    }
+  } else {
+    await deleteRecurringGeneratedEntriesFromMonth(
+      context,
+      recurringEntryId,
+      currentMonthString(),
+    );
+  }
 
   return {
     recurringEntryId,
@@ -453,6 +919,17 @@ export async function createRecurringEntryVersion(
     });
   });
 
+  const bounds = await getRecurringGeneratedEntryBounds(context, recurringEntry.id, db);
+
+  if (bounds.latestGeneratedMonth && bounds.latestGeneratedMonth >= effectiveStartMonth) {
+    await materializeRecurringEntriesForRange(context, {
+      startMonth: effectiveStartMonth,
+      endMonth: bounds.latestGeneratedMonth,
+      recurringEntryIds: [recurringEntry.id],
+      allowFutureMonths: true,
+    });
+  }
+
   return {
     recurringEntryId: recurringEntry.id,
   };
@@ -462,114 +939,13 @@ export async function generateRecurringEntriesForPeriod(
   context: CurrentWorkspaceContext,
   input: GenerateEntriesInput,
 ) {
-  const db = getDb();
-  const startMonth = normalizeMonthString(input.startMonth);
-  const endMonth = normalizeMonthString(input.endMonth);
-  assertMonthRange(startMonth, endMonth);
-  const months = listMonthStringsBetween(startMonth, endMonth);
-  const recurringEntries = await listRecurringEntries(context);
-  const activeEntries = recurringEntries.filter((entry) => entry.active && entry.versions.length > 0);
-
-  if (activeEntries.length === 0) {
-    return {
-      createdCount: 0,
-    };
-  }
-
-  const existingEntries = await db
-    .select({
-      sourceId: manualEntries.sourceId,
-      eventDate: manualEntries.eventDate,
-    })
-    .from(manualEntries)
-    .where(
-      and(
-        eq(manualEntries.workspaceId, context.workspaceId),
-        eq(manualEntries.sourceType, "recurring_generated"),
-        gte(manualEntries.eventDate, startMonth),
-        lte(manualEntries.eventDate, endMonth),
-        inArray(
-          manualEntries.sourceId,
-          activeEntries.map((entry) => entry.id),
-        ),
-      ),
-    );
-  const existingKeys = new Set(
-    existingEntries
-      .filter((entry): entry is { sourceId: string; eventDate: string } => Boolean(entry.sourceId))
-      .map((entry) => `${entry.sourceId}:${entry.eventDate}`),
-  );
-  const rowsToInsert: Array<typeof manualEntries.$inferInsert> = [];
-
-  for (const entry of activeEntries) {
-    for (const month of months) {
-      const version = entry.versions.find(
-        (candidate) =>
-          candidate.effectiveStartMonth <= month &&
-          (!candidate.effectiveEndMonth || candidate.effectiveEndMonth >= month),
-      );
-
-      if (!version || version.recurrenceRule !== "monthly") {
-        continue;
-      }
-
-      const existingKey = `${entry.id}:${month}`;
-
-      if (existingKeys.has(existingKey)) {
-        continue;
-      }
-
-      const amount = Number(version.amount);
-      const normalized = normalizeGeneratedAmount({
-        amount,
-        currency: version.currency,
-        workspaceCurrency: context.baseCurrency,
-        normalizationMode: version.normalizationMode,
-      });
-
-      rowsToInsert.push({
-        workspaceId: context.workspaceId,
-        sourceType: "recurring_generated",
-        sourceId: entry.id,
-        eventKind: entry.eventKind,
-        title: entry.title,
-        originalCurrency: version.currency,
-        originalAmount: amount.toFixed(6),
-        workspaceCurrency: context.baseCurrency,
-        normalizedAmount: normalized.normalizedAmount.toFixed(6),
-        normalizationRate: normalized.normalizationRate.toFixed(8),
-        normalizationRateSource: normalized.normalizationRateSource,
-        payerMemberId: entry.payerMemberId,
-        classificationType: entry.classificationType,
-        category: entry.category,
-        eventDate: month,
-      });
-    }
-  }
-
-  if (rowsToInsert.length === 0) {
-    return {
-      createdCount: 0,
-    };
-  }
-
-  await db.transaction(async (tx) => {
-    const createdEntries = await tx
-      .insert(manualEntries)
-      .values(rowsToInsert)
-      .returning({
-        id: manualEntries.id,
-      });
-
-    await syncManualEntryExpenseEvents(
-      context,
-      createdEntries.map((entry) => entry.id),
-      tx,
-    );
+  const result = await materializeRecurringEntriesForRange(context, {
+    ...input,
+    allowFutureMonths: true,
   });
 
   return {
-    createdCount: rowsToInsert.length,
+    createdCount: result.createdCount,
   };
 }
 
@@ -580,6 +956,12 @@ export async function getRecurringPageData(
   const startMonth = input?.startMonth ? normalizeMonthString(input.startMonth) : currentMonthString();
   const endMonth = input?.endMonth ? normalizeMonthString(input.endMonth) : currentMonthString();
   assertMonthRange(startMonth, endMonth);
+
+  await materializeRecurringEntriesForRange(context, {
+    startMonth,
+    endMonth,
+  });
+
   const [members, recurringEntries, generatedEntries] = await Promise.all([
     listWorkspaceMembers(context),
     listRecurringEntries(context),

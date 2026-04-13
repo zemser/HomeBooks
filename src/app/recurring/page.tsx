@@ -10,8 +10,9 @@ export default function RecurringPage() {
           <span className="eyebrow">Recurring</span>
           <h1>Rules for rent, salary, and the money that never comes from a CSV.</h1>
           <p>
-            Recurring entries fill the gaps imports cannot cover. They keep version history,
-            generate manual rows for future periods, and leave past generated months alone.
+            Recurring entries fill the gaps imports cannot cover. Save one definition, let the
+            app prepare the applicable months automatically, and keep version history when
+            amounts change later.
           </p>
         </section>
 
@@ -20,8 +21,8 @@ export default function RecurringPage() {
             <div>
               <h2>Where recurring fits</h2>
               <p className="muted-text">
-                This page rounds out the ledger after imports and review, then feeds the reports
-                with stable month-to-month items.
+                This page rounds out the ledger after imports and review, then feeds reports
+                with stable month-to-month items without a separate generate step.
               </p>
             </div>
             <div className="action-row">
