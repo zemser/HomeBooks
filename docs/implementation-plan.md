@@ -31,7 +31,10 @@ Completed in code:
   - bulk classification
   - merchant rule creation
   - rule application during future imports
-- recurring entry CRUD with future-dated versions
+- recurring entry CRUD with future-dated versions, plus the simplified one-definition flow:
+  - saving a recurring definition now auto-materializes the applicable report months
+  - pausing a definition removes the current recurring rows from reports, while delete removes the definition entirely
+  - future effective-month changes still preserve past prepared months
 - recurring-generated manual entries
 - one-time manual expense and income entry CRUD inline on `/expenses`
 - `expense_events` and `expense_allocations` materialized from reportable sources
@@ -90,10 +93,8 @@ Completed in code:
 
 Next up:
 
-- keep the expense workflow as the top priority with one more narrow polish pass for:
-  - any remaining manual-entry, ledger, or home/report affordance issues found during another real-file pass
-  - small workflow-copy or CTA refinements only if dogfooding still exposes confusion
-- keep investment composition follow-ups secondary until the expense workflow feels stable
+- move to lightweight investment composition follow-ups now that the expense-path smoke pass came back clean enough
+- keep expense-path fixes opportunistic only if a new real-file blocker appears
 - activity import support once we have a real activity export sample
 - durable upload storage for a cleaner hosted deployment path once hosted deployment becomes a priority
 - auth planning and provider selection once early deployment direction is clearer
@@ -638,8 +639,10 @@ What actually happened in code so far:
 14. Excellence investment persistence with confirmed owner/account resolution, import history, and `holding_snapshots` writes
 15. investment portfolio summaries and account overview reporting on top of the latest active holdings snapshots
 16. shared app shell and hybrid home hub on `/`, including workflow navigation and route reframing across the existing expense product surfaces
+17. explicit FX transparency and month-aware report handoffs across imports, review, ledger, reports, and `/`, including queue-cleared home cues and report drill-ins
+18. recurring definitions simplified into one saved flow, with automatic report materialization plus pause/delete behavior that updates the current report month
 
-The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, and the first connected workflow shell are now completed, so the next product work should focus on real dogfooding and usability follow-ups across imports, review, expenses, and reports before expanding farther into sidecar domains.
+The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, shared workflow shell, FX/report-handoff usability pass, and the recurring-flow simplification are now completed. The latest real-file smoke pass came back clean enough that the next product work should move to lightweight investment composition while keeping the expense workflow stable.
 
 ## Completed validation checkpoint
 
@@ -687,7 +690,7 @@ Important caveat:
 
 - the current import flow writes uploaded files to local disk, so a production Vercel deployment should either avoid import-heavy usage initially or replace local file persistence with durable object storage first
 
-With that checkpoint green and the home shell now connecting the product surfaces into one flow, the next local-first product expansion should be a real dogfooding pass across the expense workflow, while durable upload storage remains the main hosted-deployment hardening follow-up for later.
+With that checkpoint green, the home shell connecting the product surfaces, and the recurring/report flow simplified, the next local-first product expansion should move to investments while durable upload storage remains the main hosted-deployment hardening follow-up for later.
 
 ## What to postpone on purpose
 
@@ -705,9 +708,9 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. run another real-file dogfooding pass now that FX transparency and queue-cleared report handoffs are in place
-2. fix only the remaining highest-signal expense workflow friction that still shows up there
-3. move to lightweight investment composition follow-ups once the expense path feels steady
+1. move to lightweight investment composition follow-ups now that the connected expense workflow and recurring/report path have passed a real smoke test
+2. keep expense-path follow-up work limited to newly observed blockers rather than another broad polish sweep
+3. leave activity imports for later until we have a real export sample to design against
 4. defer durable upload storage until hosted deployment becomes a near-term priority
 5. scope the later auth slice once early deployment direction and provider choices are clearer
 
@@ -715,25 +718,23 @@ That keeps the product moving on the main household workflow first while still p
 
 ## Next handoff slice
 
-The FX transparency pass and the queue-cleared report handoff are now completed, so the next implementation slice should stay expense-first and use another real-file pass to confirm whether any manual-entry, ledger, or home/report follow-up polish is still needed before shifting attention to investment composition.
+The FX transparency pass, the queue-cleared report handoff, and the recurring-flow simplification are now completed, so the next implementation slice should move to lightweight investment composition rather than another expense-workflow verification pass.
 
 Goal:
 
-- make the connected workflow feel genuinely usable with real household data, not only navigable in theory
+- make `/investments` feel meaningfully useful on top of the saved holdings that already persist today
 
 Recommended scope:
 
-1. run the workflow from `/` through imports, review, expenses, recurring, and reports using real files from `examples/`
-2. confirm that FX labels, queue-cleared guidance, and report drill-ins are obvious with real imported data
-3. add only the remaining practical expense UX improvements that still show up after that pass
-4. preserve checksum behavior, duplicate handling, and current reporting/settlement contracts
-5. keep investment activity persistence and broader investment analytics out of scope
-6. leave durable storage, hosted DB decisions, and auth out of scope for this slice
+1. build read-oriented investment composition improvements on top of the latest active saved holdings
+2. keep the work scoped to current persisted holdings and import history rather than opening activity persistence
+3. preserve current account resolution, duplicate replacement, and latest-active-holdings behavior
+4. avoid dragging the expense workflow back into active scope unless a new blocker appears during regression testing
+5. leave durable storage, hosted DB decisions, and auth out of scope for this slice
 
 Definition of done:
 
-- the workflow can be exercised end-to-end from `/` without guessing where to go next
-- FX transparency and queue-cleared report handoffs remain obvious during real-file use
-- at least one more real-file dogfooding pass confirms or narrows the next remaining expense-path fixes
-- current import preview, save, duplicate-detection, and history flows keep working
-- existing expense import, reporting, and settlement behavior does not regress
+- `/investments` becomes more informative than import history plus summary strips alone
+- latest active holdings remain trustworthy after replacement imports
+- current expense import, review, recurring, reporting, and settlement behavior do not regress
+- activity imports remain out of scope until a real sample exists

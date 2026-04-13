@@ -3,7 +3,10 @@ import { z } from "zod";
 
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import { EVENT_KINDS } from "@/features/recurring/constants";
-import { updateRecurringEntry } from "@/features/recurring/service";
+import {
+  deleteRecurringEntry,
+  updateRecurringEntry,
+} from "@/features/recurring/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 export const runtime = "nodejs";
@@ -47,6 +50,24 @@ export async function PATCH(request: Request, { params }: RouteProps) {
       {
         error:
           error instanceof Error ? error.message : "Failed to update recurring entry.",
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(_: Request, { params }: RouteProps) {
+  try {
+    const context = await resolveCurrentWorkspaceContext();
+    const { recurringEntryId } = await params;
+    const result = await deleteRecurringEntry(context, recurringEntryId);
+
+    return NextResponse.json(result);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Failed to delete recurring entry.",
       },
       { status: 500 },
     );

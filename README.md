@@ -13,14 +13,15 @@ Initial scaffold for a shared finance app for couples and families.
 
 ## Current focus
 
-The current vertical slice is:
+The current product loop is:
 
 1. land on a DB-backed home hub at `/`
 2. import real bank files through `/imports`
 3. review uncertain classifications in `/imports/review`
 4. validate the ledger and manual-entry flow in `/expenses`
-5. confirm recurring and reporting behavior in `/recurring` and `/reports`
-6. keep polishing the expense workflow before widening scope again
+5. confirm recurring definitions and month-aware reporting behave like one connected flow in `/recurring` and `/reports`
+6. keep the expense workflow steady while shifting the next product slice to lightweight investment composition
+7. leave durable upload storage and auth planning as later slices
 
 ## Current caveats
 
@@ -61,5 +62,5 @@ Suggested smoke-test flow:
 4. Open `/imports/review` and process any uncertain rows, watching the progress cues as the queue shrinks.
 5. Open `/expenses` and confirm imported rows, search/filtering, saved manual-entry editing, and any FX labels all read clearly.
 6. Create a one-time manual entry and save an adjusted-period allocation.
-7. Open `/recurring` and confirm recurring entry screens load against the live DB.
-8. Open `/reports` and verify payment-date and adjusted-period views render for the month you just reviewed, including any FX transparency cues for imported rows.
+7. Open `/recurring`, save a recurring definition, confirm it appears in reports without a separate generate step, then pause it once and confirm the current report month clears.
+8. Open `/reports` and verify payment-date and adjusted-period views render for the month you just reviewed, including any FX transparency cues for imported rows, recurring rows that were prepared automatically, and the expected queue-cleared/month-aware handoff paths.
