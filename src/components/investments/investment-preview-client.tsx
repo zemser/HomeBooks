@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { getInvestmentAssetTypeLabel } from "@/features/investments/classification";
 import { buildInvestmentPortfolioReport } from "@/features/investments/reporting";
 import type {
   InvestmentAccountHoldingsSnapshot,
@@ -139,6 +140,14 @@ function formatPercentValue(
   return `${formatted}%`;
 }
 
+function getProgressWidth(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "0%";
+  }
+
+  return `${Math.max(0, Math.min(100, value))}%`;
+}
+
 function formatSnapshotValue(value: string | null) {
   if (!value) {
     return "-";
@@ -189,6 +198,7 @@ export function InvestmentPreviewClient({
   workspaceCurrency,
 }: InvestmentPreviewClientProps) {
   const [isPending, startTransition] = useTransition();
+  const [uploadFormVersion, setUploadFormVersion] = useState(0);
   const [fileName, setFileName] = useState<string | null>(null);
   const [preview, setPreview] = useState<InvestmentPreviewResponse | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
@@ -203,6 +213,8 @@ export function InvestmentPreviewClient({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const portfolioReport = buildInvestmentPortfolioReport(investmentAccountHoldings);
+  const leadingAssetMix = portfolioReport.assetMix[0] ?? null;
+  const leadingOwner = portfolioReport.ownerOverviews[0] ?? null;
 
   const canSaveToWorkspace = workspaceCurrency === "ILS";
   const canSubmitSave = Boolean(
@@ -211,6 +223,15 @@ export function InvestmentPreviewClient({
       && accountLabelDraft.trim()
       && canSaveToWorkspace,
   );
+
+  function resetPreviewFlow() {
+    setPreview(null);
+    setPendingSave(null);
+    setFileName(null);
+    setSelectedOwnerMemberId(initialCurrentMemberId);
+    setAccountLabelDraft("");
+    setUploadFormVersion((current) => current + 1);
+  }
 
   async function handleSubmit(formData: FormData) {
     setError(null);
@@ -288,6 +309,7 @@ export function InvestmentPreviewClient({
           if (payload.imports) {
             setInvestmentImports(payload.imports);
           }
+          resetPreviewFlow();
           setMessage("This workbook was already saved for the current workspace.");
           return;
         }
@@ -309,7 +331,8 @@ export function InvestmentPreviewClient({
           ...current.filter((item) => item.id !== payload.import?.id),
         ]);
       }
-      setMessage("Investment snapshot saved to the workspace.");
+      resetPreviewFlow();
+      setMessage("Investment snapshot saved to the workspace. Preview another file when you are ready.");
     } catch {
       setSaveState("error");
       setError("Could not save this investment snapshot right now.");
@@ -318,50 +341,6 @@ export function InvestmentPreviewClient({
 
   return (
     <section className="stack">
-      <article className="card stack compact">
-        <div className="page-actions">
-          <div>
-            <h2>Preview a workbook</h2>
-            <p className="muted-text">
-              Parse an Excellence workbook first, then confirm who owns the account
-              before saving the holdings snapshot.
-            </p>
-          </div>
-          <span className="badge badge-neutral">Excel only</span>
-        </div>
-
-        <form
-          className="stack compact"
-          action={(formData) => startTransition(() => void handleSubmit(formData))}
-        >
-          <label className="field">
-            <span>Investment workbook</span>
-            <input className="input" type="file" name="file" accept=".xlsx" required />
-          </label>
-
-          <div className="action-row">
-            <button className="button" type="submit" disabled={isPending}>
-              {isPending ? "Parsing..." : "Preview investment file"}
-            </button>
-            {fileName ? <span className="helper-text">{fileName}</span> : null}
-          </div>
-        </form>
-
-        {!canSaveToWorkspace ? (
-          <p className="status warning">
-            This workspace uses {workspaceCurrency}. Saving investment snapshots is
-            limited to ILS workspaces in v1, so preview still works but save is blocked.
-          </p>
-        ) : null}
-      </article>
-
-      {error ? <p className="status error">{error}</p> : null}
-      {message ? (
-        <p className={saveState === "duplicate" ? "status warning" : "status"}>
-          {message}
-        </p>
-      ) : null}
-
       {investmentAccountHoldings.length > 0 ? (
         <>
           <article className="card stack compact">
@@ -476,6 +455,226 @@ export function InvestmentPreviewClient({
                   )}
                 </p>
               </div>
+              <div>
+                <strong>Composition signal</strong>
+                <p>{leadingAssetMix?.assetTypeLabel ?? "-"}</p>
+                <p className="helper-text">
+                  {leadingAssetMix ? (
+                    <>
+                      {formatPercentValue(leadingAssetMix.portfolioSharePct)} of portfolio
+                      across {leadingAssetMix.holdingCount} holdings
+                    </>
+                  ) : (
+                    "No saved holdings are available yet."
+                  )}
+                </p>
+              </div>
+              <div>
+                <strong>Asset type coverage</strong>
+                <p>
+                  {portfolioReport.summary.estimatedAssetTypeCount} of{" "}
+                  {portfolioReport.summary.holdingCount} holdings are estimated
+                </p>
+                <p className="helper-text">
+                  Excellence snapshots do not expose a dedicated asset-type column, so
+                  the current mix uses holding-name heuristics when needed.
+                </p>
+              </div>
+            </div>
+          </article>
+
+          <article className="card stack compact">
+            <div className="page-actions">
+              <div>
+                <h2>Portfolio composition</h2>
+                <p className="muted-text">
+                  Estimated from the latest active holdings per account. This keeps the
+                  view useful now without opening activity imports yet.
+                </p>
+              </div>
+              <span className="badge badge-neutral">
+                {portfolioReport.summary.estimatedAssetTypeCount > 0
+                  ? "Name-based mix"
+                  : "Saved asset mix"}
+              </span>
+            </div>
+
+            <div className="summary-strip">
+              <div>
+                <strong>{leadingAssetMix?.assetTypeLabel ?? "-"}</strong>
+                <span>Largest asset type</span>
+              </div>
+              <div>
+                <strong>
+                  {formatPercentValue(leadingAssetMix?.portfolioSharePct ?? null)}
+                </strong>
+                <span>Largest asset-type share</span>
+              </div>
+              <div>
+                <strong>{portfolioReport.assetMix.length}</strong>
+                <span>Asset types present</span>
+              </div>
+              <div>
+                <strong>{portfolioReport.summary.estimatedAssetTypeCount}</strong>
+                <span>Estimated classifications</span>
+              </div>
+            </div>
+
+            <div className="composition-list">
+              {portfolioReport.assetMix.map((mix) => (
+                <article className="composition-row" key={mix.assetType}>
+                  <div className="composition-row-header">
+                    <div>
+                      <h3>{mix.assetTypeLabel}</h3>
+                      <p className="muted-text">
+                        {mix.holdingCount} holdings across {mix.accountCount} accounts
+                      </p>
+                    </div>
+                    <div className="composition-row-meta">
+                      <strong>
+                        {formatMoneyValue(mix.totalMarketValue, workspaceCurrency)}
+                      </strong>
+                      <span>{formatPercentValue(mix.portfolioSharePct)} of portfolio</span>
+                    </div>
+                  </div>
+
+                  <div className="progress-meter" aria-hidden="true">
+                    <span
+                      className="progress-meter-fill"
+                      style={{ width: getProgressWidth(mix.portfolioSharePct) }}
+                    />
+                  </div>
+
+                  {mix.estimatedHoldingCount > 0 ? (
+                    <p className="helper-text">
+                      {mix.estimatedHoldingCount} holdings in this group were classified
+                      from the holding name because the source workbook does not provide a
+                      dedicated asset-type field yet.
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </article>
+
+          <article className="card stack compact">
+            <div>
+              <h2>Owner split</h2>
+              <p className="muted-text">
+                Household-level view of who currently holds what across the saved
+                investment accounts.
+              </p>
+            </div>
+
+            <div className="summary-strip">
+              <div>
+                <strong>{portfolioReport.ownerOverviews.length}</strong>
+                <span>Owners represented</span>
+              </div>
+              <div>
+                <strong>{leadingOwner?.ownerDisplayName ?? "-"}</strong>
+                <span>Largest owner bucket</span>
+              </div>
+              <div>
+                <strong>
+                  {formatPercentValue(leadingOwner?.portfolioSharePct ?? null)}
+                </strong>
+                <span>Largest owner share</span>
+              </div>
+              <div>
+                <strong>
+                  {leadingOwner?.dominantAssetTypeLabel ?? "-"}
+                </strong>
+                <span>Largest owner&apos;s top asset type</span>
+              </div>
+            </div>
+
+            <div className="composition-list">
+              {portfolioReport.ownerOverviews.map((ownerOverview) => (
+                <article className="composition-row" key={ownerOverview.ownerKey}>
+                  <div className="composition-row-header">
+                    <div>
+                      <h3>{ownerOverview.ownerDisplayName}</h3>
+                      <p className="muted-text">
+                        {ownerOverview.accountCount} accounts · {ownerOverview.holdingCount}{" "}
+                        holdings
+                      </p>
+                    </div>
+                    <div className="composition-row-meta">
+                      <strong>
+                        {formatMoneyValue(
+                          ownerOverview.totalMarketValue,
+                          workspaceCurrency,
+                        )}
+                      </strong>
+                      <span>
+                        {formatPercentValue(ownerOverview.portfolioSharePct)} of portfolio
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="progress-meter" aria-hidden="true">
+                    <span
+                      className="progress-meter-fill"
+                      style={{ width: getProgressWidth(ownerOverview.portfolioSharePct) }}
+                    />
+                  </div>
+
+                  <p className="helper-text">
+                    {ownerOverview.dominantAssetTypeLabel ? (
+                      <>
+                        Dominant asset type: {ownerOverview.dominantAssetTypeLabel} at{" "}
+                        {formatPercentValue(ownerOverview.dominantAssetTypeSharePct)} of
+                        this owner&apos;s saved holdings.
+                      </>
+                    ) : (
+                      "No dominant asset type is available yet."
+                    )}{" "}
+                    Latest snapshot: {formatSnapshotValue(ownerOverview.latestSnapshotDate)}.
+                  </p>
+                </article>
+              ))}
+            </div>
+          </article>
+
+          <article className="card stack compact">
+            <div>
+              <h2>Top positions across accounts</h2>
+              <p className="muted-text">
+                Combined across the latest saved snapshot for each account, so repeated
+                holdings roll into one portfolio-level position.
+              </p>
+            </div>
+
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Symbol</th>
+                    <th>Type</th>
+                    <th>Accounts</th>
+                    <th>Market value</th>
+                    <th>Portfolio share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {portfolioReport.topPositions.slice(0, 8).map((position) => (
+                    <tr key={position.positionKey}>
+                      <td>
+                        <strong>{position.assetName}</strong>
+                      </td>
+                      <td>{position.assetSymbol ?? "-"}</td>
+                      <td>{position.assetTypeLabel}</td>
+                      <td>{position.accountCount}</td>
+                      <td>
+                        {formatMoneyValue(position.totalMarketValue, workspaceCurrency)}
+                      </td>
+                      <td>{formatPercentValue(position.portfolioSharePct)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </article>
 
@@ -677,16 +876,21 @@ export function InvestmentPreviewClient({
                         <tr
                           key={`${account.accountId}-${holding.assetName}-${holding.assetSymbol ?? "unknown"}`}
                         >
-                          <td>
-                            <strong>{holding.assetName}</strong>
-                          </td>
-                          <td>{holding.assetSymbol ?? "-"}</td>
-                          <td>{holding.assetType}</td>
-                          <td>{formatNumberValue(holding.quantity, { maximumFractionDigits: 8 })}</td>
-                          <td>{formatMoneyValue(holding.marketValue, holding.marketValueCurrency)}</td>
-                          <td>{formatMoneyValue(holding.costBasis, workspaceCurrency)}</td>
-                          <td>{formatSignedMoneyValue(holding.gainLoss, workspaceCurrency)}</td>
-                        </tr>
+                        <td>
+                          <strong>{holding.assetName}</strong>
+                        </td>
+                        <td>{holding.assetSymbol ?? "-"}</td>
+                        <td>
+                          {getInvestmentAssetTypeLabel(holding.assetType)}
+                          {holding.assetTypeSource === "estimated" ? (
+                            <div className="table-note">Estimated from holding name</div>
+                          ) : null}
+                        </td>
+                        <td>{formatNumberValue(holding.quantity, { maximumFractionDigits: 8 })}</td>
+                        <td>{formatMoneyValue(holding.marketValue, holding.marketValueCurrency)}</td>
+                        <td>{formatMoneyValue(holding.costBasis, workspaceCurrency)}</td>
+                        <td>{formatSignedMoneyValue(holding.gainLoss, workspaceCurrency)}</td>
+                      </tr>
                       ))}
                     </tbody>
                   </table>
@@ -695,6 +899,51 @@ export function InvestmentPreviewClient({
             ))}
           </div>
         )}
+      </article>
+
+      <article className="card stack compact">
+        <div className="page-actions">
+          <div>
+            <h2>Preview a workbook</h2>
+            <p className="muted-text">
+              Parse an Excellence workbook here when you want to inspect a new
+              snapshot and then save it into the household investment view.
+            </p>
+          </div>
+          <span className="badge badge-neutral">Excel only</span>
+        </div>
+
+        <form
+          key={uploadFormVersion}
+          className="stack compact"
+          action={(formData) => startTransition(() => void handleSubmit(formData))}
+        >
+          <label className="field">
+            <span>Investment workbook</span>
+            <input className="input" type="file" name="file" accept=".xlsx" required />
+          </label>
+
+          <div className="action-row">
+            <button className="button" type="submit" disabled={isPending}>
+              {isPending ? "Parsing..." : "Preview investment file"}
+            </button>
+            {fileName ? <span className="helper-text">{fileName}</span> : null}
+          </div>
+        </form>
+
+        {!canSaveToWorkspace ? (
+          <p className="status warning">
+            This workspace uses {workspaceCurrency}. Saving investment snapshots is
+            limited to ILS workspaces in v1, so preview still works but save is blocked.
+          </p>
+        ) : null}
+
+        {error ? <p className="status error">{error}</p> : null}
+        {message ? (
+          <p className={saveState === "duplicate" ? "status warning" : "status"}>
+            {message}
+          </p>
+        ) : null}
       </article>
 
       {preview ? (

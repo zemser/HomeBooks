@@ -480,6 +480,44 @@ main {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.composition-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.composition-row {
+  display: grid;
+  gap: 0.8rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.composition-row-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.composition-row-header h3,
+.composition-row-header p,
+.composition-row-meta p {
+  margin: 0;
+}
+
+.composition-row-meta {
+  display: grid;
+  gap: 0.25rem;
+  justify-items: end;
+  text-align: right;
+}
+
+.composition-row-meta strong {
+  font-size: 1.05rem;
+}
+
 .action-row {
   align-items: center;
   grid-auto-flow: column;
@@ -686,17 +724,20 @@ main {
 
   .activity-row,
   .info-row,
-  .home-card-header {
+  .home-card-header,
+  .composition-row-header {
     grid-template-columns: 1fr;
   }
 
   .activity-row,
-  .info-row {
+  .info-row,
+  .composition-row-header {
     display: grid;
   }
 
   .activity-meta,
-  .info-row span {
+  .info-row span,
+  .composition-row-meta {
     justify-items: start;
     text-align: left;
   }
