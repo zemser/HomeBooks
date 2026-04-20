@@ -9,6 +9,10 @@ import {
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
+import {
+  assertWorkspaceCategory,
+  normalizeOptionalWorkspaceCategoryName,
+} from "@/features/workspaces/categories";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 type SingleClassificationInput = {
@@ -72,13 +76,14 @@ export async function upsertTransactionClassification(
 ) {
   const db = getDb();
   const memberOwnerId = normalizeOptionalText(input.memberOwnerId);
-  const category = normalizeOptionalText(input.category);
+  const category = normalizeOptionalWorkspaceCategoryName(input.category);
 
   validateClassificationInput({
     classificationType: input.classificationType,
     memberOwnerId,
   });
   await assertWorkspaceMember(context.workspaceId, memberOwnerId);
+  const savedCategory = await assertWorkspaceCategory(context, category, db);
 
   const transaction = await db.query.transactions.findFirst({
     columns: {
@@ -104,7 +109,7 @@ export async function upsertTransactionClassification(
         transactionId: transaction.id,
         classificationType: input.classificationType,
         memberOwnerId,
-        category,
+        category: savedCategory,
         confidence: null,
         decidedBy: "user",
         reviewedAt: now,
@@ -114,7 +119,7 @@ export async function upsertTransactionClassification(
         set: {
           classificationType: input.classificationType,
           memberOwnerId,
-          category,
+          category: savedCategory,
           confidence: null,
           decidedBy: "user",
           reviewedAt: now,
@@ -154,7 +159,7 @@ export async function upsertTransactionClassification(
         matchValue,
         defaultClassificationType: input.classificationType,
         defaultMemberOwnerId: memberOwnerId,
-        defaultCategory: category,
+        defaultCategory: savedCategory,
         priority: 100,
         active: true,
       });
@@ -168,7 +173,7 @@ export async function upsertTransactionClassification(
       .set({
         defaultClassificationType: input.classificationType,
         defaultMemberOwnerId: memberOwnerId,
-        defaultCategory: category,
+        defaultCategory: savedCategory,
         priority: 100,
         active: true,
         updatedAt: now,
@@ -206,7 +211,7 @@ export async function bulkClassifyTransactions(
   const db = getDb();
   const transactionIds = Array.from(new Set(input.transactionIds));
   const memberOwnerId = normalizeOptionalText(input.memberOwnerId);
-  const category = normalizeOptionalText(input.category);
+  const category = normalizeOptionalWorkspaceCategoryName(input.category);
 
   if (transactionIds.length === 0) {
     throw new Error("Select at least one transaction to classify.");
@@ -217,6 +222,7 @@ export async function bulkClassifyTransactions(
     memberOwnerId,
   });
   await assertWorkspaceMember(context.workspaceId, memberOwnerId);
+  const savedCategory = await assertWorkspaceCategory(context, category, db);
 
   const matchingTransactions = await db
     .select({
@@ -244,7 +250,7 @@ export async function bulkClassifyTransactions(
           transactionId,
           classificationType: input.classificationType,
           memberOwnerId,
-          category,
+          category: savedCategory,
           confidence: null,
           decidedBy: "user" as const,
           reviewedAt: now,
@@ -255,7 +261,7 @@ export async function bulkClassifyTransactions(
         set: {
           classificationType: input.classificationType,
           memberOwnerId,
-          category,
+          category: savedCategory,
           confidence: null,
           decidedBy: "user",
           reviewedAt: now,

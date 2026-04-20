@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { SettingsPageClient } from "@/components/settings/settings-page-client";
+import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { getWorkspaceSettingsSnapshot } from "@/features/workspaces/settings";
@@ -9,9 +10,10 @@ export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
   const context = await resolveCurrentWorkspaceContext();
-  const [settings, members] = await Promise.all([
+  const [settings, members, categories] = await Promise.all([
     getWorkspaceSettingsSnapshot(context),
     listWorkspaceMembersForSettings(context),
+    listWorkspaceCategories(context),
   ]);
 
   return (
@@ -47,7 +49,11 @@ export default async function SettingsPage() {
           </div>
         </section>
 
-        <SettingsPageClient initialSettings={settings} initialMembers={members} />
+        <SettingsPageClient
+          initialSettings={settings}
+          initialMembers={members}
+          initialCategories={categories}
+        />
       </div>
     </main>
   );

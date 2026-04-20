@@ -61,6 +61,7 @@ export type ReviewQueueResponse = {
   queue: ExpenseTransactionItem[];
   focusTransaction: ExpenseTransactionItem | null;
   members: WorkspaceMemberOption[];
+  categories: string[];
   summary: ReviewQueueSummary;
 };
 
@@ -68,4 +69,5 @@ export type ExpensesPageData = {
   transactions: ExpenseTransactionItem[];
   oneTimeManualEntries: OneTimeManualEntryItem[];
   members: WorkspaceMemberOption[];
+  categories: string[];
 };

@@ -51,6 +51,7 @@ export type RecurringPageData = {
     id: string;
     displayName: string;
   }>;
+  categories: string[];
   recurringEntries: RecurringEntryItem[];
   generatedEntries: GeneratedManualEntryItem[];
 };

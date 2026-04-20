@@ -18,6 +18,7 @@ import type {
   ReviewQueueSummary,
   WorkspaceMemberOption,
 } from "@/features/expenses/types";
+import { listWorkspaceCategoryNames } from "@/features/workspaces/categories";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 type RawTransactionRow = {
@@ -216,7 +217,7 @@ export async function listReviewQueue(
   context: CurrentWorkspaceContext,
   transactionId?: string,
 ): Promise<ReviewQueueResponse> {
-  const [queue, focusTransaction, members, summary] = await Promise.all([
+  const [queue, focusTransaction, members, categories, summary] = await Promise.all([
     listTransactionsByWorkspace({
       context,
       workspaceId: context.workspaceId,
@@ -230,6 +231,7 @@ export async function listReviewQueue(
         }).then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
     listWorkspaceMembers(context),
+    listWorkspaceCategoryNames(context),
     getReviewQueueSummary(context),
   ]);
 
@@ -237,6 +239,7 @@ export async function listReviewQueue(
     queue,
     focusTransaction,
     members,
+    categories,
     summary,
   };
 }

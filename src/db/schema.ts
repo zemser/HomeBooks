@@ -123,6 +123,29 @@ export const workspaceMembers = pgTable(
   }),
 );
 
+export const workspaceCategories = pgTable(
+  "workspace_categories",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    name: text("name").notNull(),
+    canonicalName: text("canonical_name").notNull(),
+    ...timestamps,
+  },
+  (table) => ({
+    workspaceCanonicalUnique: unique("workspace_categories_workspace_canonical_unique").on(
+      table.workspaceId,
+      table.canonicalName,
+    ),
+    workspaceCreatedIdx: index("workspace_categories_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+  }),
+);
+
 export const importSources = pgTable("import_sources", {
   id: uuid("id").defaultRandom().primaryKey(),
   type: importTypeEnum("type").notNull(),

@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 
 import type {
+  WorkspaceCategoryItem,
   WorkspaceMemberRole,
   WorkspaceMemberSettingsItem,
   WorkspaceSettingsSnapshot,
@@ -17,9 +18,15 @@ type WorkspaceSettingsResponse = WorkspaceSettingsSnapshot & {
   error?: string;
 };
 
+type WorkspaceCategoriesResponse = {
+  categories?: WorkspaceCategoryItem[];
+  error?: string;
+};
+
 type SettingsPageClientProps = {
   initialSettings: WorkspaceSettingsSnapshot;
   initialMembers: WorkspaceMemberSettingsItem[];
+  initialCategories: WorkspaceCategoryItem[];
 };
 
 function buildNameDrafts(members: WorkspaceMemberSettingsItem[]) {
@@ -33,19 +40,23 @@ function buildRoleDrafts(members: WorkspaceMemberSettingsItem[]) {
 export function SettingsPageClient({
   initialSettings,
   initialMembers,
+  initialCategories,
 }: SettingsPageClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [members, setMembers] = useState<WorkspaceMemberSettingsItem[]>(initialMembers);
+  const [categories, setCategories] = useState<WorkspaceCategoryItem[]>(initialCategories);
   const [draftNames, setDraftNames] = useState<Record<string, string>>(() => buildNameDrafts(initialMembers));
   const [draftRoles, setDraftRoles] = useState<Record<string, WorkspaceMemberRole>>(
     () => buildRoleDrafts(initialMembers),
   );
   const [baseCurrencyDraft, setBaseCurrencyDraft] = useState(initialSettings.baseCurrency);
+  const [newCategoryName, setNewCategoryName] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingMemberId, setPendingMemberId] = useState<string | null>(null);
   const [isSavingBaseCurrency, setIsSavingBaseCurrency] = useState(false);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
   const [isSaving, startSaving] = useTransition();
 
   async function loadMembers() {
@@ -68,6 +79,27 @@ export function SettingsPageClient({
         loadError instanceof Error
           ? loadError.message
           : "Could not load workspace members.",
+      );
+    }
+  }
+
+  async function loadCategories() {
+    setError(null);
+
+    try {
+      const response = await fetch("/api/workspace-categories");
+      const payload = (await response.json()) as WorkspaceCategoriesResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not load workspace categories.");
+      }
+
+      setCategories(payload.categories ?? []);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load workspace categories.",
       );
     }
   }
@@ -100,6 +132,36 @@ export function SettingsPageClient({
     setNewMemberName("");
     await loadMembers();
     setMessage("Workspace member created.");
+  }
+
+  async function handleCreateCategory() {
+    setError(null);
+    setMessage(null);
+    setIsSavingCategory(true);
+
+    const response = await fetch("/api/workspace-categories", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name: newCategoryName,
+      }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+
+    setIsSavingCategory(false);
+
+    if (!response.ok) {
+      setError(payload.error ?? "Could not create workspace category.");
+      return;
+    }
+
+    setNewCategoryName("");
+    await loadCategories();
+    setMessage("Workspace category saved.");
   }
 
   async function handleUpdateMember(
@@ -186,6 +248,10 @@ export function SettingsPageClient({
             <strong>{settlementReady ? "Ready" : "Not ready"}</strong>
             <span>Settlement readiness</span>
           </div>
+          <div>
+            <strong>{categories.length}</strong>
+            <span>Defined categories</span>
+          </div>
         </div>
       </article>
 
@@ -243,6 +309,63 @@ export function SettingsPageClient({
             ? "Safe to edit now because the workspace does not have financial records yet."
             : settings.baseCurrencyLockReason}
         </p>
+      </article>
+
+      <article className="card stack compact">
+        <div className="page-actions">
+          <div>
+            <h2>Expense categories</h2>
+            <p className="muted-text">
+              Categories defined here become the shared pick-list for transaction review,
+              one-time manual entries, and recurring definitions.
+            </p>
+          </div>
+        </div>
+
+        <form
+          className="inline-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            startSaving(() => {
+              void handleCreateCategory();
+            });
+          }}
+        >
+          <label className="field">
+            <span>New category</span>
+            <input
+              className="input"
+              value={newCategoryName}
+              onChange={(event) => setNewCategoryName(event.target.value)}
+              placeholder="Groceries"
+            />
+          </label>
+          <div className="field">
+            <span>&nbsp;</span>
+            <button
+              className="button"
+              type="submit"
+              disabled={isSaving || isSavingCategory}
+            >
+              {isSavingCategory ? "Saving..." : "Add category"}
+            </button>
+          </div>
+        </form>
+
+        {categories.length === 0 ? (
+          <p className="empty-state">
+            No categories are defined yet. Add the ones you want people to pick from, like rent,
+            groceries, and transport.
+          </p>
+        ) : (
+          <div className="action-row">
+            {categories.map((category) => (
+              <span className="badge badge-neutral" key={category.id}>
+                {category.name}
+              </span>
+            ))}
+          </div>
+        )}
       </article>
 
       <article className="card stack compact">

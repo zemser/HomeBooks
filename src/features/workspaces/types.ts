@@ -11,6 +11,11 @@ export type WorkspaceMemberSettingsItem = {
   role: WorkspaceMemberRole;
 };
 
+export type WorkspaceCategoryItem = {
+  id: string;
+  name: string;
+};
+
 export type WorkspaceSettingsSnapshot = {
   workspaceId: string;
   baseCurrency: string;

@@ -11,6 +11,11 @@ import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normaliz
 import type { ClassificationType } from "@/features/expenses/constants";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
+import {
+  assertWorkspaceCategory,
+  listWorkspaceCategoryNames,
+  normalizeOptionalWorkspaceCategoryName,
+} from "@/features/workspaces/categories";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import type {
   EventKind,
@@ -705,7 +710,7 @@ export async function createRecurringEntry(
 ) {
   const db = getDb();
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
-  const category = normalizeOptionalText(input.category);
+  const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const notes = normalizeOptionalText(input.notes);
   const effectiveStartMonth = normalizeMonthString(input.effectiveStartMonth);
   const currency = normalizeCurrencyCode(input.currency);
@@ -715,6 +720,7 @@ export async function createRecurringEntry(
     payerMemberId,
   });
   await assertWorkspaceMember(context, payerMemberId);
+  const savedCategory = await assertWorkspaceCategory(context, category, db);
 
   const entry = await db.transaction(async (tx) => {
     const [entry] = await tx
@@ -725,7 +731,7 @@ export async function createRecurringEntry(
         eventKind: input.eventKind,
         payerMemberId,
         classificationType: input.classificationType,
-        category,
+        category: savedCategory,
         active: true,
       })
       .returning({
@@ -805,7 +811,7 @@ export async function updateRecurringEntry(
 ) {
   const db = getDb();
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
-  const category = normalizeOptionalText(input.category);
+  const category = normalizeOptionalWorkspaceCategoryName(input.category);
 
   await assertWorkspaceRecurringEntry(context, recurringEntryId);
   validateRecurringClassification({
@@ -813,6 +819,7 @@ export async function updateRecurringEntry(
     payerMemberId,
   });
   await assertWorkspaceMember(context, payerMemberId);
+  const savedCategory = await assertWorkspaceCategory(context, category, db);
 
   await db
     .update(manualRecurringExpenses)
@@ -821,7 +828,7 @@ export async function updateRecurringEntry(
       eventKind: input.eventKind,
       payerMemberId,
       classificationType: input.classificationType,
-      category,
+      category: savedCategory,
       active: input.active,
       updatedAt: new Date(),
     })
@@ -962,8 +969,9 @@ export async function getRecurringPageData(
     endMonth,
   });
 
-  const [members, recurringEntries, generatedEntries] = await Promise.all([
+  const [members, categories, recurringEntries, generatedEntries] = await Promise.all([
     listWorkspaceMembers(context),
+    listWorkspaceCategoryNames(context),
     listRecurringEntries(context),
     listGeneratedManualEntries(context, {
       startMonth,
@@ -974,6 +982,7 @@ export async function getRecurringPageData(
   return {
     workspaceCurrency: context.baseCurrency,
     members,
+    categories,
     recurringEntries,
     generatedEntries,
   };

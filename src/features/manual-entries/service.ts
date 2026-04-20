@@ -6,6 +6,10 @@ import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normaliz
 import { listManualEntryAllocationStates } from "@/features/expenses/allocation";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
+import {
+  assertWorkspaceCategory,
+  normalizeOptionalWorkspaceCategoryName,
+} from "@/features/workspaces/categories";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import type {
   OneTimeManualEntryClassificationType,
@@ -169,7 +173,7 @@ export async function createOneTimeManualEntry(
 ) {
   const db = getDb();
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
-  const category = normalizeOptionalText(input.category);
+  const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const eventDate = normalizeDateInput(input.eventDate);
 
   validateOneTimeManualEntry({
@@ -178,6 +182,7 @@ export async function createOneTimeManualEntry(
     payerMemberId,
   });
   await assertWorkspaceMember(context, payerMemberId, db);
+  const savedCategory = await assertWorkspaceCategory(context, category, db);
 
   const normalized = normalizeAmountToWorkspaceCurrency({
     amount: input.amount,
@@ -204,7 +209,7 @@ export async function createOneTimeManualEntry(
         normalizationRateSource: normalized.normalizationRateSource,
         payerMemberId,
         classificationType: input.classificationType,
-        category,
+        category: savedCategory,
         eventDate,
       })
       .returning({
@@ -226,7 +231,7 @@ export async function updateOneTimeManualEntry(
 ) {
   const db = getDb();
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
-  const category = normalizeOptionalText(input.category);
+  const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const eventDate = normalizeDateInput(input.eventDate);
 
   await assertWorkspaceOneTimeManualEntry(context, manualEntryId, db);
@@ -236,6 +241,7 @@ export async function updateOneTimeManualEntry(
     payerMemberId,
   });
   await assertWorkspaceMember(context, payerMemberId, db);
+  const savedCategory = await assertWorkspaceCategory(context, category, db);
 
   const normalized = normalizeAmountToWorkspaceCurrency({
     amount: input.amount,
@@ -259,7 +265,7 @@ export async function updateOneTimeManualEntry(
         normalizationRateSource: normalized.normalizationRateSource,
         payerMemberId,
         classificationType: input.classificationType,
-        category,
+        category: savedCategory,
         eventDate,
         updatedAt: new Date(),
       })
