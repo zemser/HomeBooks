@@ -23,6 +23,10 @@ type WorkspaceCategoriesResponse = {
   error?: string;
 };
 
+type WorkspaceCategoryMutationResponse = {
+  error?: string;
+};
+
 type SettingsPageClientProps = {
   initialSettings: WorkspaceSettingsSnapshot;
   initialMembers: WorkspaceMemberSettingsItem[];
@@ -37,6 +41,10 @@ function buildRoleDrafts(members: WorkspaceMemberSettingsItem[]) {
   return Object.fromEntries(members.map((member) => [member.id, member.role]));
 }
 
+function buildCategoryDrafts(categories: WorkspaceCategoryItem[]) {
+  return Object.fromEntries(categories.map((category) => [category.id, category.name]));
+}
+
 export function SettingsPageClient({
   initialSettings,
   initialMembers,
@@ -49,12 +57,16 @@ export function SettingsPageClient({
   const [draftRoles, setDraftRoles] = useState<Record<string, WorkspaceMemberRole>>(
     () => buildRoleDrafts(initialMembers),
   );
+  const [draftCategoryNames, setDraftCategoryNames] = useState<Record<string, string>>(
+    () => buildCategoryDrafts(initialCategories),
+  );
   const [baseCurrencyDraft, setBaseCurrencyDraft] = useState(initialSettings.baseCurrency);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingMemberId, setPendingMemberId] = useState<string | null>(null);
+  const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
   const [isSavingBaseCurrency, setIsSavingBaseCurrency] = useState(false);
   const [isSavingCategory, setIsSavingCategory] = useState(false);
   const [isSaving, startSaving] = useTransition();
@@ -94,7 +106,9 @@ export function SettingsPageClient({
         throw new Error(payload.error ?? "Could not load workspace categories.");
       }
 
-      setCategories(payload.categories ?? []);
+      const nextCategories = payload.categories ?? [];
+      setCategories(nextCategories);
+      setDraftCategoryNames(buildCategoryDrafts(nextCategories));
     } catch (loadError) {
       setError(
         loadError instanceof Error
@@ -162,6 +176,33 @@ export function SettingsPageClient({
     setNewCategoryName("");
     await loadCategories();
     setMessage("Workspace category saved.");
+  }
+
+  async function handleUpdateCategory(categoryId: string, name: string) {
+    setError(null);
+    setMessage(null);
+    setPendingCategoryId(categoryId);
+
+    const response = await fetch(`/api/workspace-categories/${categoryId}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        name,
+      }),
+    });
+    const payload = (await response.json().catch(() => ({}))) as WorkspaceCategoryMutationResponse;
+
+    setPendingCategoryId(null);
+
+    if (!response.ok) {
+      setError(payload.error ?? "Could not update workspace category.");
+      return;
+    }
+
+    await loadCategories();
+    setMessage("Workspace category updated.");
   }
 
   async function handleUpdateMember(
@@ -254,6 +295,9 @@ export function SettingsPageClient({
           </div>
         </div>
       </article>
+
+      {error ? <p className="status error">{error}</p> : null}
+      {message ? <p className="status">{message}</p> : null}
 
       <article className="card stack compact">
         <div className="page-actions">
@@ -358,14 +402,69 @@ export function SettingsPageClient({
             groceries, and transport.
           </p>
         ) : (
-          <div className="action-row">
-            {categories.map((category) => (
-              <span className="badge badge-neutral" key={category.id}>
-                {category.name}
-              </span>
-            ))}
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {categories.map((category) => {
+                  const draftCategoryName = draftCategoryNames[category.id] ?? category.name;
+                  const normalizedDraftCategoryName = draftCategoryName.trim();
+                  const hasPendingChanges = normalizedDraftCategoryName !== category.name;
+
+                  return (
+                    <tr key={category.id}>
+                      <td>
+                        <input
+                          className="input"
+                          value={draftCategoryName}
+                          disabled={pendingCategoryId === category.id}
+                          onChange={(event) =>
+                            setDraftCategoryNames((current) => ({
+                              ...current,
+                              [category.id]: event.target.value,
+                            }))
+                          }
+                        />
+                      </td>
+                      <td>
+                        <div className="action-row">
+                          <button
+                            className="button"
+                            type="button"
+                            disabled={
+                              pendingCategoryId === category.id
+                              || normalizedDraftCategoryName.length === 0
+                              || !hasPendingChanges
+                            }
+                            onClick={() =>
+                              startSaving(() => {
+                                void handleUpdateCategory(category.id, draftCategoryName);
+                              })
+                            }
+                          >
+                            {pendingCategoryId === category.id ? "Saving..." : "Save name"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
+
+        {categories.length > 0 ? (
+          <p className="muted-text">
+            Renaming a category updates existing transaction classifications, one-time manual
+            entries, recurring definitions, generated recurring rows, and matching rules.
+          </p>
+        ) : null}
       </article>
 
       <article className="card stack compact">
@@ -419,9 +518,6 @@ export function SettingsPageClient({
             </p>
           </div>
         </div>
-
-        {error ? <p className="status error">{error}</p> : null}
-        {message ? <p className="status">{message}</p> : null}
 
         <form
           className="inline-form"
