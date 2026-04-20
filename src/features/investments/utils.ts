@@ -1,4 +1,5 @@
 import type { TabularRow } from "@/features/imports/types";
+import type { InvestmentActivityType } from "@/features/investments/types";
 import { normalizeRow, parseNumber } from "@/features/imports/utils";
 
 function normalizeOptionalText(value: string | null | undefined) {
@@ -45,6 +46,24 @@ export function parseSlashDateToIso(value: string) {
   return `${year}-${month}-${day}`;
 }
 
+export function parseSlashDateRangeToIso(value: string) {
+  const match = value.match(/(\d{2}\/\d{2}\/\d{4})\s+עד\s+(\d{2}\/\d{2}\/\d{4})/);
+
+  if (!match) {
+    return {
+      startDate: null,
+      endDate: null,
+    };
+  }
+
+  const [, startDateText, endDateText] = match;
+
+  return {
+    startDate: parseSlashDateToIso(startDateText),
+    endDate: parseSlashDateToIso(endDateText),
+  };
+}
+
 export function extractTimestampText(value: string) {
   const normalized = normalizeOptionalText(value);
 
@@ -82,4 +101,23 @@ export function normalizeInvestmentAccountLabel(value: string) {
   }
 
   return normalized;
+}
+
+export function getInvestmentActivityTypeLabel(activityType: InvestmentActivityType) {
+  switch (activityType) {
+    case "buy":
+      return "Buy";
+    case "sell":
+      return "Sell";
+    case "dividend":
+      return "Dividend";
+    case "fee":
+      return "Tax or fee";
+    case "cash_in":
+      return "Cash in";
+    case "cash_out":
+      return "Cash out";
+    default:
+      return activityType;
+  }
 }

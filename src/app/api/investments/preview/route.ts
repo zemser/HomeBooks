@@ -39,6 +39,8 @@ export async function POST(request: Request) {
       accountLabel: result.preview.accountLabel,
       snapshotDate: result.preview.snapshotDate,
       snapshotTimestampText: result.preview.snapshotTimestampText,
+      activityPeriodStart: result.preview.activityPeriodStart,
+      activityPeriodEnd: result.preview.activityPeriodEnd,
       holdingCount: result.preview.holdings.length,
       activityCount: result.preview.activities.length,
       holdings: result.preview.holdings,
