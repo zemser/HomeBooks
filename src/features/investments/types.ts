@@ -1,6 +1,13 @@
 import type { WorkbookData } from "@/features/imports/types";
 
 export type InvestmentProviderId = "excellence";
+export type InvestmentActivityType =
+  | "buy"
+  | "sell"
+  | "dividend"
+  | "fee"
+  | "cash_in"
+  | "cash_out";
 
 export type DetectedInvestmentTemplate =
   | {
@@ -37,11 +44,16 @@ export type InvestmentPreviewHolding = {
 export type InvestmentPreviewActivity = {
   activityDate: string | null;
   assetName: string;
-  activityType: string;
+  assetSymbol: string | null;
+  activityType: InvestmentActivityType;
+  activityTypeLabel: string;
+  providerActionLabel: string;
   quantity: number | null;
   unitPrice: number | null;
   totalAmount: number | null;
   currency: string | null;
+  normalizedAmount: number | null;
+  notes: string | null;
 };
 
 export type InvestmentPreviewResult = {
@@ -49,6 +61,8 @@ export type InvestmentPreviewResult = {
   accountLabel: string | null;
   snapshotDate: string | null;
   snapshotTimestampText: string | null;
+  activityPeriodStart: string | null;
+  activityPeriodEnd: string | null;
   holdings: InvestmentPreviewHolding[];
   activities: InvestmentPreviewActivity[];
   warnings: string[];
@@ -66,7 +80,10 @@ export type InvestmentImportSummary = {
   completedAt: string | null;
   sourceName: string | null;
   holdingCount: number;
+  activityCount: number;
   snapshotDate: string | null;
+  activityPeriodStart: string | null;
+  activityPeriodEnd: string | null;
 };
 
 export type InvestmentAssetType =
@@ -107,6 +124,26 @@ export type InvestmentAccountHoldingsSnapshot = {
   totalCostBasis: number | null;
   totalGainLoss: number | null;
   holdings: PersistedInvestmentHolding[];
+};
+
+export type PersistedInvestmentActivity = {
+  id: string;
+  investmentAccountId: string;
+  accountDisplayName: string;
+  ownerDisplayName: string | null;
+  activityDate: string;
+  assetName: string;
+  assetSymbol: string | null;
+  activityType: InvestmentActivityType;
+  activityTypeLabel: string;
+  quantity: number | null;
+  unitPrice: number | null;
+  totalAmount: number | null;
+  currency: string | null;
+  normalizedAmount: number | null;
+  importId: string;
+  importOriginalFilename: string;
+  importCreatedAt: string;
 };
 
 export type InvestmentPortfolioAccountLeader = {
@@ -212,6 +249,7 @@ export type SaveInvestmentImportResult =
       importId: string;
       importStatus: string;
       holdingCount: number;
+      activityCount: number;
       duplicateOfImportId?: undefined;
     }
   | {
@@ -219,5 +257,6 @@ export type SaveInvestmentImportResult =
       importId: string;
       importStatus: string;
       holdingCount: number;
+      activityCount: number;
       duplicateOfImportId: string;
     };

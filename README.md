@@ -20,15 +20,16 @@ The current product loop is:
 3. review uncertain classifications in `/imports/review`
 4. validate the ledger and manual-entry flow in `/expenses`
 5. confirm recurring definitions and month-aware reporting behave like one connected flow in `/recurring` and `/reports`
-6. review saved household investment composition on `/investments`, including estimated asset mix, owner split, and top positions
-7. leave durable upload storage and auth planning as later slices
+6. use `/investments` for saved-holdings composition and first-pass saved activity imports
+7. use durable upload storage and auth planning as the next cross-cutting follow-ups once hosted deployment becomes active
 
 ## Current caveats
 
 - foreign-currency rows are now explicitly labeled, but they are still normalized into the workspace currency using placeholder FX behavior
 - the app preserves original and settlement amounts, but full multicurrency reporting is not finished yet
 - investment composition is currently estimated from holding names when the source workbook does not expose a dedicated asset-type field
-- investment activity imports are still out of scope until we have a real sample export to design against
+- investment activity imports currently support the checked-in Excellence Excel export and stay local to `/investments`
+- provider action labels in that first activity pass are still mapped heuristically into buy, sell, dividend, cash, and tax-or-fee buckets
 
 ## Environment note
 
@@ -65,4 +66,6 @@ Suggested smoke-test flow:
 6. Create a one-time manual entry and save an adjusted-period allocation.
 7. Open `/recurring`, save a recurring definition, confirm it appears in reports without a separate generate step, then pause it once and confirm the current report month clears.
 8. Open `/reports` and verify payment-date and adjusted-period views render for the month you just reviewed, including any FX transparency cues for imported rows, recurring rows that were prepared automatically, and the expected queue-cleared/month-aware handoff paths.
-9. Open `/investments` and confirm the saved holdings render with estimated asset mix, owner split, top positions, and account-level detail.
+9. Open `/investments` and confirm the saved holdings render with estimated asset mix, owner split, top positions, symbol-based rollups, and account-level detail.
+10. Preview and save one investment holdings workbook, then confirm the upload flow resets cleanly and the saved snapshot updates the composition view.
+11. Preview and save the March investment activity workbook, then confirm the activity period and rows preview correctly, the save succeeds, and the recent saved activity table plus import history update without disturbing the current holdings composition.

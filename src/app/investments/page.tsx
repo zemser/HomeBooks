@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { InvestmentPreviewClient } from "@/components/investments/investment-preview-client";
 import {
+  listInvestmentActivities,
   listInvestmentAccountHoldings,
   listInvestmentImports,
 } from "@/features/investments/persistence";
@@ -12,10 +13,11 @@ export const dynamic = "force-dynamic";
 
 export default async function InvestmentsPage() {
   const context = await resolveCurrentWorkspaceContext();
-  const [members, imports, accountHoldings] = await Promise.all([
+  const [members, imports, accountHoldings, activities] = await Promise.all([
     listWorkspaceMembersForSettings(context),
     listInvestmentImports(context),
     listInvestmentAccountHoldings(context),
+    listInvestmentActivities(context),
   ]);
 
   return (
@@ -23,11 +25,11 @@ export default async function InvestmentsPage() {
       <div className="page-shell stack">
         <section className="hero">
           <span className="eyebrow">Investments</span>
-          <h1>Preview, save, and review investment composition from saved snapshots.</h1>
+          <h1>Preview, save, and review investment snapshots and activity imports.</h1>
           <p>
-            Upload an Excellence Excel file to inspect holdings metadata, warnings,
-            parsed rows, and household-level composition cues before you save the
-            snapshot into the workspace.
+            Upload an Excellence Excel file to inspect holdings metadata, activity rows,
+            warnings, and household-level portfolio cues before you save the import into
+            the workspace.
           </p>
         </section>
 
@@ -53,6 +55,7 @@ export default async function InvestmentsPage() {
 
         <InvestmentPreviewClient
           initialInvestmentAccountHoldings={accountHoldings}
+          initialInvestmentActivities={activities}
           initialInvestmentImports={imports}
           initialMembers={members}
           initialCurrentMemberId={context.memberId}

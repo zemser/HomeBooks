@@ -6,7 +6,9 @@ import { getInvestmentAssetTypeLabel } from "@/features/investments/classificati
 import { buildInvestmentPortfolioReport } from "@/features/investments/reporting";
 import type {
   InvestmentAccountHoldingsSnapshot,
+  InvestmentActivityType,
   InvestmentImportSummary,
+  PersistedInvestmentActivity,
 } from "@/features/investments/types";
 import type { WorkspaceMemberSettingsItem } from "@/features/workspaces/types";
 
@@ -31,12 +33,18 @@ type InvestmentPreviewHolding = {
 };
 
 type InvestmentPreviewActivity = {
-  activityDate: string;
-  activityType: string;
+  activityDate: string | null;
+  activityType: InvestmentActivityType;
+  activityTypeLabel: string;
+  providerActionLabel: string;
   assetName: string;
+  assetSymbol: string | null;
   quantity: string | number | null;
+  unitPrice: string | number | null;
   totalAmount: string | number | null;
   currency: string | null;
+  normalizedAmount: string | number | null;
+  notes: string | null;
 };
 
 type InvestmentPreviewResponse = {
@@ -44,6 +52,8 @@ type InvestmentPreviewResponse = {
   accountLabel: string | null;
   snapshotDate: string | null;
   snapshotTimestampText: string | null;
+  activityPeriodStart: string | null;
+  activityPeriodEnd: string | null;
   holdings: InvestmentPreviewHolding[];
   activities: InvestmentPreviewActivity[];
   warnings: string[];
@@ -53,6 +63,7 @@ type InvestmentSaveResponse = {
   status?: string;
   error?: string;
   accounts?: InvestmentAccountHoldingsSnapshot[];
+  activities?: PersistedInvestmentActivity[];
   import?: InvestmentImportSummary | null;
   imports?: InvestmentImportSummary[];
 };
@@ -66,6 +77,7 @@ type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
 
 type InvestmentPreviewClientProps = {
   initialInvestmentAccountHoldings: InvestmentAccountHoldingsSnapshot[];
+  initialInvestmentActivities: PersistedInvestmentActivity[];
   initialInvestmentImports: InvestmentImportSummary[];
   initialMembers: WorkspaceMemberSettingsItem[];
   initialCurrentMemberId: string;
@@ -182,16 +194,61 @@ function formatTimestampValue(value: string | null) {
   }).format(date);
 }
 
+function formatActivityPeriodValue(startDate: string | null, endDate: string | null) {
+  if (!startDate && !endDate) {
+    return "-";
+  }
+
+  if (startDate && endDate) {
+    if (startDate === endDate) {
+      return formatSnapshotValue(startDate);
+    }
+
+    return `${formatSnapshotValue(startDate)} -> ${formatSnapshotValue(endDate)}`;
+  }
+
+  return formatSnapshotValue(startDate ?? endDate);
+}
+
 function getImportStatusLabel(item: InvestmentImportSummary) {
-  if (item.importStatus === "completed" && item.holdingCount === 0) {
+  if (
+    item.importStatus === "completed"
+    && item.holdingCount === 0
+    && item.activityCount === 0
+  ) {
     return "superseded";
   }
 
   return item.importStatus;
 }
 
+function getPreviewSaveLabel(preview: InvestmentPreviewResponse | null, saveState: SaveState) {
+  if (saveState === "saving") {
+    return "Saving...";
+  }
+
+  if (saveState === "saved") {
+    return "Saved";
+  }
+
+  if (!preview) {
+    return "Save import";
+  }
+
+  if (preview.holdings.length > 0 && preview.activities.length > 0) {
+    return "Save import";
+  }
+
+  if (preview.activities.length > 0) {
+    return "Save activity import";
+  }
+
+  return "Save snapshot";
+}
+
 export function InvestmentPreviewClient({
   initialInvestmentAccountHoldings,
+  initialInvestmentActivities,
   initialInvestmentImports,
   initialMembers,
   initialCurrentMemberId,
@@ -207,6 +264,8 @@ export function InvestmentPreviewClient({
   const [accountLabelDraft, setAccountLabelDraft] = useState("");
   const [investmentAccountHoldings, setInvestmentAccountHoldings] =
     useState<InvestmentAccountHoldingsSnapshot[]>(initialInvestmentAccountHoldings);
+  const [investmentActivities, setInvestmentActivities] =
+    useState<PersistedInvestmentActivity[]>(initialInvestmentActivities);
   const [investmentImports, setInvestmentImports] =
     useState<InvestmentImportSummary[]>(initialInvestmentImports);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -306,6 +365,9 @@ export function InvestmentPreviewClient({
           if (payload.accounts) {
             setInvestmentAccountHoldings(payload.accounts);
           }
+          if (payload.activities) {
+            setInvestmentActivities(payload.activities);
+          }
           if (payload.imports) {
             setInvestmentImports(payload.imports);
           }
@@ -323,6 +385,9 @@ export function InvestmentPreviewClient({
       if (payload.accounts) {
         setInvestmentAccountHoldings(payload.accounts);
       }
+      if (payload.activities) {
+        setInvestmentActivities(payload.activities);
+      }
       if (payload.imports) {
         setInvestmentImports(payload.imports);
       } else if (payload.import) {
@@ -332,7 +397,11 @@ export function InvestmentPreviewClient({
         ]);
       }
       resetPreviewFlow();
-      setMessage("Investment snapshot saved to the workspace. Preview another file when you are ready.");
+      setMessage(
+        pendingSave.preview.activities.length > 0 && pendingSave.preview.holdings.length === 0
+          ? "Investment activity import saved to the workspace. Preview another file when you are ready."
+          : "Investment import saved to the workspace. Preview another file when you are ready.",
+      );
     } catch {
       setSaveState("error");
       setError("Could not save this investment snapshot right now.");
@@ -486,10 +555,11 @@ export function InvestmentPreviewClient({
           <article className="card stack compact">
             <div className="page-actions">
               <div>
-                <h2>Portfolio composition</h2>
-                <p className="muted-text">
-                  Estimated from the latest active holdings per account. This keeps the
-                  view useful now without opening activity imports yet.
+              <h2>Portfolio composition</h2>
+              <p className="muted-text">
+                  Estimated from the latest active holdings per account. Activity imports
+                  now sit beside this view without changing the holdings composition until
+                  a new snapshot is saved.
                 </p>
               </div>
               <span className="badge badge-neutral">
@@ -902,12 +972,72 @@ export function InvestmentPreviewClient({
       </article>
 
       <article className="card stack compact">
+        <div>
+          <h2>Recent saved activity rows</h2>
+          <p className="muted-text">
+            Activity imports are stored beside the holdings snapshots so you can inspect
+            recent buys, dividends, transfers, and tax or fee rows without disturbing the
+            saved composition view.
+          </p>
+        </div>
+
+        {investmentActivities.length === 0 ? (
+          <p className="empty-state">No investment activity rows have been saved yet.</p>
+        ) : (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Asset</th>
+                  <th>Account</th>
+                  <th>Quantity</th>
+                  <th>Total</th>
+                  <th>Normalized</th>
+                  <th>Imported</th>
+                </tr>
+              </thead>
+              <tbody>
+                {investmentActivities.slice(0, 40).map((activity) => (
+                  <tr key={activity.id}>
+                    <td>{formatSnapshotValue(activity.activityDate)}</td>
+                    <td>{activity.activityTypeLabel}</td>
+                    <td>
+                      <strong>{activity.assetName}</strong>
+                      {activity.assetSymbol ? (
+                        <div className="table-note">{activity.assetSymbol}</div>
+                      ) : null}
+                    </td>
+                    <td>
+                      <div>{activity.accountDisplayName}</div>
+                      <div className="table-note">
+                        {activity.ownerDisplayName ?? "Workspace owner"}
+                      </div>
+                    </td>
+                    <td>{formatNumberValue(activity.quantity, { maximumFractionDigits: 8 })}</td>
+                    <td>
+                      {formatDisplayValue(activity.totalAmount)}
+                      <div className="table-note">{activity.currency ?? "Currency unknown"}</div>
+                    </td>
+                    <td>{formatSignedMoneyValue(activity.normalizedAmount, workspaceCurrency)}</td>
+                    <td>{formatTimestampValue(activity.importCreatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </article>
+
+      <article className="card stack compact">
         <div className="page-actions">
           <div>
             <h2>Preview a workbook</h2>
             <p className="muted-text">
-              Parse an Excellence workbook here when you want to inspect a new
-              snapshot and then save it into the household investment view.
+              Parse an Excellence workbook here when you want to inspect a new holdings
+              snapshot or activity export before saving it into the household investment
+              view.
             </p>
           </div>
           <span className="badge badge-neutral">Excel only</span>
@@ -960,7 +1090,16 @@ export function InvestmentPreviewClient({
               </div>
               <div>
                 <strong>{formatSnapshotValue(preview.snapshotDate)}</strong>
-                <span>Snapshot date</span>
+                <span>Data date</span>
+              </div>
+              <div>
+                <strong>
+                  {formatActivityPeriodValue(
+                    preview.activityPeriodStart,
+                    preview.activityPeriodEnd,
+                  )}
+                </strong>
+                <span>Activity period</span>
               </div>
               <div>
                 <strong>{preview.holdings.length}</strong>
@@ -978,7 +1117,8 @@ export function InvestmentPreviewClient({
               <h2>Confirm ownership</h2>
               <p className="muted-text">
                 Investment accounts are treated as confirmed workspace identities, so
-                choose the owner and confirm the account label before saving.
+                choose the owner and confirm the account label before saving this
+                import into the workspace.
               </p>
             </div>
 
@@ -1026,11 +1166,7 @@ export function InvestmentPreviewClient({
                 onClick={() => void handleSave()}
                 disabled={!canSubmitSave || saveState === "saving"}
               >
-                {saveState === "saving"
-                  ? "Saving..."
-                  : saveState === "saved"
-                    ? "Saved"
-                    : "Save snapshot"}
+                {getPreviewSaveLabel(preview, saveState)}
               </button>
               {!selectedOwnerMemberId.trim() ? (
                 <span className="helper-text">Choose an owner before saving.</span>
@@ -1066,8 +1202,8 @@ export function InvestmentPreviewClient({
             <div>
               <h2>Holdings</h2>
               <p className="muted-text">
-                These parsed rows will be persisted as a snapshot if you confirm the
-                owner and account label.
+                These parsed rows will be persisted as a saved snapshot if you confirm
+                the owner and account label.
               </p>
             </div>
 
@@ -1139,8 +1275,8 @@ export function InvestmentPreviewClient({
             <div>
               <h2>Activities</h2>
               <p className="muted-text">
-                Current sample files are holdings snapshots, so activity persistence stays
-                out of scope for this slice.
+                These parsed rows will be persisted beside the saved holdings snapshots
+                if you confirm the owner and account label.
               </p>
             </div>
 
@@ -1153,21 +1289,39 @@ export function InvestmentPreviewClient({
                     <tr>
                       <th>Date</th>
                       <th>Type</th>
+                      <th>Source action</th>
                       <th>Asset</th>
+                      <th>Symbol</th>
                       <th>Quantity</th>
+                      <th>Unit price</th>
                       <th>Total</th>
-                      <th>Currency</th>
+                      <th>Normalized</th>
+                      <th>Notes</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {preview.activities.map((activity) => (
-                      <tr key={`${activity.activityDate}-${activity.assetName}-${activity.activityType}`}>
-                        <td>{activity.activityDate}</td>
-                        <td>{activity.activityType}</td>
+                    {preview.activities.map((activity, index) => (
+                      <tr
+                        key={`${activity.activityDate}-${activity.assetName}-${activity.providerActionLabel}-${activity.totalAmount ?? "na"}-${index}`}
+                      >
+                        <td>{formatSnapshotValue(activity.activityDate)}</td>
+                        <td>{activity.activityTypeLabel}</td>
+                        <td>{activity.providerActionLabel}</td>
                         <td>{activity.assetName}</td>
+                        <td>{activity.assetSymbol ?? "-"}</td>
                         <td>{formatDisplayValue(activity.quantity)}</td>
-                        <td>{formatDisplayValue(activity.totalAmount)}</td>
-                        <td>{activity.currency ?? "-"}</td>
+                        <td>{formatDisplayValue(activity.unitPrice)}</td>
+                        <td>
+                          {formatDisplayValue(activity.totalAmount)}
+                          <div className="table-note">{activity.currency ?? "-"}</div>
+                        </td>
+                        <td>
+                          {activity.normalizedAmount === null
+                            || activity.normalizedAmount === undefined
+                            ? "-"
+                            : `${formatDisplayValue(activity.normalizedAmount)} ILS`}
+                        </td>
+                        <td>{activity.notes ?? "-"}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1179,7 +1333,7 @@ export function InvestmentPreviewClient({
       ) : (
         <article className="card">
           <p className="empty-state">
-            Upload an investment workbook to see the parsed preview here.
+            Upload an investment workbook to see the parsed snapshot or activity preview here.
           </p>
         </article>
       )}
@@ -1188,13 +1342,14 @@ export function InvestmentPreviewClient({
         <div>
           <h2>Investment import history</h2>
           <p className="muted-text">
-            This view stays local to the investments sidecar so investment snapshots do
-            not appear as zero-transaction rows in the bank import screen.
+            This view stays local to the investments sidecar so investment snapshot and
+            activity imports do not appear as zero-transaction rows in the bank import
+            screen.
           </p>
         </div>
 
         {investmentImports.length === 0 ? (
-          <p className="empty-state">No investment snapshots have been saved yet.</p>
+          <p className="empty-state">No investment imports have been saved yet.</p>
         ) : (
           <div className="stack">
             {investmentImports.map((item) => (
@@ -1213,8 +1368,21 @@ export function InvestmentPreviewClient({
                     <p>{formatSnapshotValue(item.snapshotDate)}</p>
                   </div>
                   <div>
+                    <strong>Activity period</strong>
+                    <p>
+                      {formatActivityPeriodValue(
+                        item.activityPeriodStart,
+                        item.activityPeriodEnd,
+                      )}
+                    </p>
+                  </div>
+                  <div>
                     <strong>Active holdings</strong>
                     <p>{item.holdingCount}</p>
+                  </div>
+                  <div>
+                    <strong>Activity rows</strong>
+                    <p>{item.activityCount}</p>
                   </div>
                   <div>
                     <strong>Source</strong>

@@ -95,10 +95,18 @@ Completed in code:
     - household owner split across saved investment accounts
     - top positions combined across the latest active account snapshots
     - name-based asset-type fallback for older saved snapshots that predate the inference pass
+    - symbol-first portfolio rollups so small provider naming differences do not split one holding into multiple top positions
+    - upload/preview cleanup so the save flow resets cleanly and sits below the saved investment data instead of competing with it at the top of the page
+  - first-pass investment activity import on `/investments`, including:
+    - checked-in Excellence activity workbook support
+    - workbook detection for holdings or activity exports
+    - persisted `investment_activities` rows beside holdings snapshots
+    - saved activity history on `/investments`
+    - preview/save copy that adapts to activity imports versus holdings snapshots
 
 Next up:
 
-- activity import support once we have a real activity export sample
+- dogfood the new investment activity flow with more real files and tighten provider action mapping only where real imports reveal confusion
 - keep expense-path and investment-composition fixes opportunistic only if a new real-file blocker appears
 - durable upload storage for a cleaner hosted deployment path once hosted deployment becomes a priority
 - auth planning and provider selection once early deployment direction is clearer
@@ -645,9 +653,10 @@ What actually happened in code so far:
 16. shared app shell and hybrid home hub on `/`, including workflow navigation and route reframing across the existing expense product surfaces
 17. explicit FX transparency and month-aware report handoffs across imports, review, ledger, reports, and `/`, including queue-cleared home cues and report drill-ins
 18. recurring definitions simplified into one saved flow, with automatic report materialization plus pause/delete behavior that updates the current report month
-19. lightweight investment composition views on top of saved holdings, including heuristic asset typing, owner split, top positions, and fallback classification for older snapshots
+19. lightweight investment composition views on top of saved holdings, including heuristic asset typing, owner split, top positions, fallback classification for older snapshots, symbol-based aggregation, and a cleaner preview/save flow
+20. first-pass Excellence investment activity import support from a real checked-in workbook sample, with activity persistence and saved activity visibility on `/investments`
 
-The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, shared workflow shell, FX/report-handoff usability pass, the recurring-flow simplification, and the saved-holdings composition pass are now completed. The next investment expansion should wait for a real activity export sample while the current expense and investment surfaces stay stable.
+The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, shared workflow shell, FX/report-handoff usability pass, the recurring-flow simplification, the saved-holdings composition pass, and the first activity-import pass are now completed. The next investment expansion should focus on real-file dogfooding and mapping polish while the current expense and investment surfaces stay stable.
 
 ## Completed validation checkpoint
 
@@ -713,32 +722,48 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. design investment activity import support around a real export sample instead of guessing at the format upfront
+1. dogfood the new investment activity import with additional real files and tighten provider action mapping, labels, or account resolution only where that flow proves confusing
 2. keep expense-path and investment-composition follow-up work limited to newly observed blockers rather than another broad polish sweep
-3. defer durable upload storage until hosted deployment becomes a near-term priority
+3. defer durable upload storage until hosted deployment becomes a near-term priority, then take it before import-heavy hosted usage
 4. scope the later auth slice once early deployment direction and provider choices are clearer
 
 That keeps the product moving on the main household workflow first while still preserving a clear hosted-deployment hardening path for later.
 
 ## Next handoff slice
 
-The saved-holdings composition pass is now completed, so the next implementation slice should only reopen investments when we have a real activity export sample to work from.
+The first activity-import pass is now completed, so the next implementation slice should stay narrow: verify the new flow with more real files and smooth only the remaining high-signal confusion.
 
 Goal:
 
-- add investment activity import support without disturbing the current holdings-snapshot and composition workflow
+- tighten the new investment activity import flow without disturbing the current holdings-snapshot and composition workflow
 
 Recommended scope:
 
-1. anchor the parser and persistence design to a real activity export sample instead of speculative schema/UI work
+1. run additional real Excellence activity exports through `/investments` and inspect any unmapped or confusing provider action labels
 2. keep the existing saved-holdings replacement logic, composition summaries, and import history behavior intact
-3. preserve current account resolution, duplicate replacement, and latest-active-holdings behavior
-4. avoid dragging the expense workflow back into active scope unless a new blocker appears during regression testing
-5. leave durable storage, hosted DB decisions, and auth out of scope for this slice
+3. preserve current account resolution, duplicate replacement, and latest-active-holdings behavior while the activity rows land beside them
+4. improve preview copy, saved activity visibility, and provider-action mapping only where real files reveal confusion
+5. avoid dragging the expense workflow back into active scope unless a new blocker appears during regression testing
+6. leave durable storage, hosted DB decisions, auth, and broader investment analytics out of scope for this slice
 
 Definition of done:
 
-- activity imports persist cleanly beside the existing holdings snapshots without regressing the current saved-holdings composition view
+- repeated real activity imports persist cleanly beside the existing holdings snapshots without regressing the current saved-holdings composition view
 - latest active holdings remain trustworthy after replacement imports
+- saved activity history remains understandable after replacement or repeated monthly imports
 - current expense import, review, recurring, reporting, and settlement behavior do not regress
-- the implementation is grounded in a real sample rather than guessed workbook structure
+- the remaining provider-action interpretation gaps are grounded in real files rather than guessed workbook structure
+
+## Proposed next slices
+
+Near-term order:
+
+1. Investment activity dogfooding and mapping polish
+   - run more real monthly activity exports through `/investments`
+   - tighten provider action labels, notes, and edge-case handling only where confusion appears
+2. Hosted upload hardening
+   - replace local import-file storage with durable object storage before import-heavy hosted usage
+   - preserve current local-development ergonomics while adding the hosted path
+3. Auth and deployment direction
+   - choose the first hosted auth path only when deployment timing is real
+   - keep provider selection tied to actual deployment constraints rather than abstract planning

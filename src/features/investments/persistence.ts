@@ -4,6 +4,7 @@ import { and, asc, desc, eq, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
+  investmentActivities,
   holdingSnapshots,
   imports,
   investmentAccounts,
@@ -19,13 +20,19 @@ import {
 import { parseInvestmentWorkbookToPreview } from "@/features/investments/parse-investment-workbook";
 import type {
   InvestmentAccountHoldingsSnapshot,
+  InvestmentActivityType,
   InvestmentImportSummary,
+  InvestmentPreviewActivity,
   InvestmentPreviewHolding,
+  PersistedInvestmentActivity,
   SaveInvestmentImportResult,
 } from "@/features/investments/types";
 import type { WorkbookData } from "@/features/imports/types";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
-import { normalizeInvestmentAccountLabel } from "@/features/investments/utils";
+import {
+  getInvestmentActivityTypeLabel,
+  normalizeInvestmentAccountLabel,
+} from "@/features/investments/utils";
 import { buildImportStoragePath, writeImportFile } from "@/lib/storage/import-files";
 
 const ACCOUNT_RESOLUTION_LOCK_NAMESPACE = 824301;
@@ -113,6 +120,50 @@ function buildHoldingSnapshotValues(input: {
       gainLoss: formatNumeric(holding.gainLossIls, 6),
     };
   });
+}
+
+function buildInvestmentActivityValues(input: {
+  workspaceId: string;
+  importId: string;
+  investmentAccountId: string;
+  activities: InvestmentPreviewActivity[];
+}) {
+  return input.activities
+    .filter((activity) => activity.activityDate)
+    .map((activity) => ({
+      workspaceId: input.workspaceId,
+      importId: input.importId,
+      investmentAccountId: input.investmentAccountId,
+      activityDate: activity.activityDate ?? new Date().toISOString().slice(0, 10),
+      assetSymbol: activity.assetSymbol,
+      assetName: activity.assetName,
+      activityType: activity.activityType,
+      quantity: formatNumeric(activity.quantity, 8),
+      unitPrice: formatNumeric(activity.unitPrice, 8),
+      totalAmount: formatNumeric(activity.totalAmount, 6),
+      currency: activity.currency,
+      normalizedAmount: formatNumeric(activity.normalizedAmount, 6),
+    }));
+}
+
+function toActivityType(value: string) {
+  return value as InvestmentActivityType;
+}
+
+function getActivityRange(input: {
+  activityPeriodStart: string | null;
+  activityPeriodEnd: string | null;
+  activities: InvestmentPreviewActivity[];
+}) {
+  const datedActivities = input.activities
+    .map((activity) => activity.activityDate)
+    .filter((value): value is string => Boolean(value))
+    .sort();
+
+  return {
+    startDate: input.activityPeriodStart ?? datedActivities[0] ?? null,
+    endDate: input.activityPeriodEnd ?? datedActivities[datedActivities.length - 1] ?? null,
+  };
 }
 
 async function findWorkspaceMemberOrThrow(input: {
@@ -305,8 +356,21 @@ export async function listInvestmentImports(
 
   const stats = await Promise.all(
     investmentImports.map(async (investmentImport) => {
-      const [holdingCount, snapshotRow] = await Promise.all([
+      const [holdingCount, activityRow, snapshotRow] = await Promise.all([
         db.$count(holdingSnapshots, eq(holdingSnapshots.importId, investmentImport.id)),
+        db
+          .select({
+            activityCount: sql<number>`count(*)`.as("activity_count"),
+            activityPeriodStart: sql<string | null>`min(${investmentActivities.activityDate})`.as(
+              "activity_period_start",
+            ),
+            activityPeriodEnd: sql<string | null>`max(${investmentActivities.activityDate})`.as(
+              "activity_period_end",
+            ),
+          })
+          .from(investmentActivities)
+          .where(eq(investmentActivities.importId, investmentImport.id))
+          .then((rows) => rows[0] ?? null),
         db.query.holdingSnapshots.findFirst({
           where: eq(holdingSnapshots.importId, investmentImport.id),
           columns: {
@@ -318,6 +382,9 @@ export async function listInvestmentImports(
       return {
         importId: investmentImport.id,
         holdingCount,
+        activityCount: Number(activityRow?.activityCount ?? 0),
+        activityPeriodStart: activityRow?.activityPeriodStart ?? null,
+        activityPeriodEnd: activityRow?.activityPeriodEnd ?? null,
         snapshotDate: snapshotRow?.snapshotDate ?? null,
       };
     }),
@@ -335,9 +402,74 @@ export async function listInvestmentImports(
       completedAt: investmentImport.completedAt?.toISOString() ?? null,
       sourceName: investmentImport.sourceName ?? null,
       holdingCount: stat?.holdingCount ?? 0,
+      activityCount: stat?.activityCount ?? 0,
       snapshotDate: stat?.snapshotDate ?? null,
+      activityPeriodStart: stat?.activityPeriodStart ?? null,
+      activityPeriodEnd: stat?.activityPeriodEnd ?? null,
     };
   });
+}
+
+export async function listInvestmentActivities(
+  context: CurrentWorkspaceContext,
+): Promise<PersistedInvestmentActivity[]> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      id: investmentActivities.id,
+      investmentAccountId: investmentActivities.investmentAccountId,
+      accountDisplayName: investmentAccounts.displayName,
+      ownerDisplayNameOverride: workspaceMembers.displayNameOverride,
+      ownerUserDisplayName: users.displayName,
+      activityDate: investmentActivities.activityDate,
+      assetName: investmentActivities.assetName,
+      assetSymbol: investmentActivities.assetSymbol,
+      activityType: investmentActivities.activityType,
+      quantity: investmentActivities.quantity,
+      unitPrice: investmentActivities.unitPrice,
+      totalAmount: investmentActivities.totalAmount,
+      currency: investmentActivities.currency,
+      normalizedAmount: investmentActivities.normalizedAmount,
+      importId: imports.id,
+      importOriginalFilename: imports.originalFilename,
+      importCreatedAt: imports.createdAt,
+    })
+    .from(investmentActivities)
+    .innerJoin(
+      investmentAccounts,
+      eq(investmentAccounts.id, investmentActivities.investmentAccountId),
+    )
+    .innerJoin(imports, eq(imports.id, investmentActivities.importId))
+    .leftJoin(workspaceMembers, eq(workspaceMembers.id, investmentAccounts.ownerMemberId))
+    .leftJoin(users, eq(users.id, workspaceMembers.userId))
+    .where(eq(investmentActivities.workspaceId, context.workspaceId))
+    .orderBy(
+      desc(investmentActivities.activityDate),
+      desc(imports.createdAt),
+      asc(investmentAccounts.displayName),
+      asc(investmentActivities.assetName),
+    );
+
+  return rows.map((row) => ({
+    id: row.id,
+    investmentAccountId: row.investmentAccountId,
+    accountDisplayName: row.accountDisplayName,
+    ownerDisplayName:
+      row.ownerDisplayNameOverride?.trim() || row.ownerUserDisplayName?.trim() || null,
+    activityDate: row.activityDate,
+    assetName: row.assetName,
+    assetSymbol: row.assetSymbol,
+    activityType: toActivityType(row.activityType),
+    activityTypeLabel: getInvestmentActivityTypeLabel(toActivityType(row.activityType)),
+    quantity: toNullableNumber(row.quantity),
+    unitPrice: toNullableNumber(row.unitPrice),
+    totalAmount: toNullableNumber(row.totalAmount),
+    currency: row.currency,
+    normalizedAmount: toNullableNumber(row.normalizedAmount),
+    importId: row.importId,
+    importOriginalFilename: row.importOriginalFilename,
+    importCreatedAt: row.importCreatedAt.toISOString(),
+  }));
 }
 
 export async function listInvestmentAccountHoldings(
@@ -493,19 +625,24 @@ export async function persistInvestmentImport(input: {
     );
   }
 
-  if (!parsed.preview.snapshotDate) {
+  if (parsed.preview.holdings.length > 0 && !parsed.preview.snapshotDate) {
     throw new InvestmentImportValidationError(
       "The workbook is missing a snapshot date, so it cannot be saved yet.",
     );
   }
 
-  const snapshotDate = parsed.preview.snapshotDate;
-
-  if (parsed.preview.holdings.length === 0) {
+  if (parsed.preview.holdings.length === 0 && parsed.preview.activities.length === 0) {
     throw new InvestmentImportValidationError(
-      "No holdings were parsed from this workbook.",
+      "No holdings or activity rows were parsed from this workbook.",
     );
   }
+
+  const snapshotDate = parsed.preview.snapshotDate;
+  const activityRange = getActivityRange({
+    activityPeriodStart: parsed.preview.activityPeriodStart,
+    activityPeriodEnd: parsed.preview.activityPeriodEnd,
+    activities: parsed.preview.activities,
+  });
 
   let importId: string = randomUUID();
   let storagePath: string = buildImportStoragePath({
@@ -544,9 +681,10 @@ export async function persistInvestmentImport(input: {
           status: "duplicate" as const,
           importId: existingImport.id,
           duplicateOfImportId: existingImport.id,
-          holdingCount: await tx.$count(
-            holdingSnapshots,
-            eq(holdingSnapshots.importId, existingImport.id),
+          holdingCount: await tx.$count(holdingSnapshots, eq(holdingSnapshots.importId, existingImport.id)),
+          activityCount: await tx.$count(
+            investmentActivities,
+            eq(investmentActivities.importId, existingImport.id),
           ),
           importStatus: existingImport.importStatus,
         };
@@ -609,35 +747,79 @@ export async function persistInvestmentImport(input: {
         accountLabel: displayAccountLabel,
       });
 
-      await acquireAdvisoryLock(
-        tx,
-        SNAPSHOT_REPLACEMENT_LOCK_NAMESPACE,
-        [
-          input.context.workspaceId,
-          account.id,
-          snapshotDate,
-        ].join(":"),
-      );
-
-      await tx
-        .delete(holdingSnapshots)
-        .where(
-          and(
-            eq(holdingSnapshots.workspaceId, input.context.workspaceId),
-            eq(holdingSnapshots.investmentAccountId, account.id),
-            eq(holdingSnapshots.snapshotDate, snapshotDate),
-          ),
+      if (parsed.preview.holdings.length > 0 && snapshotDate) {
+        await acquireAdvisoryLock(
+          tx,
+          SNAPSHOT_REPLACEMENT_LOCK_NAMESPACE,
+          [
+            input.context.workspaceId,
+            account.id,
+            snapshotDate,
+          ].join(":"),
         );
 
-      await tx.insert(holdingSnapshots).values(
-        buildHoldingSnapshotValues({
+        await tx
+          .delete(holdingSnapshots)
+          .where(
+            and(
+              eq(holdingSnapshots.workspaceId, input.context.workspaceId),
+              eq(holdingSnapshots.investmentAccountId, account.id),
+              eq(holdingSnapshots.snapshotDate, snapshotDate),
+            ),
+          );
+
+        await tx.insert(holdingSnapshots).values(
+          buildHoldingSnapshotValues({
+            workspaceId: input.context.workspaceId,
+            importId,
+            investmentAccountId: account.id,
+            snapshotDate,
+            holdings: parsed.preview.holdings,
+          }),
+        );
+      }
+
+      if (parsed.preview.activities.length > 0) {
+        if (!activityRange.startDate || !activityRange.endDate) {
+          throw new InvestmentImportValidationError(
+            "The workbook is missing the activity period, so the activity rows cannot be saved yet.",
+          );
+        }
+
+        await acquireAdvisoryLock(
+          tx,
+          SNAPSHOT_REPLACEMENT_LOCK_NAMESPACE,
+          [
+            input.context.workspaceId,
+            account.id,
+            activityRange.startDate,
+            activityRange.endDate,
+            "activities",
+          ].join(":"),
+        );
+
+        await tx
+          .delete(investmentActivities)
+          .where(
+            and(
+              eq(investmentActivities.workspaceId, input.context.workspaceId),
+              eq(investmentActivities.investmentAccountId, account.id),
+              sql`${investmentActivities.activityDate} >= ${activityRange.startDate}`,
+              sql`${investmentActivities.activityDate} <= ${activityRange.endDate}`,
+            ),
+          );
+
+        const activityValues = buildInvestmentActivityValues({
           workspaceId: input.context.workspaceId,
           importId,
           investmentAccountId: account.id,
-          snapshotDate,
-          holdings: parsed.preview.holdings,
-        }),
-      );
+          activities: parsed.preview.activities,
+        });
+
+        if (activityValues.length > 0) {
+          await tx.insert(investmentActivities).values(activityValues);
+        }
+      }
 
       await tx
         .update(imports)
@@ -652,6 +834,7 @@ export async function persistInvestmentImport(input: {
       return {
         status: "saved" as const,
         holdingCount: parsed.preview.holdings.length,
+        activityCount: parsed.preview.activities.length,
       };
     });
 
@@ -663,6 +846,7 @@ export async function persistInvestmentImport(input: {
       status: "saved",
       importId,
       holdingCount: result.holdingCount,
+      activityCount: result.activityCount,
       importStatus: "completed",
     };
   } catch (error) {
