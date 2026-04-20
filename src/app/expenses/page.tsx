@@ -4,6 +4,7 @@ import { ExpensesPageClient } from "@/components/expenses/expenses-page-client";
 import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expenses/queries";
 import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
+import { listWorkspaceCategoryNames } from "@/features/workspaces/categories";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 type ExpensesPageProps = {
@@ -19,10 +20,11 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
   const transactionId =
     typeof params.transactionId === "string" ? params.transactionId : null;
   const context = await resolveCurrentWorkspaceContext();
-  const [transactions, oneTimeManualEntries, members] = await Promise.all([
+  const [transactions, oneTimeManualEntries, members, categories] = await Promise.all([
     listExpenseTransactions(context),
     listOneTimeManualEntries(context),
     listWorkspaceMembers(context),
+    listWorkspaceCategoryNames(context),
   ]);
   const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
   const latestTransactionMonth = transactions[0]?.transactionDate.slice(0, 7) ?? null;
@@ -72,6 +74,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
             transactions,
             oneTimeManualEntries,
             members,
+            categories,
           }}
           initialTransactionId={transactionId}
         />

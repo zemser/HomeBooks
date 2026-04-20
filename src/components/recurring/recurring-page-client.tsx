@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 
+import { CategorySelect } from "@/components/workspaces/category-select";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import {
   formatClassificationTypeLabel,
@@ -151,6 +152,7 @@ export function RecurringPageClient() {
     () => data?.recurringEntries.find((entry) => entry.id === selectedEntryId) ?? null,
     [data?.recurringEntries, selectedEntryId],
   );
+  const hasDefinedCategories = (data?.categories.length ?? 0) > 0;
 
   useEffect(() => {
     if (!selectedEntry) {
@@ -402,12 +404,13 @@ export function RecurringPageClient() {
             <div className="inline-form">
               <label className="field">
                 <span>Category</span>
-                <input
-                  className="input"
+                <CategorySelect
+                  categories={data?.categories ?? []}
                   value={createState.category}
-                  onChange={(event) =>
-                    setCreateState((current) => ({ ...current, category: event.target.value }))
+                  onChange={(value) =>
+                    setCreateState((current) => ({ ...current, category: value }))
                   }
+                  blankLabel="Uncategorized"
                 />
               </label>
 
@@ -454,6 +457,12 @@ export function RecurringPageClient() {
                 />
               </label>
             </div>
+
+            {!hasDefinedCategories ? (
+              <p className="helper-text">
+                Add categories in settings before assigning one to recurring rules.
+              </p>
+            ) : null}
 
             <div className="inline-form">
               <label className="field">
@@ -718,14 +727,15 @@ export function RecurringPageClient() {
                 <div className="inline-form">
                   <label className="field">
                     <span>Category</span>
-                    <input
-                      className="input"
+                    <CategorySelect
+                      categories={data?.categories ?? []}
                       value={editState.category}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setEditState((current) =>
-                          current ? { ...current, category: event.target.value } : current,
+                          current ? { ...current, category: value } : current,
                         )
                       }
+                      blankLabel="Uncategorized"
                     />
                   </label>
 

@@ -9,6 +9,7 @@ import {
   emptyAllocationForm,
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
+import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import {
   buildTransactionReportTargets,
@@ -144,6 +145,7 @@ export function ExpensesPageClient({
     initialData.oneTimeManualEntries,
   );
   const [members, setMembers] = useState<WorkspaceMemberOption[]>(initialData.members);
+  const [categories, setCategories] = useState<string[]>(initialData.categories);
   const [selectedManualEntryId, setSelectedManualEntryId] = useState<string | null>(null);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(
     initialTransactionId,
@@ -176,10 +178,12 @@ export function ExpensesPageClient({
     const nextTransactions = data.transactions;
     const nextOneTimeManualEntries = data.oneTimeManualEntries;
     const nextMembers = data.members;
+    const nextCategories = data.categories;
 
     setTransactions(nextTransactions);
     setOneTimeManualEntries(nextOneTimeManualEntries);
     setMembers(nextMembers);
+    setCategories(nextCategories);
     setSelectedManualEntryId((current) => {
       if (options?.manualEntryId !== undefined) {
         return options.manualEntryId &&
@@ -222,6 +226,7 @@ export function ExpensesPageClient({
           transactions: data.transactions ?? [],
           oneTimeManualEntries: data.oneTimeManualEntries ?? [],
           members: data.members ?? [],
+          categories: data.categories ?? [],
         },
         options,
       );
@@ -230,6 +235,7 @@ export function ExpensesPageClient({
       setTransactions([]);
       setOneTimeManualEntries([]);
       setMembers([]);
+      setCategories([]);
       setSelectedManualEntryId(null);
       setSelectedTransactionId(null);
     } finally {
@@ -241,6 +247,7 @@ export function ExpensesPageClient({
     setTransactions(initialData.transactions);
     setOneTimeManualEntries(initialData.oneTimeManualEntries);
     setMembers(initialData.members);
+    setCategories(initialData.categories);
     setSelectedManualEntryId(null);
     setSelectedTransactionId(initialTransactionId);
     setError(null);
@@ -254,6 +261,7 @@ export function ExpensesPageClient({
   const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
   const isEditingManualEntry = Boolean(selectedManualEntry);
   const manualEntryClassificationOptions = listClassificationOptions(manualEntryForm.eventKind);
+  const hasDefinedCategories = categories.length > 0;
   const transactionAllocationEditable =
     selectedTransaction?.classification &&
     selectedTransaction.classification.classificationType !== "transfer" &&
@@ -680,13 +688,13 @@ export function ExpensesPageClient({
             <div className="inline-form">
               <label className="field">
                 <span>Category</span>
-                <input
-                  className="input"
+                <CategorySelect
+                  categories={categories}
                   value={manualEntryForm.category}
-                  onChange={(event) =>
-                    setManualEntryForm((current) => ({ ...current, category: event.target.value }))
+                  onChange={(value) =>
+                    setManualEntryForm((current) => ({ ...current, category: value }))
                   }
-                  placeholder="Salary"
+                  blankLabel="Uncategorized"
                 />
               </label>
 
@@ -720,6 +728,13 @@ export function ExpensesPageClient({
                 />
               </label>
             </div>
+
+            {!hasDefinedCategories ? (
+              <p className="helper-text">
+                Add categories in <Link href="/settings">settings</Link> to turn this into a
+                shared pick-list.
+              </p>
+            ) : null}
 
             <div className="action-row">
               <button className="button" disabled={isSavingManualEntry} type="submit">

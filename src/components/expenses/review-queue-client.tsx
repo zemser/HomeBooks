@@ -9,6 +9,7 @@ import {
   emptyAllocationForm,
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
+import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expenses/constants";
 import {
@@ -122,6 +123,7 @@ export function ReviewQueueClient({
     initialData.focusTransaction,
   );
   const [members, setMembers] = useState<WorkspaceMemberOption[]>(initialData.members);
+  const [categories, setCategories] = useState<string[]>(initialData.categories);
   const [summary, setSummary] = useState<ReviewQueueSummary>(initialData.summary);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(
     initialTransactionId ?? initialData.focusTransaction?.id ?? initialData.queue[0]?.id ?? null,
@@ -141,6 +143,7 @@ export function ReviewQueueClient({
     setQueue(data.queue);
     setFocusTransaction(data.focusTransaction ?? null);
     setMembers(data.members);
+    setCategories(data.categories);
     setSummary(data.summary);
     setSelectedIds((current) =>
       current.filter((transactionId) =>
@@ -195,6 +198,7 @@ export function ReviewQueueClient({
     setQueue(initialData.queue);
     setFocusTransaction(initialData.focusTransaction ?? null);
     setMembers(initialData.members);
+    setCategories(initialData.categories);
     setSummary(initialData.summary);
     setSelectedIds([]);
     setSelectedTransactionId(
@@ -216,6 +220,7 @@ export function ReviewQueueClient({
   const allVisibleSelected =
     allQueueIds.length > 0 &&
     allQueueIds.every((transactionId) => selectedIds.includes(transactionId));
+  const hasDefinedCategories = categories.length > 0;
 
   useEffect(() => {
     if (!selectedTransaction) {
@@ -509,15 +514,16 @@ export function ReviewQueueClient({
               </label>
               <label className="field">
                 <span>Category</span>
-                <input
-                  className="input"
+                <CategorySelect
+                  categories={categories}
                   value={bulkForm.category}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     setBulkForm((current) => ({
                       ...current,
-                      category: event.target.value,
+                      category: value,
                     }))
                   }
+                  blankLabel="Keep uncategorized"
                 />
               </label>
               <label className="field">
@@ -541,6 +547,12 @@ export function ReviewQueueClient({
                 </select>
               </label>
             </div>
+
+            {!hasDefinedCategories ? (
+              <p className="helper-text">
+                Add categories in <Link href="/settings">settings</Link> before assigning one here.
+              </p>
+            ) : null}
 
             <div className="page-actions">
               <p className="helper-text">
@@ -810,15 +822,16 @@ export function ReviewQueueClient({
 
                 <label className="field">
                   <span>Category</span>
-                  <input
-                    className="input"
+                  <CategorySelect
+                    categories={categories}
                     value={singleForm.category}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setSingleForm((current) => ({
                         ...current,
-                        category: event.target.value,
+                        category: value,
                       }))
                     }
+                    blankLabel="Uncategorized"
                   />
                 </label>
 
