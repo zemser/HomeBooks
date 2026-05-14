@@ -1,5 +1,6 @@
 const SUPABASE_URL_ENV = "NEXT_PUBLIC_SUPABASE_URL";
 const SUPABASE_PUBLISHABLE_KEY_ENV = "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY";
+const SUPABASE_SECRET_KEY_ENV = "SUPABASE_SECRET_KEY";
 
 export type FinappAuthMode = "dev" | "supabase";
 
@@ -19,6 +20,22 @@ export function getSupabasePublicConfig() {
 
   return {
     publishableKey,
+    supabaseUrl,
+  };
+}
+
+export function getSupabaseServerConfig() {
+  const { supabaseUrl } = getSupabasePublicConfig();
+  const secretKey = process.env[SUPABASE_SECRET_KEY_ENV];
+
+  if (!secretKey) {
+    throw new Error(
+      `${SUPABASE_SECRET_KEY_ENV} must be set before server-side Supabase storage can be used.`,
+    );
+  }
+
+  return {
+    secretKey,
     supabaseUrl,
   };
 }
