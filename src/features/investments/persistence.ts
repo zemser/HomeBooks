@@ -33,7 +33,11 @@ import {
   getInvestmentActivityTypeLabel,
   normalizeInvestmentAccountLabel,
 } from "@/features/investments/utils";
-import { buildImportStoragePath, writeImportFile } from "@/lib/storage/import-files";
+import {
+  buildImportStoragePath,
+  deleteImportFileAfterSuccessfulPersistence,
+  writeImportFile,
+} from "@/lib/storage/import-files";
 
 const ACCOUNT_RESOLUTION_LOCK_NAMESPACE = 824301;
 const SNAPSHOT_REPLACEMENT_LOCK_NAMESPACE = 824302;
@@ -840,6 +844,29 @@ export async function persistInvestmentImport(input: {
 
     if (result.status === "duplicate") {
       return result;
+    }
+
+    try {
+      await deleteImportFileAfterSuccessfulPersistence(storagePath);
+    } catch (cleanupError) {
+      const cleanupMessage =
+        cleanupError instanceof Error
+          ? cleanupError.message
+          : "Investment import source file cleanup failed";
+
+      await upsertFailedInvestmentImport({
+        importId,
+        workspaceId: input.context.workspaceId,
+        userId: input.context.userId,
+        sourceId: source.sourceId,
+        fileKind: input.workbook.fileKind,
+        originalFilename: input.originalFilename,
+        storagePath,
+        checksum,
+        message: cleanupMessage,
+      });
+
+      throw cleanupError;
     }
 
     return {

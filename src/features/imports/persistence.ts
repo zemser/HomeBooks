@@ -19,7 +19,11 @@ import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbo
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import type { ParsedBankTransaction, WorkbookData } from "@/features/imports/types";
 import { isEffectivelyEmptyRow, normalizeRow } from "@/features/imports/utils";
-import { buildImportStoragePath, writeImportFile } from "@/lib/storage/import-files";
+import {
+  buildImportStoragePath,
+  deleteImportFileAfterSuccessfulPersistence,
+  writeImportFile,
+} from "@/lib/storage/import-files";
 
 type CurrentImportContext = {
   workspaceId: string;
@@ -512,6 +516,26 @@ export async function persistBankImport(input: {
         })
         .where(eq(imports.id, importId));
     });
+
+    try {
+      await deleteImportFileAfterSuccessfulPersistence(storagePath);
+    } catch (cleanupError) {
+      const cleanupMessage =
+        cleanupError instanceof Error
+          ? cleanupError.message
+          : "Import source file cleanup failed";
+
+      await db
+        .update(imports)
+        .set({
+          importStatus: "failed",
+          completedAt: new Date(),
+          errorSummary: cleanupMessage,
+        })
+        .where(eq(imports.id, importId));
+
+      throw cleanupError;
+    }
 
     return {
       status: "saved" as const,
