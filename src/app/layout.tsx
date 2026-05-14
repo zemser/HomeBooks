@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 
 import { AppShellClient } from "@/components/app-shell/app-shell-client";
 import { createAppNavSections } from "@/components/app-shell/nav";
@@ -19,6 +20,17 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const headerStore = await headers();
+  const pathname = headerStore.get("x-finapp-pathname") ?? "";
+
+  if (pathname === "/sign-in" || pathname === "/onboarding") {
+    return (
+      <html lang="en">
+        <body>{children}</body>
+      </html>
+    );
+  }
+
   const context = await resolveCurrentWorkspaceContext();
   const shellSnapshot = await getAppShellSnapshot(context);
   const navSections = createAppNavSections(shellSnapshot);
