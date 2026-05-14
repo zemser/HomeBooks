@@ -1,10 +1,12 @@
 import Link from "next/link";
 
 import { SettingsPageClient } from "@/components/settings/settings-page-client";
+import { signOutAction } from "@/features/auth/actions";
 import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { getWorkspaceSettingsSnapshot } from "@/features/workspaces/settings";
+import { getFinappAuthMode } from "@/lib/supabase/config";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +47,13 @@ export default async function SettingsPage() {
               <Link className="button button-secondary" href="/settlements">
                 Open settlements
               </Link>
+              {getFinappAuthMode() === "supabase" ? (
+                <form action={signOutAction}>
+                  <button className="button button-secondary" type="submit">
+                    Sign out
+                  </button>
+                </form>
+              ) : null}
             </div>
           </div>
         </section>

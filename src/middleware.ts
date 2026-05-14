@@ -3,16 +3,33 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getFinappAuthMode, getSupabasePublicConfig } from "@/lib/supabase/config";
 
+const PUBLIC_PATH_PREFIXES = ["/sign-in"];
+
+function isPublicPath(pathname: string) {
+  return PUBLIC_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
+function isApiPath(pathname: string) {
+  return pathname.startsWith("/api/");
+}
+
 export async function middleware(request: NextRequest) {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-finapp-pathname", request.nextUrl.pathname);
+
   if (getFinappAuthMode() !== "supabase") {
     return NextResponse.next({
-      request,
+      request: {
+        headers: requestHeaders,
+      },
     });
   }
 
   const { publishableKey, supabaseUrl } = getSupabasePublicConfig();
   let response = NextResponse.next({
-    request,
+    request: {
+      headers: requestHeaders,
+    },
   });
 
   const supabase = createServerClient(supabaseUrl, publishableKey, {
@@ -23,7 +40,9 @@ export async function middleware(request: NextRequest) {
       setAll(cookiesToSet) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
         response = NextResponse.next({
-          request,
+          request: {
+            headers: requestHeaders,
+          },
         });
         cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options);
@@ -32,7 +51,29 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { pathname } = request.nextUrl;
+
+  if (!user && !isPublicPath(pathname) && !isApiPath(pathname)) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/sign-in";
+    redirectUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+    return NextResponse.redirect(redirectUrl);
+  }
+
+  if (!user && isApiPath(pathname)) {
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
+  }
+
+  if (user && isPublicPath(pathname)) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/";
+    redirectUrl.search = "";
+    return NextResponse.redirect(redirectUrl);
+  }
 
   return response;
 }
