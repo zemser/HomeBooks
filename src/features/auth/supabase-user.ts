@@ -1,5 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 
+import { setCurrentDatabaseUserId } from "@/db/request-context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export async function getSupabaseAuthenticatedUser(): Promise<User | null> {
@@ -8,6 +9,10 @@ export async function getSupabaseAuthenticatedUser(): Promise<User | null> {
 
   if (error) {
     return null;
+  }
+
+  if (data.user) {
+    setCurrentDatabaseUserId(data.user.id);
   }
 
   return data.user;
