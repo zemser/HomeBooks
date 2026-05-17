@@ -6,6 +6,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 type ImportStorageMode = "local" | "supabase";
 
 const DEFAULT_SUPABASE_IMPORT_BUCKET = "import-files";
+const SUPABASE_TEMP_IMPORT_PREFIX = "tmp";
 
 function sanitizeFilename(filename: string) {
   return filename.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -26,6 +27,7 @@ export function buildImportStoragePath(input: {
 }) {
   if (getImportStorageMode() === "supabase") {
     return [
+      SUPABASE_TEMP_IMPORT_PREFIX,
       "workspaces",
       input.workspaceId,
       "imports",

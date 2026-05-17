@@ -1,15 +1,15 @@
 # Fin App
 
-Initial scaffold for a shared finance app for couples and families.
+Shared finance app for couples and families.
 
-## What is in the repo
+## Documentation
 
-- product definition docs in [docs/product-structure.md](./docs/product-structure.md)
-- architecture decisions in [docs/architecture.md](./docs/architecture.md)
-- concrete schema planning in [docs/database-schema.md](./docs/database-schema.md)
-- build plan in [docs/implementation-plan.md](./docs/implementation-plan.md)
+- general design: [docs/general-design.md](./docs/general-design.md)
+- general information: [docs/general-information.md](./docs/general-information.md)
+- schema reference: [docs/schema-reference.md](./docs/schema-reference.md)
+- implementation plan and progress: [docs/implementation-plan.md](./docs/implementation-plan.md)
 - Next.js app shell under `src/app`
-- first-pass Drizzle schema in `src/db/schema.ts`
+- Drizzle schema and migrations under `src/db`
 
 ## Current focus
 
@@ -21,7 +21,7 @@ The current product loop is:
 4. validate the ledger and manual-entry flow in `/expenses`
 5. confirm recurring definitions and month-aware reporting behave like one connected flow in `/recurring` and `/reports`
 6. use `/investments` for saved-holdings composition and first-pass saved activity imports
-7. use durable upload storage and auth planning as the next cross-cutting follow-ups once hosted deployment becomes active
+7. harden the hosted two-user path with Supabase Auth, required TOTP MFA, RLS, and temporary hosted import storage
 
 ## Current caveats
 
@@ -30,6 +30,7 @@ The current product loop is:
 - investment composition is currently estimated from holding names when the source workbook does not expose a dedicated asset-type field
 - investment activity imports currently support the checked-in Excellence Excel export and stay local to `/investments`
 - provider action labels in that first activity pass are still mapped heuristically into buy, sell, dividend, cash, and tax-or-fee buckets
+- hosted Auth/MFA and RLS foundations are in code, but still need real Supabase project smoke testing
 
 ## Environment note
 
@@ -69,3 +70,17 @@ Suggested smoke-test flow:
 9. Open `/investments` and confirm the saved holdings render with estimated asset mix, owner split, top positions, symbol-based rollups, and account-level detail.
 10. Preview and save one investment holdings workbook, then confirm the upload flow resets cleanly and the saved snapshot updates the composition view.
 11. Preview and save the March investment activity workbook, then confirm the activity period and rows preview correctly, the save succeeds, and the recent saved activity table plus import history update without disturbing the current holdings composition.
+
+## Hosted RLS Smoke Test
+
+After applying migrations to a Supabase/Postgres database, run:
+
+`DATABASE_URL=postgres://app_role:... npm run smoke:rls`
+
+The smoke test creates two temporary users/workspaces inside one transaction, proves that cross-workspace reads and representative writes are blocked by RLS, and rolls the transaction back. It refuses obvious admin/bypass database users by default so it can catch accidental service-role app traffic.
+
+## Hosted Import Storage
+
+Hosted import saves use Supabase Storage only as temporary processing storage. Set `FINAPP_IMPORT_STORAGE=supabase`, `SUPABASE_IMPORT_BUCKET=import-files`, `NEXT_PUBLIC_SUPABASE_URL`, and server-only `SUPABASE_SECRET_KEY`.
+
+Run `npm run imports:setup-storage` once to create the private bucket if needed. Successful bank and investment imports delete their source object after persistence. Failed imports keep their `tmp/...` source object briefly for debugging; run `npm run imports:cleanup-failed` on a schedule to delete failed source files older than `FINAPP_FAILED_IMPORT_FILE_TTL_HOURS`.

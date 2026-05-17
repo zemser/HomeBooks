@@ -12,6 +12,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "imports:cleanup-failed": "node scripts/cleanup-failed-import-files.mjs",
+    "imports:setup-storage": "node scripts/setup-supabase-import-storage.mjs",
+    "smoke:rls": "node scripts/smoke-rls-isolation.mjs",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
