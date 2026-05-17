@@ -23,7 +23,7 @@ export default async function RootLayout({
   const headerStore = await headers();
   const pathname = headerStore.get("x-finapp-pathname") ?? "";
 
-  if (pathname === "/sign-in" || pathname === "/onboarding") {
+  if (pathname === "/sign-in" || pathname === "/mfa" || pathname === "/onboarding") {
     return (
       <html lang="en">
         <body>{children}</body>
