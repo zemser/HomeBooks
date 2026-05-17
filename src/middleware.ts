@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getFinappAuthMode, getSupabasePublicConfig } from "@/lib/supabase/config";
 
 const PUBLIC_PATH_PREFIXES = ["/sign-in"];
+const MFA_PATH_PREFIXES = ["/mfa"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -11,6 +12,10 @@ function isPublicPath(pathname: string) {
 
 function isApiPath(pathname: string) {
   return pathname.startsWith("/api/");
+}
+
+function isMfaPath(pathname: string) {
+  return MFA_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 export async function middleware(request: NextRequest) {
@@ -73,6 +78,21 @@ export async function middleware(request: NextRequest) {
     redirectUrl.pathname = "/";
     redirectUrl.search = "";
     return NextResponse.redirect(redirectUrl);
+  }
+
+  if (user && !isMfaPath(pathname)) {
+    const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+    if (data?.currentLevel !== "aal2") {
+      if (isApiPath(pathname)) {
+        return NextResponse.json({ error: "Multi-factor authentication required." }, { status: 403 });
+      }
+
+      const redirectUrl = request.nextUrl.clone();
+      redirectUrl.pathname = "/mfa";
+      redirectUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(redirectUrl);
+    }
   }
 
   return response;

@@ -369,6 +369,26 @@ main {
   color: #7d5b12;
 }
 
+.mfa-qr-frame {
+  display: grid;
+  width: min(100%, 18rem);
+  aspect-ratio: 1;
+  place-items: center;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: white;
+}
+
+.mfa-qr-frame img {
+  width: 100%;
+  height: auto;
+}
+
+.mfa-secret {
+    font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace), serif;
+}
+
 .muted-text,
 .table-note,
 .helper-text {
