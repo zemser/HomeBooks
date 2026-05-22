@@ -103,13 +103,80 @@ Completed in code:
     - persisted `investment_activities` rows beside holdings snapshots
     - saved activity history on `/investments`
     - preview/save copy that adapts to activity imports versus holdings snapshots
+  - hosted Supabase auth foundation with:
+    - Supabase SSR/server/browser helpers
+    - hosted-mode sign-in and first-user sign-up pages
+    - hosted onboarding that creates the app user, workspace, and owner member from the Supabase identity
+    - hosted-mode current-context resolution using Supabase `auth.users.id`
+    - required TOTP MFA route at `/mfa`
+    - middleware that requires Supabase `aal2` for app pages and API routes in hosted mode
+    - dev mode still using the seeded local workspace bootstrap
+  - hosted RLS foundation with:
+    - request-scoped Supabase user id propagation into Postgres via `app.current_user_id`
+    - pooled database connections that set or clear the app user id before each query
+    - hosted-mode guard against using obvious bypass/admin DB roles for normal app traffic
+    - RLS helper functions for workspace membership, ownership, and child-record access
+    - RLS policies for workspace-owned app tables, catalog reads, onboarding inserts, and owner-managed member/workspace updates
+    - repeatable `npm run smoke:rls` cross-workspace isolation smoke test for a migrated hosted database
+  - temporary hosted import storage with:
+    - Supabase Storage mode for bank and investment save flows
+    - hosted import source paths under `tmp/workspaces/...`
+    - delete-after-success cleanup after persistence
+    - private bucket setup script
+    - failed-import TTL cleanup script
 
 Next up:
 
-- dogfood the new investment activity flow with more real files and tighten provider action mapping only where real imports reveal confusion
-- keep expense-path and investment-composition fixes opportunistic only if a new real-file blocker appears
-- durable upload storage for a cleaner hosted deployment path once hosted deployment becomes a priority
-- auth planning and provider selection once early deployment direction is clearer
+- hosted verification of Supabase Auth, onboarding, required TOTP MFA, and RLS with real project credentials
+- configure normal hosted app traffic with a non-bypass Supabase Postgres role
+- run the cross-workspace isolation smoke test against the hosted non-bypass role and document any missing grants
+- run hosted import storage setup and failed-import cleanup against the real Supabase project
+- run one local restore drill from the manual encrypted `pg_dump` backup and restore runbook
+
+## Hosted two-user v1 implementation plan
+
+This is the active cross-cutting implementation slice. It turns the local-first app into a private hosted app for two users without opening the door to broader SaaS complexity yet.
+
+### Current hosted foundation status
+
+Completed in code:
+
+1. Supabase Auth identity and onboarding
+   - Supabase SSR/server/browser helpers
+   - hosted sign-in and first-user workspace onboarding
+   - Supabase `auth.users.id` stored as app `users.id`
+   - hosted current-context resolution from the Supabase identity
+   - required TOTP MFA gate before onboarding, app pages, or API routes
+
+2. RLS and non-bypass database foundation
+   - `app.current_user_id` Postgres request setting is populated from the authenticated Supabase user
+   - pooled DB sessions set or clear that user id before each query to avoid stale session context
+   - hosted mode fails fast for obvious bypass/admin database usernames unless explicitly allowed for maintenance
+   - migration `0004_hosted_rls_foundation.sql` enables RLS and adds helper functions/policies for app tables
+
+Still required:
+
+1. Supabase project smoke test
+   - create/use the hosted project and apply migrations
+   - confirm sign-in, onboarding, MFA enrollment/challenge, and app access
+   - verify the app uses a non-bypass DB role for normal traffic
+
+2. RLS verification
+   - create two workspace scenarios with separate hosted users
+   - prove cross-workspace reads and writes fail
+   - document any role grants needed for the non-bypass DB user
+   - use `npm run smoke:rls` as the repeatable baseline once hosted credentials are configured
+
+3. Hosted import processing
+   - use Supabase Storage as temporary import-processing storage
+   - delete source files after successful parse and persistence
+   - document failed-import TTL cleanup
+   - run `npm run imports:setup-storage` before hosted import testing
+   - run `npm run imports:cleanup-failed` as the scheduled failed-file cleanup path
+
+4. Backup and deployment readiness
+   - run one encrypted backup and restore test against a local database
+   - configure Vercel only once auth/RLS/storage can be exercised end to end
 
 ## Recommended repo structure
 
@@ -598,9 +665,8 @@ Success criteria:
 Immediate handoff target:
 
 - settlement coverage for one-time manual shared expenses is now completed
-- investment preview and persistence for Excellence are now completed as an isolated sidecar
-- the next investment product slice is reading saved holdings back into `/investments`
-- durable upload storage is the main deployment-hardening follow-up before import-heavy hosted usage
+- investment preview, holdings persistence, saved holdings views, composition views, and first-pass activity imports for Excellence are now completed as an isolated sidecar
+- hosted two-user v1 hardening is the main cross-cutting follow-up: Supabase Auth, RLS, temporary hosted import processing, and manual backup/restore
 
 ## MVP acceptance checklist
 
@@ -616,7 +682,7 @@ Still needed for the fuller vision:
 
 - handle foreign-currency expenses in reporting beyond placeholder rates
 - expand shared settlements beyond pairwise v1 and add reimbursement-ledger history
-- persist investment imports into holdings/activity tables and build holdings/activity views
+- dogfood more real investment export files and tighten provider-specific mapping where real files expose gaps
 
 ## Recommended implementation sequence inside the codebase
 
@@ -655,8 +721,10 @@ What actually happened in code so far:
 18. recurring definitions simplified into one saved flow, with automatic report materialization plus pause/delete behavior that updates the current report month
 19. lightweight investment composition views on top of saved holdings, including heuristic asset typing, owner split, top positions, fallback classification for older snapshots, symbol-based aggregation, and a cleaner preview/save flow
 20. first-pass Excellence investment activity import support from a real checked-in workbook sample, with activity persistence and saved activity visibility on `/investments`
+21. hosted Supabase auth foundation with sign-in, first-user onboarding, hosted current-context resolution, and required TOTP MFA
+22. hosted RLS foundation with request-scoped `app.current_user_id`, non-bypass DB role guardrails, and workspace/member policies
 
-The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, shared workflow shell, FX/report-handoff usability pass, the recurring-flow simplification, the saved-holdings composition pass, and the first activity-import pass are now completed. The next investment expansion should focus on real-file dogfooding and mapping polish while the current expense and investment surfaces stay stable.
+The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, shared workflow shell, FX/report-handoff usability pass, the recurring-flow simplification, the saved-holdings composition pass, the first activity-import pass, hosted Auth/MFA, and the hosted RLS foundation are now completed in code. The next work should validate those hosted foundations against a real Supabase project before import-heavy hosted usage.
 
 ## Completed validation checkpoint
 
@@ -680,31 +748,22 @@ Still optional:
 
 ## Early deployment note
 
-For local validation, prefer Dockerized PostgreSQL plus `DATABASE_URL`.
+For local validation, Dockerized PostgreSQL plus `DATABASE_URL` still works.
 
-For a later Vercel deployment, the most natural PostgreSQL options are:
+For the first hosted two-user version, the platform direction is now:
 
-- Neon when we want the simplest serverless Postgres fit and tight Vercel integration
-- Supabase when we want Postgres plus optional platform features such as auth, storage, or realtime
+- Vercel for the Next.js app
+- Supabase Auth for sign-in and TOTP MFA
+- Supabase Postgres for hosted data
+- Supabase Storage only as temporary import-processing storage
+- custom SMTP before external auth email is relied on
 
-Current recommendation:
+Important caveats:
 
-- validate locally with plain PostgreSQL first
-- prefer Neon for the first Vercel deployment if the app only needs hosted Postgres
-- consider Supabase only if we explicitly choose to adopt its broader platform features
-
-Auth note:
-
-- auth is still part of the planned product scope and is not being removed or deferred forever
-- the early Neon recommendation is only about the hosted database choice for the first deployment
-- we are not locking in an auth provider yet
-- if we later choose Supabase, that can be because we intentionally want auth, storage, or realtime from the same platform
-
-Important caveat:
-
-- the current import flow writes uploaded files to local disk, so a production Vercel deployment should either avoid import-heavy usage initially or replace local file persistence with durable object storage first
-
-With that checkpoint green, the home shell connecting the product surfaces, and the recurring/report flow simplified, the next local-first product expansion should move to investments while durable upload storage remains the main hosted-deployment hardening follow-up for later.
+- Vercel Hobby and Supabase Free are validation tiers, not a durable production promise
+- normal user traffic must not use a service-role/admin database path that bypasses RLS
+- uploaded source files should be deleted after successful parse and persistence
+- manual encrypted backups are preferred over automated third-party `pg_dump` jobs for the two-user v1
 
 ## What to postpone on purpose
 
@@ -722,48 +781,57 @@ Postpone these until the expense core is stable:
 
 If we continue from here, the best next engineering step is:
 
-1. dogfood the new investment activity import with additional real files and tighten provider action mapping, labels, or account resolution only where that flow proves confusing
-2. keep expense-path and investment-composition follow-up work limited to newly observed blockers rather than another broad polish sweep
-3. defer durable upload storage until hosted deployment becomes a near-term priority, then take it before import-heavy hosted usage
-4. scope the later auth slice once early deployment direction and provider choices are clearer
+1. apply and smoke-test the hosted Supabase Auth, MFA, and RLS foundations against real project credentials
+2. configure normal hosted app traffic with a non-bypass Supabase Postgres role
+3. run the cross-workspace isolation smoke test against the hosted non-bypass role and document any missing grants
+4. replace local import-file persistence with temporary Supabase Storage processing and delete-after-success behavior
+5. write and test the manual encrypted backup/restore runbook
 
-That keeps the product moving on the main household workflow first while still preserving a clear hosted-deployment hardening path for later.
+That turns the current product into a private hosted two-user app while keeping account setup just ahead of the code that needs each platform.
 
 ## Next handoff slice
 
-The first activity-import pass is now completed, so the next implementation slice should stay narrow: verify the new flow with more real files and smooth only the remaining high-signal confusion.
-
 Goal:
 
-- tighten the new investment activity import flow without disturbing the current holdings-snapshot and composition workflow
+- verify and harden the hosted two-user foundation without disturbing the existing expense and investment workflows
 
 Recommended scope:
 
-1. run additional real Excellence activity exports through `/investments` and inspect any unmapped or confusing provider action labels
-2. keep the existing saved-holdings replacement logic, composition summaries, and import history behavior intact
-3. preserve current account resolution, duplicate replacement, and latest-active-holdings behavior while the activity rows land beside them
-4. improve preview copy, saved activity visibility, and provider-action mapping only where real files reveal confusion
-5. avoid dragging the expense workflow back into active scope unless a new blocker appears during regression testing
-6. leave durable storage, hosted DB decisions, auth, and broader investment analytics out of scope for this slice
+1. apply migrations to a hosted Supabase project
+2. confirm sign-in, onboarding, and TOTP MFA with real credentials
+3. verify the runtime database role does not bypass RLS
+4. create two workspace scenarios and prove cross-workspace reads/writes fail
+5. add temporary Supabase Storage processing for imports, including delete-after-success and failed-import TTL cleanup
+6. avoid broad investment or reporting feature expansion unless a regression blocks hosted validation
 
 Definition of done:
 
-- repeated real activity imports persist cleanly beside the existing holdings snapshots without regressing the current saved-holdings composition view
-- latest active holdings remain trustworthy after replacement imports
-- saved activity history remains understandable after replacement or repeated monthly imports
-- current expense import, review, recurring, reporting, and settlement behavior do not regress
-- the remaining provider-action interpretation gaps are grounded in real files rather than guessed workbook structure
+- two hosted users can sign in, complete MFA, and reach the intended household workspace
+- seeded dev bootstrap is not used in hosted mode
+- normal app requests do not use a service-role/admin path that bypasses RLS
+- cross-workspace isolation tests prove users cannot read or mutate another workspace's records
+- bank and investment import flows work through temporary hosted storage
+- uploaded source files are deleted after successful persistence
+- failed-import files expire through a documented TTL path
+- manual encrypted backup and local restore are documented and tested once
+- existing expense, recurring, reports, settlements, and investments flows do not regress
 
 ## Proposed next slices
 
 Near-term order:
 
-1. Investment activity dogfooding and mapping polish
-   - run more real monthly activity exports through `/investments`
-   - tighten provider action labels, notes, and edge-case handling only where confusion appears
-2. Hosted upload hardening
-   - replace local import-file storage with durable object storage before import-heavy hosted usage
-   - preserve current local-development ergonomics while adding the hosted path
-3. Auth and deployment direction
-   - choose the first hosted auth path only when deployment timing is real
-   - keep provider selection tied to actual deployment constraints rather than abstract planning
+1. Hosted auth and RLS verification
+   - Supabase project setup
+   - Supabase Auth, onboarding, required TOTP MFA hosted smoke test
+   - RLS policies and non-bypass user request path validation
+2. Hosted import processing
+   - Supabase Storage private bucket setup
+   - local and hosted storage adapters
+   - delete-after-success and failed-import TTL cleanup
+3. Backup and first hosted deploy
+   - manual encrypted `pg_dump` runbook and restore test
+   - Vercel project setup
+   - hosted smoke test for auth, MFA, RLS, imports, and existing product workflows
+4. Product dogfooding after hosted baseline
+   - run more real investment activity exports through `/investments`
+   - tighten provider action labels, notes, and edge-case handling only where real files show confusion
