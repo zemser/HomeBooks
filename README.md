@@ -7,6 +7,7 @@ Shared finance app for couples and families.
 - general design: [docs/general-design.md](./docs/general-design.md)
 - general information: [docs/general-information.md](./docs/general-information.md)
 - schema reference: [docs/schema-reference.md](./docs/schema-reference.md)
+- hosted backup and restore runbook: [docs/hosted-backup-restore.md](./docs/hosted-backup-restore.md)
 - implementation plan and progress: [docs/implementation-plan.md](./docs/implementation-plan.md)
 - Next.js app shell under `src/app`
 - Drizzle schema and migrations under `src/db`
@@ -73,6 +74,12 @@ Suggested smoke-test flow:
 
 ## Hosted RLS Smoke Test
 
+Before hosted validation, run:
+
+`npm run hosted:check`
+
+The preflight checks required hosted environment variables, local backup/restore tools, Node 20, and whether `DATABASE_URL` appears to use a non-bypass runtime database role.
+
 After applying migrations to a Supabase/Postgres database, run:
 
 `DATABASE_URL=postgres://app_role:... npm run smoke:rls`
@@ -84,3 +91,9 @@ The smoke test creates two temporary users/workspaces inside one transaction, pr
 Hosted import saves use Supabase Storage only as temporary processing storage. Set `FINAPP_IMPORT_STORAGE=supabase`, `SUPABASE_IMPORT_BUCKET=import-files`, `NEXT_PUBLIC_SUPABASE_URL`, and server-only `SUPABASE_SECRET_KEY`.
 
 Run `npm run imports:setup-storage` once to create the private bucket if needed. Successful bank and investment imports delete their source object after persistence. Failed imports keep their `tmp/...` source object briefly for debugging; run `npm run imports:cleanup-failed` on a schedule to delete failed source files older than `FINAPP_FAILED_IMPORT_FILE_TTL_HOURS`.
+
+## Hosted Backup and Restore
+
+Use the manual encrypted `pg_dump` runbook in [docs/hosted-backup-restore.md](./docs/hosted-backup-restore.md) before treating the hosted two-user setup as durable. The runbook covers encrypted backups, checksum verification, local restore drills, and hosted recovery checks.
+
+The repeatable helpers are `npm run backup:create` and `npm run backup:verify`.
