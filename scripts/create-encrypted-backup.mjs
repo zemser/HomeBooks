@@ -44,6 +44,10 @@ async function createBackup() {
     ]);
 
     await run("gpg", [
+      "--batch",
+      "--yes",
+      "--trust-model",
+      "always",
       "--encrypt",
       "--recipient",
       recipient,

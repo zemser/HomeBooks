@@ -1,5 +1,7 @@
 import process from "node:process";
 
+import "./load-env.mjs";
+
 const DEFAULT_SUPABASE_IMPORT_BUCKET = "import-files";
 const DEFAULT_FAILED_IMPORT_FILE_TTL_HOURS = 24;
 

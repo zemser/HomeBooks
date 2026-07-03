@@ -2,12 +2,14 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
+import { noRealtimeOptions } from "@/lib/supabase/noop-websocket";
 
 export async function createSupabaseServerClient() {
   const { publishableKey, supabaseUrl } = getSupabasePublicConfig();
   const cookieStore = await cookies();
 
   return createServerClient(supabaseUrl, publishableKey, {
+    ...noRealtimeOptions,
     cookies: {
       getAll() {
         return cookieStore.getAll();

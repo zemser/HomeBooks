@@ -1,5 +1,7 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
+
 import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
@@ -57,16 +59,18 @@ export async function createFirstWorkspaceAction(formData: FormData) {
       return;
     }
 
-    const [workspace] = await tx
+    const workspaceId = randomUUID();
+
+    await tx
       .insert(workspaces)
       .values({
+        id: workspaceId,
         name: workspaceName,
         baseCurrency,
-      })
-      .returning();
+      });
 
     await tx.insert(workspaceMembers).values({
-      workspaceId: workspace.id,
+      workspaceId,
       userId: user.id,
       role: "owner",
       displayNameOverride: displayName,
