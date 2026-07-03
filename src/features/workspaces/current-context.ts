@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { getDb } from "@/db";
+import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
 import { getFinappAuthMode } from "@/lib/supabase/config";
@@ -127,45 +128,47 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
         ? authUser.user_metadata.full_name
         : email.split("@")[0] || "Finance user";
 
-  const context = await db.transaction(async (tx) => {
-    let user = await tx.query.users.findFirst({
-      where: eq(users.id, authUser.id),
-    });
+  const context = await runWithDatabaseUser(authUser.id, () =>
+    db.transaction(async (tx) => {
+      let user = await tx.query.users.findFirst({
+        where: eq(users.id, authUser.id),
+      });
 
-    if (!user) {
-      [user] = await tx
-        .insert(users)
-        .values({
-          id: authUser.id,
-          email,
-          displayName,
-        })
-        .returning();
-    }
+      if (!user) {
+        [user] = await tx
+          .insert(users)
+          .values({
+            id: authUser.id,
+            email,
+            displayName,
+          })
+          .returning();
+      }
 
-    const member = await tx.query.workspaceMembers.findFirst({
-      where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
-    });
+      const member = await tx.query.workspaceMembers.findFirst({
+        where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
+      });
 
-    if (!member) {
-      return null;
-    }
+      if (!member) {
+        return null;
+      }
 
-    const workspace = await tx.query.workspaces.findFirst({
-      where: eq(workspaces.id, member.workspaceId),
-    });
+      const workspace = await tx.query.workspaces.findFirst({
+        where: eq(workspaces.id, member.workspaceId),
+      });
 
-    if (!workspace) {
-      throw new Error("Workspace member exists without a workspace.");
-    }
+      if (!workspace) {
+        throw new Error("Workspace member exists without a workspace.");
+      }
 
-    return {
-      userId: user.id,
-      workspaceId: workspace.id,
-      memberId: member.id,
-      baseCurrency: workspace.baseCurrency,
-    };
-  });
+      return {
+        userId: user.id,
+        workspaceId: workspace.id,
+        memberId: member.id,
+        baseCurrency: workspace.baseCurrency,
+      };
+    }),
+  );
 
   if (!context) {
     redirect("/onboarding");

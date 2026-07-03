@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { getDb } from "@/db";
+import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
 
@@ -35,47 +36,49 @@ export async function createFirstWorkspaceAction(formData: FormData) {
 
   const db = getDb();
 
-  await db.transaction(async (tx) => {
-    let user = await tx.query.users.findFirst({
-      where: eq(users.id, authUser.id),
-    });
-
-    if (!user) {
-      [user] = await tx
-        .insert(users)
-        .values({
-          id: authUser.id,
-          email: authUser.email ?? `${authUser.id}@supabase.local`,
-          displayName,
-        })
-        .returning();
-    }
-
-    const existingMember = await tx.query.workspaceMembers.findFirst({
-      where: eq(workspaceMembers.userId, user.id),
-    });
-
-    if (existingMember) {
-      return;
-    }
-
-    const workspaceId = randomUUID();
-
-    await tx
-      .insert(workspaces)
-      .values({
-        id: workspaceId,
-        name: workspaceName,
-        baseCurrency,
+  await runWithDatabaseUser(authUser.id, () =>
+    db.transaction(async (tx) => {
+      let user = await tx.query.users.findFirst({
+        where: eq(users.id, authUser.id),
       });
 
-    await tx.insert(workspaceMembers).values({
-      workspaceId,
-      userId: user.id,
-      role: "owner",
-      displayNameOverride: displayName,
-    });
-  });
+      if (!user) {
+        [user] = await tx
+          .insert(users)
+          .values({
+            id: authUser.id,
+            email: authUser.email ?? `${authUser.id}@supabase.local`,
+            displayName,
+          })
+          .returning();
+      }
+
+      const existingMember = await tx.query.workspaceMembers.findFirst({
+        where: eq(workspaceMembers.userId, user.id),
+      });
+
+      if (existingMember) {
+        return;
+      }
+
+      const workspaceId = randomUUID();
+
+      await tx
+        .insert(workspaces)
+        .values({
+          id: workspaceId,
+          name: workspaceName,
+          baseCurrency,
+        });
+
+      await tx.insert(workspaceMembers).values({
+        workspaceId,
+        userId: user.id,
+        role: "owner",
+        displayNameOverride: displayName,
+      });
+    }),
+  );
 
   redirect("/");
 }
