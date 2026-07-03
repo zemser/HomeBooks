@@ -29,6 +29,14 @@ pg_restore --version
 gpg --version
 ```
 
+If `pg_dump` or `pg_restore` is installed but not on `PATH`, add it only for
+the current terminal session before running the backup commands. For example,
+on Homebrew macOS installs:
+
+```bash
+export PATH="/opt/homebrew/opt/libpq/bin:$PATH"
+```
+
 Use a database URL with enough privileges to dump the application database. For Supabase this is usually a direct Postgres connection string, not the app runtime role.
 
 Set local-only environment variables:
