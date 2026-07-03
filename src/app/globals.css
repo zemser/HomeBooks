@@ -250,6 +250,109 @@ main {
   color: var(--muted);
 }
 
+.auth-shell {
+  display: grid;
+  gap: 1rem;
+  width: min(980px, calc(100vw - 2rem));
+  padding-top: 1.5rem;
+}
+
+.auth-hero {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.auth-hero h1 {
+  max-width: 18ch;
+  margin: 0;
+  font-size: clamp(2.1rem, 4.6vw, 3.25rem);
+  line-height: 1.02;
+}
+
+.auth-hero p {
+  max-width: 58ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.auth-layout {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+}
+
+.auth-layout-single {
+  max-width: 560px;
+  grid-template-columns: 1fr;
+}
+
+.auth-card {
+  padding: 1rem;
+  border-radius: 1rem;
+}
+
+.auth-card.stack,
+.auth-card .stack {
+  gap: 0.8rem;
+}
+
+.auth-card-header {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.auth-card-header h2 {
+  margin-bottom: 0;
+}
+
+.auth-card-secondary {
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.auth-button {
+  width: 100%;
+}
+
+.auth-card .input,
+.auth-card .button {
+  padding: 0.72rem 0.9rem;
+  border-radius: 0.75rem;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.auth-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.auth-note a {
+  color: var(--accent);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
@@ -745,6 +848,15 @@ main {
     padding: 1.25rem;
   }
 
+  .auth-shell {
+    width: min(100vw - 1rem, 980px);
+    padding-top: 1.25rem;
+  }
+
+  .auth-hero h1 {
+    font-size: 2.4rem;
+  }
+
   .summary-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -767,6 +879,12 @@ main {
   .composition-row-meta {
     justify-items: start;
     text-align: left;
+  }
+}
+
+@media (max-width: 760px) {
+  .auth-layout {
+    grid-template-columns: 1fr;
   }
 }
 

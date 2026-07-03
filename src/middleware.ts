@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getFinappAuthMode, getSupabasePublicConfig } from "@/lib/supabase/config";
 import { noRealtimeOptions } from "@/lib/supabase/noop-websocket";
 
-const PUBLIC_PATH_PREFIXES = ["/auth/callback", "/sign-in"];
+const PUBLIC_PATH_PREFIXES = ["/auth/callback", "/sign-in", "/sign-up"];
 const MFA_PATH_PREFIXES = ["/mfa"];
 
 function isPublicPath(pathname: string) {
