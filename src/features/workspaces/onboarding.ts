@@ -2,7 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { getDb } from "@/db";
@@ -38,19 +38,34 @@ export async function createFirstWorkspaceAction(formData: FormData) {
 
   await runWithDatabaseUser(authUser.id, () =>
     db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authUser.id}))`);
+
       let user = await tx.query.users.findFirst({
         where: eq(users.id, authUser.id),
       });
 
       if (!user) {
-        [user] = await tx
+        const [insertedUser] = await tx
           .insert(users)
           .values({
             id: authUser.id,
             email: authUser.email ?? `${authUser.id}@supabase.local`,
             displayName,
           })
+          .onConflictDoNothing({
+            target: users.id,
+          })
           .returning();
+
+        user =
+          insertedUser
+          ?? await tx.query.users.findFirst({
+            where: eq(users.id, authUser.id),
+          });
+      }
+
+      if (!user) {
+        throw new Error("Could not create or load the authenticated app user.");
       }
 
       const existingMember = await tx.query.workspaceMembers.findFirst({
