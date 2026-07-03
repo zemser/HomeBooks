@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState } from "react";
-import Image from "next/image";
 
 import {
   beginTotpEnrollmentAction,
@@ -20,7 +19,10 @@ export function MfaEnrollmentClient({ next }: { next: string }) {
   );
 
   if (state.status === "ready") {
-    const qrCodeSrc = `data:image/svg+xml;utf-8,${encodeURIComponent(state.qrCode)}`;
+    const qrCodeSrc = state.qrCode.startsWith("data:")
+      ? state.qrCode
+      : `data:image/svg+xml;utf8,${encodeURIComponent(state.qrCode)}`;
+    const qrCodeSvg = state.qrCode.trim().startsWith("<svg") ? state.qrCode : null;
 
     return (
       <div className="card stack">
@@ -32,13 +34,17 @@ export function MfaEnrollmentClient({ next }: { next: string }) {
         </div>
 
         <div className="mfa-qr-frame">
-          <Image
-            alt="Authenticator QR code"
-            height={256}
-            src={qrCodeSrc}
-            unoptimized
-            width={256}
-          />
+          {qrCodeSvg ? (
+            <div
+              aria-label="Authenticator QR code"
+              className="mfa-qr-svg"
+              dangerouslySetInnerHTML={{ __html: qrCodeSvg }}
+              role="img"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img alt="Authenticator QR code" height={256} src={qrCodeSrc} width={256} />
+          )}
         </div>
 
         <label className="field">

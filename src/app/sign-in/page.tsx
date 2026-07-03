@@ -1,4 +1,8 @@
-import { signInWithPasswordAction, signUpWithPasswordAction } from "@/features/auth/actions";
+import {
+  signInWithGoogleAction,
+  signInWithPasswordAction,
+  signUpWithPasswordAction,
+} from "@/features/auth/actions";
 
 type SignInPageProps = {
   searchParams?: Promise<{
@@ -47,6 +51,19 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
             </button>
           </form>
 
+          <form action={signInWithGoogleAction} className="card stack">
+            <div>
+              <h2>Sign in with Google</h2>
+              <p className="muted-text">
+                Continue with the Google account enabled in Supabase Auth.
+              </p>
+            </div>
+            <input name="next" type="hidden" value={next} />
+            <button className="button button-secondary" type="submit">
+              Continue with Google
+            </button>
+          </form>
+
           <form action={signUpWithPasswordAction} className="card stack">
             <div>
               <h2>Create first user</h2>
@@ -56,7 +73,7 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
             </div>
             <label className="field">
               <span>Display name</span>
-              <input className="input" name="displayName" type="text" />
+              <input className="input" name="displayName" required type="text" />
             </label>
             <label className="field">
               <span>Email</span>
@@ -64,7 +81,27 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
             </label>
             <label className="field">
               <span>Password</span>
-              <input className="input" minLength={8} name="password" required type="password" />
+              <input
+                autoComplete="new-password"
+                className="input"
+                minLength={10}
+                name="password"
+                pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*[0-9]).{10,}"
+                required
+                title="Use at least 10 characters with uppercase, lowercase, and a number."
+                type="password"
+              />
+            </label>
+            <label className="field">
+              <span>Confirm password</span>
+              <input
+                autoComplete="new-password"
+                className="input"
+                minLength={10}
+                name="confirmPassword"
+                required
+                type="password"
+              />
             </label>
             <button className="button button-secondary" type="submit">
               Create account

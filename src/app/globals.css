@@ -380,9 +380,16 @@ main {
   background: white;
 }
 
-.mfa-qr-frame img {
+.mfa-qr-frame img,
+.mfa-qr-svg,
+.mfa-qr-svg svg {
   width: 100%;
   height: auto;
+}
+
+.mfa-qr-svg {
+  display: grid;
+  place-items: center;
 }
 
 .mfa-secret {

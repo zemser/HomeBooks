@@ -22,6 +22,31 @@ type WrappedPoolClient = PoolClient & {
   [wrappedClient]?: boolean;
 };
 
+function getQueryText(query: unknown) {
+  if (typeof query === "string") {
+    return query;
+  }
+
+  if (
+    query
+    && typeof query === "object"
+    && "text" in query
+    && typeof query.text === "string"
+  ) {
+    return query.text;
+  }
+
+  return "";
+}
+
+function isTransactionControlQuery(query: unknown) {
+  const normalizedQuery = getQueryText(query).trim().toLowerCase();
+
+  return /^(begin|commit|rollback|savepoint|release savepoint|rollback to savepoint)\b/.test(
+    normalizedQuery,
+  );
+}
+
 function wrapClientForCurrentUser(client: PoolClient) {
   const scopedClient = client as WrappedPoolClient;
 
@@ -32,11 +57,13 @@ function wrapClientForCurrentUser(client: PoolClient) {
   const originalQuery = scopedClient.query.bind(scopedClient);
 
   scopedClient.query = (async (...args: unknown[]) => {
-    const currentUserId = getCurrentDatabaseUserId();
+    if (!isTransactionControlQuery(args[0])) {
+      const currentUserId = getCurrentDatabaseUserId();
 
-    await originalQuery("select set_config('app.current_user_id', $1, false)", [
-      currentUserId ?? "",
-    ]);
+      await originalQuery("select set_config('app.current_user_id', $1, false)", [
+        currentUserId ?? "",
+      ]);
+    }
 
     return (originalQuery as (...queryArgs: unknown[]) => unknown)(...args);
   }) as PoolClient["query"];
