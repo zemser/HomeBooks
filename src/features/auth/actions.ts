@@ -68,21 +68,21 @@ export async function signUpWithPasswordAction(formData: FormData) {
   const displayName = getString(formData, "displayName");
 
   if (!displayName) {
-    redirectWithError("/sign-in", "Display name is required.");
+    redirectWithError("/sign-up", "Display name is required.");
   }
 
   if (!email || !password || !confirmPassword) {
-    redirectWithError("/sign-in", "Email, password, and password confirmation are required.");
+    redirectWithError("/sign-up", "Email, password, and password confirmation are required.");
   }
 
   if (password !== confirmPassword) {
-    redirectWithError("/sign-in", "Passwords do not match.");
+    redirectWithError("/sign-up", "Passwords do not match.");
   }
 
   const passwordError = getPasswordValidationError(password);
 
   if (passwordError) {
-    redirectWithError("/sign-in", passwordError);
+    redirectWithError("/sign-up", passwordError);
   }
 
   const supabase = await createSupabaseServerClient();
@@ -98,7 +98,7 @@ export async function signUpWithPasswordAction(formData: FormData) {
   });
 
   if (error) {
-    redirectWithError("/sign-in", error.message);
+    redirectWithError("/sign-up", error.message);
   }
 
   redirect("/onboarding");
