@@ -1,3 +1,5 @@
+import "./load-env.mjs";
+
 const hostedMode =
   process.env.VERCEL === "1"
   || process.env.FINAPP_AUTH_MODE === "supabase"

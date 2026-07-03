@@ -8,6 +8,7 @@ import {
   getSupabaseImportStorageConfig,
   requireEnv,
 } from "./import-storage-env.mjs";
+import { noRealtimeOptions } from "./noop-websocket.mjs";
 
 const { Pool } = pg;
 
@@ -19,6 +20,7 @@ const dryRun = process.env.FINAPP_IMPORT_CLEANUP_DRY_RUN === "1";
 
 const pool = new Pool({ connectionString: databaseUrl });
 const supabase = createClient(supabaseUrl, supabaseSecretKey, {
+  ...noRealtimeOptions,
   auth: {
     persistSession: false,
     autoRefreshToken: false,

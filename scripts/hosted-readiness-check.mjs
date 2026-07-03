@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import process from "node:process";
 
+import "./load-env.mjs";
+
 const BYPASS_DATABASE_USERS = new Set([
   "postgres",
   "service_role",
@@ -111,4 +113,3 @@ if (failed.length > 0) {
   console.log("");
   console.log("Hosted readiness preflight passed.");
 }
-

@@ -3,6 +3,8 @@ import process from "node:process";
 
 import pg from "pg";
 
+import "./load-env.mjs";
+
 const { Pool } = pg;
 
 const BYPASS_DATABASE_USERS = new Set([
@@ -31,6 +33,7 @@ if (
 }
 
 const pool = new Pool({ connectionString: databaseUrl });
+let savepointCounter = 0;
 
 function testLabel(label) {
   return `rls-smoke-${label}-${randomUUID().slice(0, 8)}`;
@@ -61,21 +64,29 @@ async function expectNoRows(client, label, text, values) {
 }
 
 async function expectPolicyBlock(client, label, text, values) {
+  const savepointName = `policy_block_${++savepointCounter}`;
+
+  await client.query(`savepoint ${savepointName}`);
+
   try {
     const result = await client.query(text, values);
 
     if (result.rowCount === 0) {
+      await client.query(`release savepoint ${savepointName}`);
       console.log(`ok - ${label}`);
       return;
     }
 
+    await client.query(`rollback to savepoint ${savepointName}`);
     throw new Error(`${label}: expected RLS to block the write, but ${result.rowCount} row(s) changed.`);
   } catch (error) {
     if (error?.code === "42501") {
+      await client.query(`rollback to savepoint ${savepointName}`);
       console.log(`ok - ${label}`);
       return;
     }
 
+    await client.query(`rollback to savepoint ${savepointName}`).catch(() => {});
     throw error;
   }
 }
@@ -95,24 +106,24 @@ async function seedWorkspace(client, label) {
     [userId, `${testLabel(label)}@example.test`, `${label} User`],
   );
 
-  const workspace = await insertOne(
-    client,
+  const workspace = { id: randomUUID() };
+
+  await client.query(
     `
-      insert into workspaces (name, base_currency, country_code)
-      values ($1, 'ILS', 'IL')
-      returning id
+      insert into workspaces (id, name, base_currency, country_code)
+      values ($1, $2, 'ILS', 'IL')
     `,
-    [testLabel(`${label}-workspace`)],
+    [workspace.id, testLabel(`${label}-workspace`)],
   );
 
-  const member = await insertOne(
-    client,
+  const member = { id: randomUUID() };
+
+  await client.query(
     `
-      insert into workspace_members (workspace_id, user_id, role)
-      values ($1, $2, 'owner')
-      returning id
+      insert into workspace_members (id, workspace_id, user_id, role)
+      values ($1, $2, $3, 'owner')
     `,
-    [workspace.id, user.id],
+    [member.id, workspace.id, user.id],
   );
 
   const category = await insertOne(

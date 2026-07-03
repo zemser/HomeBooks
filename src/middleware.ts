@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getFinappAuthMode, getSupabasePublicConfig } from "@/lib/supabase/config";
+import { noRealtimeOptions } from "@/lib/supabase/noop-websocket";
 
 const PUBLIC_PATH_PREFIXES = ["/sign-in"];
 const MFA_PATH_PREFIXES = ["/mfa"];
@@ -38,6 +39,7 @@ export async function middleware(request: NextRequest) {
   });
 
   const supabase = createServerClient(supabaseUrl, publishableKey, {
+    ...noRealtimeOptions,
     cookies: {
       getAll() {
         return request.cookies.getAll();
