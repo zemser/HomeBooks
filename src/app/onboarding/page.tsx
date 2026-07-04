@@ -1,8 +1,12 @@
 import { redirect } from "next/navigation";
 
+import { getDb } from "@/db";
+import { runWithDatabaseUser } from "@/db/request-context";
+import { workspaceMembers } from "@/db/schema";
 import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
 import { createFirstWorkspaceAction } from "@/features/workspaces/onboarding";
 import { getFinappAuthMode } from "@/lib/supabase/config";
+import { and, eq } from "drizzle-orm";
 
 type OnboardingPageProps = {
   searchParams?: Promise<{
@@ -21,6 +25,16 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
 
   if (!user) {
     redirect("/sign-in");
+  }
+
+  const existingMember = await runWithDatabaseUser(user.id, () =>
+    getDb().query.workspaceMembers.findFirst({
+      where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
+    }),
+  );
+
+  if (existingMember) {
+    redirect("/");
   }
 
   const params = await searchParams;

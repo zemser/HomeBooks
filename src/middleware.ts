@@ -3,12 +3,15 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getFinappAuthMode, getSupabasePublicConfig } from "@/lib/supabase/config";
 import { noRealtimeOptions } from "@/lib/supabase/noop-websocket";
-
-const PUBLIC_PATH_PREFIXES = ["/auth/callback", "/sign-in", "/sign-up"];
-const MFA_PATH_PREFIXES = ["/mfa"];
+import {
+  FINAPP_PATHNAME_HEADER,
+  MFA_PATH_PREFIXES,
+  PUBLIC_AUTH_PATH_PREFIXES,
+  matchesPathPrefix,
+} from "@/lib/routing/request-path";
 
 function isPublicPath(pathname: string) {
-  return PUBLIC_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return matchesPathPrefix(pathname, PUBLIC_AUTH_PATH_PREFIXES);
 }
 
 function isApiPath(pathname: string) {
@@ -16,12 +19,12 @@ function isApiPath(pathname: string) {
 }
 
 function isMfaPath(pathname: string) {
-  return MFA_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+  return matchesPathPrefix(pathname, MFA_PATH_PREFIXES);
 }
 
 export async function middleware(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-finapp-pathname", request.nextUrl.pathname);
+  requestHeaders.set(FINAPP_PATHNAME_HEADER, request.nextUrl.pathname);
 
   if (getFinappAuthMode() !== "supabase") {
     return NextResponse.next({
