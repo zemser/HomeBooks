@@ -21,6 +21,17 @@ export function setCurrentDatabaseUserId(currentUserId: string) {
   databaseRequestContext.enterWith({ currentUserId });
 }
 
+export function clearCurrentDatabaseUserId() {
+  const existingContext = databaseRequestContext.getStore();
+
+  if (existingContext) {
+    existingContext.currentUserId = null;
+    return;
+  }
+
+  databaseRequestContext.enterWith({ currentUserId: null });
+}
+
 export async function runWithDatabaseUser<T>(
   currentUserId: string,
   callback: () => Promise<T>,
