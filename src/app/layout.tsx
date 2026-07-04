@@ -5,6 +5,7 @@ import { AppShellClient } from "@/components/app-shell/app-shell-client";
 import { createAppNavSections } from "@/components/app-shell/nav";
 import { getAppShellSnapshot } from "@/features/home/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { SHELLLESS_PATHS, resolveRequestPathname } from "@/lib/routing/request-path";
 
 import "./globals.css";
 
@@ -21,14 +22,9 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const headerStore = await headers();
-  const pathname = headerStore.get("x-finapp-pathname") ?? "";
+  const pathname = resolveRequestPathname(headerStore);
 
-  if (
-    pathname === "/sign-in"
-    || pathname === "/sign-up"
-    || pathname === "/mfa"
-    || pathname === "/onboarding"
-  ) {
+  if (SHELLLESS_PATHS.has(pathname)) {
     return (
       <html lang="en">
         <body>{children}</body>
