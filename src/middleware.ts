@@ -4,7 +4,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getFinappAuthMode, getSupabasePublicConfig } from "@/lib/supabase/config";
 import { noRealtimeOptions } from "@/lib/supabase/noop-websocket";
 import {
-  FINAPP_PATHNAME_HEADER,
   MFA_PATH_PREFIXES,
   PUBLIC_AUTH_PATH_PREFIXES,
   matchesPathPrefix,
@@ -23,23 +22,12 @@ function isMfaPath(pathname: string) {
 }
 
 export async function middleware(request: NextRequest) {
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set(FINAPP_PATHNAME_HEADER, request.nextUrl.pathname);
-
   if (getFinappAuthMode() !== "supabase") {
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
+    return NextResponse.next();
   }
 
   const { publishableKey, supabaseUrl } = getSupabasePublicConfig();
-  let response = NextResponse.next({
-    request: {
-      headers: requestHeaders,
-    },
-  });
+  let response = NextResponse.next();
 
   const supabase = createServerClient(supabaseUrl, publishableKey, {
     ...noRealtimeOptions,
@@ -49,11 +37,7 @@ export async function middleware(request: NextRequest) {
       },
       setAll(cookiesToSet) {
         cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-        response = NextResponse.next({
-          request: {
-            headers: requestHeaders,
-          },
-        });
+        response = NextResponse.next();
         cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options);
         });
