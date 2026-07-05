@@ -64,5 +64,4 @@ export type AppShellSnapshot = {
   activeMemberCount: number;
   pairwiseSettlementReady: boolean;
   reviewQueueCount: number;
-  settingsNeedsAttention: boolean;
 };
