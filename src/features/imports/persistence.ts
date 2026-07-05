@@ -39,6 +39,11 @@ type ActiveExactClassificationRule = {
   category: string | null;
 };
 
+type RetryableFailedImport = {
+  id: string;
+  storagePath: string;
+};
+
 export type SavedImportSummary = {
   id: string;
   originalFilename: string;
@@ -216,6 +221,7 @@ export async function listSavedImports(
     .where(
       and(
         eq(imports.workspaceId, context.workspaceId),
+        eq(imports.importStatus, "completed"),
         input?.type ? eq(imports.type, input.type) : undefined,
       ),
     )
@@ -310,6 +316,7 @@ export async function persistBankImport(input: {
 }) {
   const db = getDb();
   const checksum = hashBuffer(input.fileBuffer);
+  let retryImport: RetryableFailedImport | null = null;
   const existingImport = await db.query.imports.findFirst({
     where: and(
       eq(imports.workspaceId, input.context.workspaceId),
@@ -324,13 +331,20 @@ export async function persistBankImport(input: {
       eq(transactions.importId, existingImport.id),
     );
 
-    return {
-      status: "duplicate" as const,
-      importId: existingImport.id,
-      duplicateOfImportId: existingImport.id,
-      transactionCount: existingTransactionCount,
-      importStatus: existingImport.importStatus,
-    };
+    if (existingImport.importStatus === "failed" && existingTransactionCount === 0) {
+      retryImport = {
+        id: existingImport.id,
+        storagePath: existingImport.storagePath,
+      };
+    } else {
+      return {
+        status: "duplicate" as const,
+        importId: existingImport.id,
+        duplicateOfImportId: existingImport.id,
+        transactionCount: existingTransactionCount,
+        importStatus: existingImport.importStatus,
+      };
+    }
   }
 
   const preview = parseBankWorkbookToPreview({
@@ -353,28 +367,53 @@ export async function persistBankImport(input: {
     accountLabel,
   });
 
-  const importId = randomUUID();
-  const storagePath = buildImportStoragePath({
-    workspaceId: input.context.workspaceId,
-    importId,
-    filename: input.originalFilename,
-  });
+  const importId = retryImport?.id ?? randomUUID();
+  const storagePath =
+    retryImport?.storagePath
+    ?? buildImportStoragePath({
+      workspaceId: input.context.workspaceId,
+      importId,
+      filename: input.originalFilename,
+    });
   const startedAt = new Date();
 
-  await db.insert(imports).values({
-    id: importId,
-    workspaceId: input.context.workspaceId,
-    uploadedByUserId: input.context.userId,
-    importSourceId: templateRecord.sourceId,
-    importTemplateId: templateRecord.templateId,
-    type: "bank",
-    fileKind: input.workbook.fileKind,
-    originalFilename: input.originalFilename,
-    storagePath,
-    fileChecksum: checksum,
-    importStatus: "processing",
-    startedAt,
-  });
+  if (retryImport) {
+    await db.transaction(async (tx) => {
+      await tx.delete(importRows).where(eq(importRows.importId, importId));
+      await tx
+        .update(imports)
+        .set({
+          uploadedByUserId: input.context.userId,
+          importSourceId: templateRecord.sourceId,
+          importTemplateId: templateRecord.templateId,
+          fileKind: input.workbook.fileKind,
+          originalFilename: input.originalFilename,
+          storagePath,
+          fileChecksum: checksum,
+          importStatus: "processing",
+          startedAt,
+          completedAt: null,
+          errorSummary: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(imports.id, importId));
+    });
+  } else {
+    await db.insert(imports).values({
+      id: importId,
+      workspaceId: input.context.workspaceId,
+      uploadedByUserId: input.context.userId,
+      importSourceId: templateRecord.sourceId,
+      importTemplateId: templateRecord.templateId,
+      type: "bank",
+      fileKind: input.workbook.fileKind,
+      originalFilename: input.originalFilename,
+      storagePath,
+      fileChecksum: checksum,
+      importStatus: "processing",
+      startedAt,
+    });
+  }
 
   try {
     await writeImportFile({
