@@ -25,7 +25,7 @@ export default async function SettingsPage() {
 
   return (
     <main>
-      <div className="page-shell stack">
+      <div className="page-shell stack settings-shell">
         <section className="hero">
           <span className="eyebrow">Settings</span>
           <h1>Household configuration lives here.</h1>

@@ -42,6 +42,10 @@ main {
   padding: 2rem 0 4rem;
 }
 
+.settings-shell {
+  width: min(1200px, calc(100vw - 2rem));
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: minmax(250px, 280px) minmax(0, 1fr);
@@ -610,6 +614,19 @@ main {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.settings-shell .page-actions {
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.settings-shell .action-row {
+  justify-content: end;
+}
+
+.settings-shell .button {
+  white-space: nowrap;
+}
+
 .composition-list {
   display: grid;
   gap: 1rem;
@@ -965,6 +982,20 @@ main {
 
   .action-row {
     grid-auto-flow: row;
+  }
+
+  .settings-shell .page-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-shell .action-row,
+  .settings-shell .inline-form {
+    width: 100%;
+  }
+
+  .settings-shell .action-row .button,
+  .settings-shell .inline-form .button {
+    width: 100%;
   }
 }
 
