@@ -741,6 +741,7 @@ export async function persistInvestmentImport(input: {
       await writeImportFile({
         storagePath,
         fileBuffer: input.fileBuffer,
+        fileKind: input.workbook.fileKind,
       });
 
       const account = await resolveInvestmentAccount({

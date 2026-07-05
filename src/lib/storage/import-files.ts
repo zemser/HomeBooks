@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import type { ImportFileKind } from "@/features/imports/types";
 
 type ImportStorageMode = "local" | "supabase";
 
@@ -18,6 +19,14 @@ function getImportStorageMode(): ImportStorageMode {
 
 function getSupabaseImportBucket() {
   return process.env.SUPABASE_IMPORT_BUCKET || DEFAULT_SUPABASE_IMPORT_BUCKET;
+}
+
+function getImportFileContentType(fileKind: ImportFileKind) {
+  if (fileKind === "xlsx") {
+    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  }
+
+  return "text/csv";
 }
 
 export function buildImportStoragePath(input: {
@@ -49,12 +58,14 @@ export function buildImportStoragePath(input: {
 export async function writeImportFile(input: {
   storagePath: string;
   fileBuffer: Buffer;
+  fileKind: ImportFileKind;
 }) {
   if (getImportStorageMode() === "supabase") {
     const supabase = createSupabaseAdminClient();
     const { error } = await supabase.storage
       .from(getSupabaseImportBucket())
       .upload(input.storagePath, input.fileBuffer, {
+        contentType: getImportFileContentType(input.fileKind),
         upsert: true,
       });
 
