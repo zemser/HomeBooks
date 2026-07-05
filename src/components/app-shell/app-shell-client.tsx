@@ -38,6 +38,7 @@ function MobileNavItem({
     <Link
       className={`app-mobile-nav-item ${active ? "app-mobile-nav-item-active" : ""}`}
       href={item.href}
+      prefetch={false}
     >
       <span>{item.label}</span>
       {item.badge ? (
@@ -95,6 +96,7 @@ export function AppShellClient({
                       <Link
                         className={`app-nav-link ${active ? "app-nav-link-active" : ""}`}
                         href={item.href}
+                        prefetch={false}
                         key={item.href}
                       >
                         <span>{item.label}</span>
@@ -126,7 +128,7 @@ export function AppShellClient({
           </div>
           <div className="app-mobile-actions">
             {secondaryItems.map((item) => (
-              <Link className="mobile-pill-link" href={item.href} key={item.href}>
+              <Link className="mobile-pill-link" href={item.href} prefetch={false} key={item.href}>
                 {item.label}
               </Link>
             ))}
