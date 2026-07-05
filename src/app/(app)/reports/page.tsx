@@ -24,7 +24,10 @@ import {
   buildRollingTwelveWindow,
   buildYearToDateWindow,
 } from "@/features/reporting/periods";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import {
+  resolveCurrentWorkspaceContext,
+  runWithWorkspaceDatabaseUser,
+} from "@/features/workspaces/current-context";
 
 export const dynamic = "force-dynamic";
 
@@ -138,25 +141,29 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
       ? yearToDateWindow.periodStart
       : rollingWindow.periodStart;
   const context = await resolveCurrentWorkspaceContext();
+  const [report, yearToDate, rollingTwelve] = await runWithWorkspaceDatabaseUser(
+    context,
+    async () => {
+      if (reportingMode === "allocated_period") {
+        await syncExpenseEventsForRange(context, {
+          startMonth: syncStartMonth,
+          endMonth: selectedMonth,
+        });
+      }
 
-  if (reportingMode === "allocated_period") {
-    await syncExpenseEventsForRange(context, {
-      startMonth: syncStartMonth,
-      endMonth: selectedMonth,
-    });
-  }
-
-  const [report, yearToDate, rollingTwelve] = await Promise.all([
-    getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }),
-    getYearToDateReport(context, {
-      throughMonth: selectedMonth,
-      mode: reportingMode,
-    }),
-    getRollingTwelveReport(context, {
-      throughMonth: selectedMonth,
-      mode: reportingMode,
-    }),
-  ]);
+      return Promise.all([
+        getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }),
+        getYearToDateReport(context, {
+          throughMonth: selectedMonth,
+          mode: reportingMode,
+        }),
+        getRollingTwelveReport(context, {
+          throughMonth: selectedMonth,
+          mode: reportingMode,
+        }),
+      ]);
+    },
+  );
   const fxLineItemCount = report.lineItems.filter((item) => {
     if (!item.fxDetails) {
       return false;
