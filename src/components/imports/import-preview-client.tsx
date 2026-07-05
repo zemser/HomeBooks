@@ -119,6 +119,7 @@ export function ImportPreviewClient({
   const [savedImportList, setSavedImportList] = useState(savedImports);
   const [lastSavedImportId, setLastSavedImportId] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>("No file selected yet");
+  const [fileInputVersion, setFileInputVersion] = useState(0);
 
   useEffect(() => {
     setSavedImportList(savedImports);
@@ -244,20 +245,40 @@ export function ImportPreviewClient({
     }
   }
 
+  function handleImportAnotherFile() {
+    setError(null);
+    setResult(null);
+    setPendingSave(null);
+    setSaveState("idle");
+    setSelectedFileName("No file selected yet");
+    setFileInputVersion((current) => current + 1);
+  }
+
   const totalPendingReviewCount = savedImportList.reduce(
     (sum, item) => sum + item.reviewPendingCount,
     0,
   );
   const highlightedImport =
     savedImportList.find((item) => item.id === lastSavedImportId) ?? savedImportList[0] ?? null;
+  const hasSavedOutcome = saveState === "saved" || saveState === "duplicate";
+  const savedTransactionCount = highlightedImport?.transactionCount ?? result?.transactionCount ?? 0;
+  const savedReviewPendingCount = highlightedImport?.reviewPendingCount ?? 0;
+  const savedOutcomeTitle = saveState === "duplicate" ? "Already imported" : "Import saved";
+  const savedOutcomeCopy =
+    saveState === "duplicate"
+      ? "This file is already in the workspace."
+      : `${savedTransactionCount} transaction${savedTransactionCount === 1 ? "" : "s"} saved.`;
+  const savedOutcomeNextStep =
+    savedReviewPendingCount > 0
+      ? `${savedReviewPendingCount} need review before reports are complete.`
+      : "Nothing from this import is waiting in the review queue.";
 
   return (
     <section className="stack">
       <article className="card">
-        <h2>Preview a bank import</h2>
+        <h2>Import bank statement</h2>
         <p>
-          Upload one Excel or CSV file and the app will detect the statement format,
-          parse it, and show normalized transaction rows before anything is saved.
+          Upload a CSV or Excel statement. You will preview the rows before saving.
         </p>
 
         <form
@@ -281,6 +302,7 @@ export function ImportPreviewClient({
             <span>Statement file</span>
             <div className="file-dropzone">
               <input
+                key={fileInputVersion}
                 className="file-input"
                 type="file"
                 name="file"
@@ -303,7 +325,7 @@ export function ImportPreviewClient({
           </label>
 
           <button className="button" type="submit" disabled={isPending}>
-            {isPending ? "Parsing..." : "Preview import"}
+            {isPending ? "Parsing..." : "Preview file"}
           </button>
         </form>
 
@@ -352,62 +374,48 @@ export function ImportPreviewClient({
             ) : null}
 
             <div className="stack">
-              <button
-                className="button"
-                type="button"
-                onClick={() => void handleSaveImport()}
-                disabled={saveState === "saving" || saveState === "saved"}
-              >
-                {saveState === "saving"
-                  ? "Saving..."
-                  : saveState === "saved"
-                    ? "Saved"
-                    : "Save import"}
-              </button>
-              {saveState === "saved" ? (
-                <p className="status">Import saved to the workspace.</p>
-              ) : null}
-              {saveState === "duplicate" ? (
-                <p className="status warning">
-                  This file already exists for the current workspace, so we skipped a duplicate save.
-                </p>
-              ) : null}
+              {hasSavedOutcome ? (
+                <div className="home-focus-card">
+                  <span
+                    className={`badge ${saveState === "duplicate" ? "badge-warning" : "badge-neutral"}`}
+                  >
+                    {savedOutcomeTitle}
+                  </span>
+                  <h3>{savedOutcomeCopy}</h3>
+                  <p>{savedOutcomeNextStep}</p>
+                  <div className="action-row">
+                    <Link className="button" href="/imports/review">
+                      {totalPendingReviewCount > 0
+                        ? `Review transactions (${totalPendingReviewCount})`
+                        : "Review transactions"}
+                    </Link>
+                    <Link className="button button-secondary" href="/expenses">
+                      Open ledger
+                    </Link>
+                    <button
+                      className="link-button"
+                      type="button"
+                      onClick={handleImportAnotherFile}
+                    >
+                      Import another file
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  className="button"
+                  type="button"
+                  onClick={() => void handleSaveImport()}
+                  disabled={saveState === "saving"}
+                >
+                  {saveState === "saving" ? "Saving..." : "Save transactions"}
+                </button>
+              )}
             </div>
           </article>
 
-          {(saveState === "saved" || saveState === "duplicate") && highlightedImport ? (
-            <article className="card">
-              <div className="home-focus-card">
-                <span
-                  className={`badge ${saveState === "saved" ? "badge-neutral" : "badge-warning"}`}
-                >
-                  {saveState === "saved" ? "Import saved" : "Already imported"}
-                </span>
-                <h3>{highlightedImport.originalFilename}</h3>
-                <p>
-                  {saveState === "saved"
-                    ? `Saved ${highlightedImport.transactionCount} normalized transaction${highlightedImport.transactionCount === 1 ? "" : "s"}.`
-                    : "This file is already in the workspace."}{" "}
-                  {highlightedImport.reviewPendingCount > 0
-                    ? `${highlightedImport.reviewPendingCount} still need review before the ledger and reports will feel trustworthy.`
-                    : "Nothing from this import is waiting in the review queue."}
-                </p>
-                <div className="action-row">
-                  <Link className="button" href="/imports/review">
-                    {totalPendingReviewCount > 0
-                      ? `Open review queue (${totalPendingReviewCount})`
-                      : "Open review queue"}
-                  </Link>
-                  <Link className="button button-secondary" href="/expenses">
-                    Open ledger
-                  </Link>
-                </div>
-              </div>
-            </article>
-          ) : null}
-
           <article className="card">
-            <h2>Normalized preview</h2>
+            <h2>Previewed transactions</h2>
             <p>Showing up to 50 parsed rows.</p>
             <div className="table-wrap">
               <table className="data-table">

@@ -1,21 +1,9 @@
-import Link from "next/link";
-
 import { ImportPreviewClient } from "@/components/imports/import-preview-client";
 import { listSavedImports } from "@/features/imports/persistence";
-import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import {
   resolveCurrentWorkspaceContext,
   runWithWorkspaceDatabaseUser,
 } from "@/features/workspaces/current-context";
-
-const importSteps = [
-  { label: "Upload CSV or Excel export", phase: "on page" },
-  { label: "Detect provider template", phase: "on page" },
-  { label: "Preview rows and section metadata", phase: "on page" },
-  { label: "Confirm and save the import", phase: "on page" },
-  { label: "Normalize transactions or holdings", phase: "next" },
-  { label: "Send uncertain items to review queue", phase: "next" },
-] as const;
 
 const supportedExpenseTemplates = [
   "Max credit-card statements",
@@ -30,63 +18,14 @@ export default async function ImportsPage() {
   const savedImports = await runWithWorkspaceDatabaseUser(context, () =>
     listSavedImports(context, { type: "bank" }),
   );
-  const reviewPendingCount = savedImports.reduce(
-    (sum, item) => sum + item.reviewPendingCount,
-    0,
-  );
-  const latestImportMonth =
-    savedImports[0]?.latestTransactionDate?.slice(0, 7) ?? null;
 
   return (
     <main>
       <div className="page-shell stack">
         <section className="hero">
           <span className="eyebrow">Imports</span>
-          <h1>Bank files land here first, then the rest of the workflow unfolds.</h1>
-          <p>
-            Use this route to upload a real statement, inspect the parsed rows, save the
-            import into the workspace, and then continue into the review queue.
-          </p>
-        </section>
-
-        <section className="card">
-          <div className="page-actions">
-            <div>
-              <h2>Import workflow</h2>
-              <p className="muted-text">
-                This is the operational start of the expense story, not a detached file tool.
-                The pills below show which steps happen on this page and which continue after
-                the import is saved.
-              </p>
-            </div>
-            <div className="action-row">
-              <Link className="button" href="/imports/review">
-                {reviewPendingCount > 0
-                  ? `Review ${reviewPendingCount} pending row${reviewPendingCount === 1 ? "" : "s"}`
-                  : "Open review queue"}
-              </Link>
-              <Link className="button button-secondary" href="/expenses">
-                {latestImportMonth
-                  ? `Open ${formatReportMonthLabel(`${latestImportMonth}-01`)} ledger`
-                  : "Open ledger"}
-              </Link>
-            </div>
-          </div>
-
-          <div className="home-workflow-list">
-            {importSteps.map((item, index) => (
-              <div className="home-workflow-step" key={item.label}>
-                <span
-                  className={`home-step-state ${item.phase === "on page" ? "home-step-state-current" : "home-step-state-up-next"}`}
-                >
-                  {item.phase === "on page" ? `On page ${index + 1}` : `Next ${index - 3}`}
-                </span>
-                <div>
-                  <strong>{item.label}</strong>
-                </div>
-              </div>
-            ))}
-          </div>
+          <h1>Import bank statement</h1>
+          <p>Upload a CSV or Excel statement, preview the rows, then save the transactions.</p>
         </section>
 
         <ImportPreviewClient
