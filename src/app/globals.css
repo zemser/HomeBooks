@@ -540,6 +540,14 @@ select.input:focus {
   min-width: 9.5rem;
 }
 
+.import-feedback {
+  margin-top: 1rem;
+}
+
+.import-feedback .status {
+  margin-top: 0;
+}
+
 .button {
   width: fit-content;
   min-width: 11rem;

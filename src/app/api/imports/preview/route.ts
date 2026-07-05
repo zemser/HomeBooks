@@ -90,9 +90,10 @@ export async function POST(request: Request) {
       }),
     });
   } catch (error) {
+    console.error("Import preview failed:", error);
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Import preview failed.",
+        error: "Could not preview this file right now. Please try again.",
       },
       { status: 500 },
     );

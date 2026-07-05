@@ -150,7 +150,7 @@ export function ImportPreviewClient({
     const data = (await response.json()) as PreviewResponse | { error?: string };
 
     if (!response.ok) {
-      setError("error" in data && data.error ? data.error : "Preview failed.");
+      setError("Could not preview this file right now. Please try again.");
       return;
     }
 
@@ -216,7 +216,7 @@ export function ImportPreviewClient({
       if (!response.ok) {
         if (response.status === 404 || response.status === 405) {
           setSaveState("error");
-          setError(
+        setError(
             "Saving is not connected yet. The preview works, but the persisted import endpoint is not available.",
           );
           return;
@@ -228,7 +228,7 @@ export function ImportPreviewClient({
         }
 
         setSaveState("error");
-        setError(data.error ?? data.message ?? "Save import failed.");
+        setError("Could not save this import right now. Please try again.");
         return;
       }
 
@@ -240,7 +240,7 @@ export function ImportPreviewClient({
       setSaveState("saved");
     } catch {
       setSaveState("error");
-      setError("Could not save this import right now.");
+      setError("Could not save this import right now. Please try again.");
     }
   }
 
@@ -307,7 +307,11 @@ export function ImportPreviewClient({
           </button>
         </form>
 
-        {error ? <p className="status error">{error}</p> : null}
+        {error ? (
+          <div className="import-feedback">
+            <p className="status error">{error}</p>
+          </div>
+        ) : null}
       </article>
 
       {result ? (
