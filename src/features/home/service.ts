@@ -7,7 +7,6 @@ import {
   manualRecurringExpenses,
   transactionClassifications,
   transactions,
-  workspaces,
 } from "@/db/schema";
 import { syncExpenseEventsForRange } from "@/features/reporting/expense-events";
 import {
@@ -31,19 +30,7 @@ import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { getWorkspaceSettingsSnapshot } from "@/features/workspaces/settings";
 
 async function getWorkspaceName(context: CurrentWorkspaceContext) {
-  const db = getDb();
-  const workspace = await db.query.workspaces.findFirst({
-    where: eq(workspaces.id, context.workspaceId),
-    columns: {
-      name: true,
-    },
-  });
-
-  if (!workspace) {
-    throw new Error("Workspace was not found.");
-  }
-
-  return workspace.name;
+  return context.workspaceName ?? "Workspace";
 }
 
 async function getReviewQueueCount(context: CurrentWorkspaceContext) {
