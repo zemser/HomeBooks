@@ -14,7 +14,7 @@ import {
   transactions,
 } from "@/db/schema";
 import { normalizeMerchantRuleValue } from "@/features/expenses/classifications";
-import { ensureSupportedBankImportCatalog } from "@/features/imports/catalog";
+import { getSupportedBankImportCatalog } from "@/features/imports/catalog";
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import type { ParsedBankTransaction, WorkbookData } from "@/features/imports/types";
@@ -337,7 +337,7 @@ export async function persistBankImport(input: {
     workbook: input.workbook,
     workspaceCurrency: input.context.baseCurrency,
   });
-  const importCatalog = await ensureSupportedBankImportCatalog();
+  const importCatalog = await getSupportedBankImportCatalog();
   const templateRecord = importCatalog.get(preview.parsed.templateId);
 
   if (!templateRecord) {

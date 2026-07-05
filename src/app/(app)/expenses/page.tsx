@@ -5,10 +5,7 @@ import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expens
 import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
 import { listWorkspaceCategoryNames } from "@/features/workspaces/categories";
-import {
-  resolveCurrentWorkspaceContext,
-  runWithWorkspaceDatabaseUser,
-} from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 
 type ExpensesPageProps = {
   searchParams: Promise<{
@@ -22,9 +19,8 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
   const params = await searchParams;
   const transactionId =
     typeof params.transactionId === "string" ? params.transactionId : null;
-  const context = await resolveCurrentWorkspaceContext();
   const [transactions, oneTimeManualEntries, members, categories] =
-    await runWithWorkspaceDatabaseUser(context, () =>
+    await withCurrentWorkspace((context) =>
       Promise.all([
         listExpenseTransactions(context),
         listOneTimeManualEntries(context),

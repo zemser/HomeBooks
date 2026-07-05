@@ -1,9 +1,6 @@
 import { ImportPreviewClient } from "@/components/imports/import-preview-client";
 import { listSavedImports } from "@/features/imports/persistence";
-import {
-  resolveCurrentWorkspaceContext,
-  runWithWorkspaceDatabaseUser,
-} from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 
 const supportedExpenseTemplates = [
   "Max credit-card statements",
@@ -14,9 +11,11 @@ const supportedExpenseTemplates = [
 export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
-  const context = await resolveCurrentWorkspaceContext();
-  const savedImports = await runWithWorkspaceDatabaseUser(context, () =>
-    listSavedImports(context, { type: "bank" }),
+  const { savedImports, workspaceCurrency } = await withCurrentWorkspace(
+    async (context) => ({
+      savedImports: await listSavedImports(context, { type: "bank" }),
+      workspaceCurrency: context.baseCurrency,
+    }),
   );
 
   return (
@@ -30,7 +29,7 @@ export default async function ImportsPage() {
 
         <ImportPreviewClient
           savedImports={savedImports}
-          workspaceCurrency={context.baseCurrency}
+          workspaceCurrency={workspaceCurrency}
         />
 
         <article className="card">

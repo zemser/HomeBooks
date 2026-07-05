@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { updateWorkspaceMember } from "@/features/workspaces/members";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { WORKSPACE_MEMBER_ROLES } from "@/features/workspaces/types";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -43,8 +43,9 @@ export async function PATCH(request: Request, { params }: WorkspaceMemberRoutePr
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const member = await updateWorkspaceMember(context, memberId, parsed.data);
+    const member = await withCurrentWorkspace((context) =>
+      updateWorkspaceMember(context, memberId, parsed.data),
+    );
 
     return NextResponse.json(member);
   } catch (error) {

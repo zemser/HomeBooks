@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { updateWorkspaceCategory } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -32,9 +32,10 @@ export async function PATCH(request: Request, { params }: RouteProps) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
     const { categoryId } = await params;
-    const category = await updateWorkspaceCategory(context, categoryId, parsed.data);
+    const category = await withCurrentWorkspace((context) =>
+      updateWorkspaceCategory(context, categoryId, parsed.data),
+    );
 
     return NextResponse.json(category);
   } catch (error) {

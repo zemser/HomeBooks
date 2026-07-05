@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import { upsertTransactionClassification } from "@/features/expenses/classifications";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -30,8 +30,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const result = await upsertTransactionClassification(context, parsed.data);
+    const result = await withCurrentWorkspace((context) =>
+      upsertTransactionClassification(context, parsed.data),
+    );
 
     return NextResponse.json(result);
   } catch (error) {

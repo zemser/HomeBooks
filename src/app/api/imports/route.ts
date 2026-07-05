@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
-  resolveCurrentWorkspaceContext,
-  runWithWorkspaceDatabaseUser,
+  withCurrentWorkspace,
 } from "@/features/workspaces/current-context";
 import { listSavedImports, persistBankImport } from "@/features/imports/persistence";
 import { errorResponse } from "@/lib/logging/server";
@@ -13,13 +12,15 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const context = await resolveCurrentWorkspaceContext();
-    const savedImports = await runWithWorkspaceDatabaseUser(context, () =>
-      listSavedImports(context, { type: "bank" }),
+    const { workspaceCurrency, savedImports } = await withCurrentWorkspace(
+      async (context) => ({
+        workspaceCurrency: context.baseCurrency,
+        savedImports: await listSavedImports(context, { type: "bank" }),
+      }),
     );
 
     return NextResponse.json({
-      workspaceCurrency: context.baseCurrency,
+      workspaceCurrency,
       savedImports,
     });
   } catch (error) {
@@ -42,13 +43,12 @@ export async function POST(request: Request) {
   }
 
   try {
-    const context = await resolveCurrentWorkspaceContext();
     const arrayBuffer = await file.arrayBuffer();
     const workbook = readTabularFileFromBuffer({
       buffer: arrayBuffer,
       filename: file.name,
     });
-    const { result, savedImport } = await runWithWorkspaceDatabaseUser(context, async () => {
+    const { result, savedImport } = await withCurrentWorkspace(async (context) => {
       const result = await persistBankImport({
         workbook,
         originalFilename: file.name,

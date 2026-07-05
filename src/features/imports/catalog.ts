@@ -12,7 +12,7 @@ type ImportCatalogTemplate = {
   countryCode: string;
 };
 
-const SUPPORTED_BANK_TEMPLATES: ImportCatalogTemplate[] = [
+export const SUPPORTED_BANK_TEMPLATES: ImportCatalogTemplate[] = [
   {
     sourceName: "Max",
     templateId: "max_credit_statement",
@@ -40,12 +40,12 @@ export type SupportedImportTemplateRecord = {
   templateName: SupportedBankTemplateId;
 };
 
-export async function ensureSupportedBankImportCatalog() {
+export async function getSupportedBankImportCatalog() {
   const db = getDb();
   const templateMap = new Map<SupportedBankTemplateId, SupportedImportTemplateRecord>();
 
   for (const definition of SUPPORTED_BANK_TEMPLATES) {
-    let source = await db.query.importSources.findFirst({
+    const source = await db.query.importSources.findFirst({
       where: and(
         eq(importSources.type, "bank"),
         eq(importSources.name, definition.sourceName),
@@ -53,65 +53,23 @@ export async function ensureSupportedBankImportCatalog() {
     });
 
     if (!source) {
-      const [insertedSource] = await db
-        .insert(importSources)
-        .values({
-          type: "bank",
-          name: definition.sourceName,
-          countryCode: definition.countryCode,
-        })
-        .onConflictDoNothing({
-          target: [importSources.type, importSources.name],
-        })
-        .returning();
-
-      source =
-        insertedSource
-        ?? await db.query.importSources.findFirst({
-          where: and(
-            eq(importSources.type, "bank"),
-            eq(importSources.name, definition.sourceName),
-          ),
-        });
+      throw new Error(
+        `Missing seeded bank import source "${definition.sourceName}". Run the catalog seed migration before saving imports.`,
+      );
     }
 
-    if (!source) {
-      throw new Error(`Could not create or load import source ${definition.sourceName}.`);
-    }
-
-    let template = await db.query.importTemplates.findFirst({
+    const template = await db.query.importTemplates.findFirst({
       where: and(
         eq(importTemplates.importSourceId, source.id),
         eq(importTemplates.templateName, definition.templateId),
+        eq(importTemplates.active, true),
       ),
     });
 
     if (!template) {
-      const [insertedTemplate] = await db
-        .insert(importTemplates)
-        .values({
-          importSourceId: source.id,
-          templateName: definition.templateId,
-          fileKind: definition.fileKind,
-          headerMappingJson: {},
-        })
-        .onConflictDoNothing({
-          target: [importTemplates.importSourceId, importTemplates.templateName],
-        })
-        .returning();
-
-      template =
-        insertedTemplate
-        ?? await db.query.importTemplates.findFirst({
-          where: and(
-            eq(importTemplates.importSourceId, source.id),
-            eq(importTemplates.templateName, definition.templateId),
-          ),
-        });
-    }
-
-    if (!template) {
-      throw new Error(`Could not create or load import template ${definition.templateId}.`);
+      throw new Error(
+        `Missing seeded bank import template "${definition.templateId}". Run the catalog seed migration before saving imports.`,
+      );
     }
 
     templateMap.set(definition.templateId, {

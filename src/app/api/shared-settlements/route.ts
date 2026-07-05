@@ -5,7 +5,7 @@ import {
   getSharedSettlementsPageData,
   upsertSharedSettlement,
 } from "@/features/shared-settlements/service";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -61,8 +61,9 @@ const requestSchema = z.discriminatedUnion("splitMode", [
 
 export async function GET(request: Request) {
   try {
-    const context = await resolveCurrentWorkspaceContext();
-    const data = await getSharedSettlementsPageData(context);
+    const data = await withCurrentWorkspace((context) =>
+      getSharedSettlementsPageData(context),
+    );
 
     return NextResponse.json(data);
   } catch (error) {
@@ -92,8 +93,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const result = await upsertSharedSettlement(context, parsed.data);
+    const result = await withCurrentWorkspace((context) =>
+      upsertSharedSettlement(context, parsed.data),
+    );
 
     return NextResponse.json(result);
   } catch (error) {

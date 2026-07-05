@@ -2,10 +2,7 @@ import Link from "next/link";
 
 import { ReviewQueueClient } from "@/components/expenses/review-queue-client";
 import { listReviewQueue } from "@/features/expenses/queries";
-import {
-  resolveCurrentWorkspaceContext,
-  runWithWorkspaceDatabaseUser,
-} from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 
 type ReviewPageProps = {
   searchParams: Promise<{
@@ -17,8 +14,7 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
   const params = await searchParams;
   const transactionId =
     typeof params.transactionId === "string" ? params.transactionId : null;
-  const context = await resolveCurrentWorkspaceContext();
-  const initialData = await runWithWorkspaceDatabaseUser(context, () =>
+  const initialData = await withCurrentWorkspace((context) =>
     listReviewQueue(context, transactionId ?? undefined),
   );
 
