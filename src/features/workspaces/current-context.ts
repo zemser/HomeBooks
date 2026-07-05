@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { getDb } from "@/db";
-import { runWithDatabaseUser, setCurrentDatabaseUserId } from "@/db/request-context";
+import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
 import { getFinappAuthMode } from "@/lib/supabase/config";
@@ -38,6 +38,14 @@ export async function runWithWorkspaceDatabaseUser<T>(
   }
 
   return runWithDatabaseUser(context.userId, callback);
+}
+
+export async function withCurrentWorkspace<T>(
+  callback: (context: CurrentWorkspaceContext) => Promise<T>,
+) {
+  const context = await resolveCurrentWorkspaceContext();
+
+  return runWithWorkspaceDatabaseUser(context, () => callback(context));
 }
 
 async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceContext> {
@@ -203,10 +211,6 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
   if (!context) {
     redirect("/onboarding");
   }
-
-  // Keep the authenticated database user bound for downstream workspace queries
-  // in the same page/API request. RLS depends on app.current_user_id for reads.
-  setCurrentDatabaseUserId(authUser.id);
 
   return context;
 }

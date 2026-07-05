@@ -7,7 +7,7 @@ import {
   createRecurringEntry,
   getRecurringPageData,
 } from "@/features/recurring/service";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -34,7 +34,6 @@ const createSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const context = await resolveCurrentWorkspaceContext();
     const { searchParams } = new URL(request.url);
     const parsed = getSchema.safeParse({
       startMonth: searchParams.get("startMonth") ?? undefined,
@@ -48,7 +47,9 @@ export async function GET(request: Request) {
       );
     }
 
-    const data = await getRecurringPageData(context, parsed.data);
+    const data = await withCurrentWorkspace((context) =>
+      getRecurringPageData(context, parsed.data),
+    );
 
     return NextResponse.json(data);
   } catch (error) {
@@ -76,8 +77,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const result = await createRecurringEntry(context, parsed.data);
+    const result = await withCurrentWorkspace((context) =>
+      createRecurringEntry(context, parsed.data),
+    );
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

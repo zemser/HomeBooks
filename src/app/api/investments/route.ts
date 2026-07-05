@@ -8,7 +8,7 @@ import {
   persistInvestmentImport,
 } from "@/features/investments/persistence";
 import type { WorkbookData } from "@/features/imports/types";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
@@ -33,7 +33,6 @@ export async function POST(request: Request) {
   }
 
   try {
-    const context = await resolveCurrentWorkspaceContext();
     const arrayBuffer = await file.arrayBuffer();
     let workbook: WorkbookData;
 
@@ -51,20 +50,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await persistInvestmentImport({
-      workbook,
-      originalFilename: file.name,
-      fileBuffer: Buffer.from(arrayBuffer),
-      ownerMemberId: ownerMemberId.trim(),
-      accountLabel: accountLabel.trim(),
-      context,
-    });
-    const [investmentImports, investmentAccountHoldings, investmentActivities] = await Promise.all([
-      listInvestmentImports(context),
-      listInvestmentAccountHoldings(context),
-      listInvestmentActivities(context),
-    ]);
-    const savedImport = investmentImports.find((item) => item.id === result.importId) ?? null;
+    const { result, investmentImports, investmentAccountHoldings, investmentActivities, savedImport } =
+      await withCurrentWorkspace(async (context) => {
+        const result = await persistInvestmentImport({
+          workbook,
+          originalFilename: file.name,
+          fileBuffer: Buffer.from(arrayBuffer),
+          ownerMemberId: ownerMemberId.trim(),
+          accountLabel: accountLabel.trim(),
+          context,
+        });
+        const [investmentImports, investmentAccountHoldings, investmentActivities] =
+          await Promise.all([
+            listInvestmentImports(context),
+            listInvestmentAccountHoldings(context),
+            listInvestmentActivities(context),
+          ]);
+        const savedImport =
+          investmentImports.find((item) => item.id === result.importId) ?? null;
+
+        return {
+          result,
+          investmentImports,
+          investmentAccountHoldings,
+          investmentActivities,
+          savedImport,
+        };
+      });
 
     return NextResponse.json(
       {

@@ -6,25 +6,30 @@ import {
   listInvestmentAccountHoldings,
   listInvestmentImports,
 } from "@/features/investments/persistence";
-import {
-  resolveCurrentWorkspaceContext,
-  runWithWorkspaceDatabaseUser,
-} from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 
 export const dynamic = "force-dynamic";
 
 export default async function InvestmentsPage() {
-  const context = await resolveCurrentWorkspaceContext();
-  const [members, imports, accountHoldings, activities] =
-    await runWithWorkspaceDatabaseUser(context, () =>
-      Promise.all([
+  const { members, imports, accountHoldings, activities, currentMemberId, workspaceCurrency } =
+    await withCurrentWorkspace(async (context) => {
+      const [members, imports, accountHoldings, activities] = await Promise.all([
         listWorkspaceMembersForSettings(context),
         listInvestmentImports(context),
         listInvestmentAccountHoldings(context),
         listInvestmentActivities(context),
-      ]),
-    );
+      ]);
+
+      return {
+        members,
+        imports,
+        accountHoldings,
+        activities,
+        currentMemberId: context.memberId,
+        workspaceCurrency: context.baseCurrency,
+      };
+    });
 
   return (
     <main>
@@ -64,8 +69,8 @@ export default async function InvestmentsPage() {
           initialInvestmentActivities={activities}
           initialInvestmentImports={imports}
           initialMembers={members}
-          initialCurrentMemberId={context.memberId}
-          workspaceCurrency={context.baseCurrency}
+          initialCurrentMemberId={currentMemberId}
+          workspaceCurrency={workspaceCurrency}
         />
       </div>
     </main>

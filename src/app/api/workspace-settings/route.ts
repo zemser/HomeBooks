@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import {
   getWorkspaceSettingsSnapshot,
   updateWorkspaceBaseCurrency,
@@ -17,8 +17,9 @@ const patchSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const context = await resolveCurrentWorkspaceContext();
-    const settings = await getWorkspaceSettingsSnapshot(context);
+    const settings = await withCurrentWorkspace((context) =>
+      getWorkspaceSettingsSnapshot(context),
+    );
 
     return NextResponse.json(settings);
   } catch (error) {
@@ -47,8 +48,9 @@ export async function PATCH(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const settings = await updateWorkspaceBaseCurrency(context, parsed.data);
+    const settings = await withCurrentWorkspace((context) =>
+      updateWorkspaceBaseCurrency(context, parsed.data),
+    );
 
     return NextResponse.json(settings);
   } catch (error) {

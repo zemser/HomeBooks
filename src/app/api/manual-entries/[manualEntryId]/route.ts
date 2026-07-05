@@ -9,7 +9,7 @@ import {
   deleteOneTimeManualEntry,
   updateOneTimeManualEntry,
 } from "@/features/manual-entries/service";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -44,9 +44,10 @@ export async function PATCH(request: Request, { params }: RouteProps) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
     const { manualEntryId } = await params;
-    const result = await updateOneTimeManualEntry(context, manualEntryId, parsed.data);
+    const result = await withCurrentWorkspace((context) =>
+      updateOneTimeManualEntry(context, manualEntryId, parsed.data),
+    );
 
     return NextResponse.json(result);
   } catch (error) {
@@ -62,9 +63,10 @@ export async function PATCH(request: Request, { params }: RouteProps) {
 
 export async function DELETE(request: Request, { params }: RouteProps) {
   try {
-    const context = await resolveCurrentWorkspaceContext();
     const { manualEntryId } = await params;
-    const result = await deleteOneTimeManualEntry(context, manualEntryId);
+    const result = await withCurrentWorkspace((context) =>
+      deleteOneTimeManualEntry(context, manualEntryId),
+    );
 
     return NextResponse.json(result);
   } catch (error) {

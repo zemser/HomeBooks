@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { generateRecurringEntriesForPeriod } from "@/features/recurring/service";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -26,8 +26,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const result = await generateRecurringEntriesForPeriod(context, parsed.data);
+    const result = await withCurrentWorkspace((context) =>
+      generateRecurringEntriesForPeriod(context, parsed.data),
+    );
 
     return NextResponse.json(result);
   } catch (error) {

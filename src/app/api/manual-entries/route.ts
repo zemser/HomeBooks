@@ -6,7 +6,7 @@ import {
   ONE_TIME_MANUAL_ENTRY_EVENT_KINDS,
 } from "@/features/manual-entries/constants";
 import { createOneTimeManualEntry } from "@/features/manual-entries/service";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -35,8 +35,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const result = await createOneTimeManualEntry(context, parsed.data);
+    const result = await withCurrentWorkspace((context) =>
+      createOneTimeManualEntry(context, parsed.data),
+    );
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

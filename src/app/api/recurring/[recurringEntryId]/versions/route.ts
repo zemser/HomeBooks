@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { NORMALIZATION_MODES, RECURRENCE_RULES } from "@/features/recurring/constants";
 import { createRecurringEntryVersion } from "@/features/recurring/service";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -38,12 +38,13 @@ export async function POST(request: Request, { params }: RouteProps) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
     const { recurringEntryId } = await params;
-    const result = await createRecurringEntryVersion(context, {
-      recurringEntryId,
-      ...parsed.data,
-    });
+    const result = await withCurrentWorkspace((context) =>
+      createRecurringEntryVersion(context, {
+        recurringEntryId,
+        ...parsed.data,
+      }),
+    );
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {

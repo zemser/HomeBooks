@@ -12,7 +12,7 @@ import {
   users,
   workspaceMembers,
 } from "@/db/schema";
-import { ensureExcellenceInvestmentImportSource } from "@/features/investments/catalog";
+import { getExcellenceInvestmentImportSource } from "@/features/investments/catalog";
 import {
   inferInvestmentAssetType,
   resolveInvestmentAssetType,
@@ -608,7 +608,7 @@ export async function persistInvestmentImport(input: {
   }
 
   const db = getDb();
-  const source = await ensureExcellenceInvestmentImportSource();
+  const source = await getExcellenceInvestmentImportSource();
   const checksum = hashBuffer(input.fileBuffer);
   let parsed: ReturnType<typeof parseInvestmentWorkbookToPreview>;
 

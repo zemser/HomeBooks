@@ -7,7 +7,7 @@ import {
   deleteRecurringEntry,
   updateRecurringEntry,
 } from "@/features/recurring/service";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -41,9 +41,10 @@ export async function PATCH(request: Request, { params }: RouteProps) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
     const { recurringEntryId } = await params;
-    const result = await updateRecurringEntry(context, recurringEntryId, parsed.data);
+    const result = await withCurrentWorkspace((context) =>
+      updateRecurringEntry(context, recurringEntryId, parsed.data),
+    );
 
     return NextResponse.json(result);
   } catch (error) {
@@ -59,9 +60,10 @@ export async function PATCH(request: Request, { params }: RouteProps) {
 
 export async function DELETE(request: Request, { params }: RouteProps) {
   try {
-    const context = await resolveCurrentWorkspaceContext();
     const { recurringEntryId } = await params;
-    const result = await deleteRecurringEntry(context, recurringEntryId);
+    const result = await withCurrentWorkspace((context) =>
+      deleteRecurringEntry(context, recurringEntryId),
+    );
 
     return NextResponse.json(result);
   } catch (error) {

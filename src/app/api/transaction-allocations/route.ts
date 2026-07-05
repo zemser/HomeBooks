@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { updateExpenseAllocation } from "@/features/expenses/allocation";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -97,7 +97,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
     const sourceType = parsed.data.sourceType ?? "transaction";
     const sourceId = parsed.data.sourceId ?? parsed.data.transactionId;
 
@@ -110,15 +109,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await updateExpenseAllocation(context, {
-      sourceType,
-      sourceId,
-      reportingMode: parsed.data.reportingMode,
-      allocationStrategy: parsed.data.allocationStrategy,
-      coverageStartDate: parsed.data.coverageStartDate,
-      coverageEndDate: parsed.data.coverageEndDate,
-      allocations: parsed.data.allocations,
-    });
+    const result = await withCurrentWorkspace((context) =>
+      updateExpenseAllocation(context, {
+        sourceType,
+        sourceId,
+        reportingMode: parsed.data.reportingMode,
+        allocationStrategy: parsed.data.allocationStrategy,
+        coverageStartDate: parsed.data.coverageStartDate,
+        coverageEndDate: parsed.data.coverageEndDate,
+        allocations: parsed.data.allocations,
+      }),
+    );
 
     return NextResponse.json(result);
   } catch (error) {

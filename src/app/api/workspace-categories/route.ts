@@ -5,7 +5,7 @@ import {
   createWorkspaceCategory,
   listWorkspaceCategories,
 } from "@/features/workspaces/categories";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -17,8 +17,9 @@ const createSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const context = await resolveCurrentWorkspaceContext();
-    const categories = await listWorkspaceCategories(context);
+    const categories = await withCurrentWorkspace((context) =>
+      listWorkspaceCategories(context),
+    );
 
     return NextResponse.json({
       categories,
@@ -49,8 +50,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const category = await createWorkspaceCategory(context, parsed.data);
+    const category = await withCurrentWorkspace((context) =>
+      createWorkspaceCategory(context, parsed.data),
+    );
 
     return NextResponse.json(category, { status: 201 });
   } catch (error) {

@@ -5,7 +5,7 @@ import {
   createWorkspaceMember,
   listWorkspaceMembersForSettings,
 } from "@/features/workspaces/members";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -17,8 +17,9 @@ const createSchema = z.object({
 
 export async function GET(request: Request) {
   try {
-    const context = await resolveCurrentWorkspaceContext();
-    const members = await listWorkspaceMembersForSettings(context);
+    const members = await withCurrentWorkspace((context) =>
+      listWorkspaceMembersForSettings(context),
+    );
 
     return NextResponse.json({
       members,
@@ -49,8 +50,9 @@ export async function POST(request: Request) {
       );
     }
 
-    const context = await resolveCurrentWorkspaceContext();
-    const member = await createWorkspaceMember(context, parsed.data);
+    const member = await withCurrentWorkspace((context) =>
+      createWorkspaceMember(context, parsed.data),
+    );
 
     return NextResponse.json(member, { status: 201 });
   } catch (error) {

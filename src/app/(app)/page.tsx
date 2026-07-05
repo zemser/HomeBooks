@@ -6,7 +6,7 @@ import {
   formatReportMoney,
   formatReportMonthLabel,
 } from "@/features/reporting/presentation";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 
 export const dynamic = "force-dynamic";
 
@@ -202,8 +202,9 @@ function formatActivityTimestamp(value: string) {
 }
 
 export default async function HomePage() {
-  const context = await resolveCurrentWorkspaceContext();
-  const snapshot = await getWorkspaceHomeSnapshot(context);
+  const snapshot = await withCurrentWorkspace((context) =>
+    getWorkspaceHomeSnapshot(context),
+  );
   const nextAction = getNextAction(snapshot);
   const steps = getWorkflowSteps(snapshot);
   const reportingTarget = snapshot.reporting.available

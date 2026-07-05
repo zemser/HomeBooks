@@ -8,37 +8,25 @@ export type SupportedInvestmentSourceRecord = {
   sourceName: string;
 };
 
-export async function ensureExcellenceInvestmentImportSource(): Promise<SupportedInvestmentSourceRecord> {
-  const db = getDb();
-  const sourceName = "Excellence";
+export const EXCELLENCE_INVESTMENT_SOURCE = {
+  sourceName: "Excellence",
+  countryCode: "IL",
+} as const;
 
-  let source = await db.query.importSources.findFirst({
+export async function getExcellenceInvestmentImportSource(): Promise<SupportedInvestmentSourceRecord> {
+  const db = getDb();
+
+  const source = await db.query.importSources.findFirst({
     where: and(
       eq(importSources.type, "investment"),
-      eq(importSources.name, sourceName),
+      eq(importSources.name, EXCELLENCE_INVESTMENT_SOURCE.sourceName),
     ),
   });
 
   if (!source) {
-    await db
-      .insert(importSources)
-      .values({
-        type: "investment",
-        name: sourceName,
-        countryCode: "IL",
-      })
-      .onConflictDoNothing();
-
-    source = await db.query.importSources.findFirst({
-      where: and(
-        eq(importSources.type, "investment"),
-        eq(importSources.name, sourceName),
-      ),
-    });
-  }
-
-  if (!source) {
-    throw new Error("Could not resolve the Excellence investment source.");
+    throw new Error(
+      "Missing seeded Excellence investment source. Run the catalog seed migration before saving investment imports.",
+    );
   }
 
   return {
