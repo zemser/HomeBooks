@@ -6,19 +6,25 @@ import {
   listInvestmentAccountHoldings,
   listInvestmentImports,
 } from "@/features/investments/persistence";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import {
+  resolveCurrentWorkspaceContext,
+  runWithWorkspaceDatabaseUser,
+} from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 
 export const dynamic = "force-dynamic";
 
 export default async function InvestmentsPage() {
   const context = await resolveCurrentWorkspaceContext();
-  const [members, imports, accountHoldings, activities] = await Promise.all([
-    listWorkspaceMembersForSettings(context),
-    listInvestmentImports(context),
-    listInvestmentAccountHoldings(context),
-    listInvestmentActivities(context),
-  ]);
+  const [members, imports, accountHoldings, activities] =
+    await runWithWorkspaceDatabaseUser(context, () =>
+      Promise.all([
+        listWorkspaceMembersForSettings(context),
+        listInvestmentImports(context),
+        listInvestmentAccountHoldings(context),
+        listInvestmentActivities(context),
+      ]),
+    );
 
   return (
     <main>

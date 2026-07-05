@@ -5,7 +5,10 @@ import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expens
 import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
 import { listWorkspaceCategoryNames } from "@/features/workspaces/categories";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import {
+  resolveCurrentWorkspaceContext,
+  runWithWorkspaceDatabaseUser,
+} from "@/features/workspaces/current-context";
 
 type ExpensesPageProps = {
   searchParams: Promise<{
@@ -20,12 +23,15 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
   const transactionId =
     typeof params.transactionId === "string" ? params.transactionId : null;
   const context = await resolveCurrentWorkspaceContext();
-  const [transactions, oneTimeManualEntries, members, categories] = await Promise.all([
-    listExpenseTransactions(context),
-    listOneTimeManualEntries(context),
-    listWorkspaceMembers(context),
-    listWorkspaceCategoryNames(context),
-  ]);
+  const [transactions, oneTimeManualEntries, members, categories] =
+    await runWithWorkspaceDatabaseUser(context, () =>
+      Promise.all([
+        listExpenseTransactions(context),
+        listOneTimeManualEntries(context),
+        listWorkspaceMembers(context),
+        listWorkspaceCategoryNames(context),
+      ]),
+    );
   const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
   const latestTransactionMonth = transactions[0]?.transactionDate.slice(0, 7) ?? null;
   const reportHref = latestTransactionMonth

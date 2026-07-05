@@ -28,6 +28,17 @@ export async function resolveCurrentWorkspaceContext(): Promise<CurrentWorkspace
   return resolveSeededDevWorkspaceContext();
 }
 
+export async function runWithWorkspaceDatabaseUser<T>(
+  context: CurrentWorkspaceContext,
+  callback: () => Promise<T>,
+) {
+  if (getFinappAuthMode() !== "supabase") {
+    return callback();
+  }
+
+  return runWithDatabaseUser(context.userId, callback);
+}
+
 async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceContext> {
   const db = getDb();
 

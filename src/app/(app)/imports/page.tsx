@@ -3,7 +3,10 @@ import Link from "next/link";
 import { ImportPreviewClient } from "@/components/imports/import-preview-client";
 import { listSavedImports } from "@/features/imports/persistence";
 import { formatReportMonthLabel } from "@/features/reporting/presentation";
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import {
+  resolveCurrentWorkspaceContext,
+  runWithWorkspaceDatabaseUser,
+} from "@/features/workspaces/current-context";
 
 const importSteps = [
   "Upload CSV or Excel export",
@@ -24,7 +27,9 @@ export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
   const context = await resolveCurrentWorkspaceContext();
-  const savedImports = await listSavedImports(context, { type: "bank" });
+  const savedImports = await runWithWorkspaceDatabaseUser(context, () =>
+    listSavedImports(context, { type: "bank" }),
+  );
   const reviewPendingCount = savedImports.reduce(
     (sum, item) => sum + item.reviewPendingCount,
     0,
