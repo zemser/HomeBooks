@@ -419,6 +419,7 @@ export async function persistBankImport(input: {
     await writeImportFile({
       storagePath,
       fileBuffer: input.fileBuffer,
+      fileKind: input.workbook.fileKind,
     });
 
     const stagingRows = createImportRowStatusMap({
