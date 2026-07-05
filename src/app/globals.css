@@ -703,6 +703,72 @@ main {
   cursor: pointer;
 }
 
+.app-error-shell {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1rem;
+}
+
+.app-error-card {
+  display: grid;
+  gap: 1.25rem;
+  width: min(100%, 36rem);
+  padding: clamp(1.25rem, 4vw, 2rem);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background: rgba(255, 253, 247, 0.94);
+  box-shadow: 0 24px 60px rgba(35, 54, 43, 0.1);
+}
+
+.app-error-copy {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.app-error-copy h1 {
+  margin: 0;
+  font-size: clamp(2rem, 8vw, 3.4rem);
+  line-height: 1;
+}
+
+.app-error-copy p,
+.app-error-digest {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.app-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.app-error-actions .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.9rem;
+  text-align: center;
+}
+
+.app-error-digest {
+  padding-top: 0.25rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 0.84rem;
+}
+
+@media (max-width: 540px) {
+  .app-error-actions {
+    display: grid;
+  }
+
+  .app-error-actions .button {
+    width: 100%;
+  }
+}
+
 .checkbox-label {
   display: flex;
   gap: 0.65rem;
