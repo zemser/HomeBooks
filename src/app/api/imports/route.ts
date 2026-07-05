@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import {
+  resolveCurrentWorkspaceContext,
+  runWithWorkspaceDatabaseUser,
+} from "@/features/workspaces/current-context";
 import { listSavedImports, persistBankImport } from "@/features/imports/persistence";
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
@@ -11,7 +14,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const context = await resolveCurrentWorkspaceContext();
-    const savedImports = await listSavedImports(context, { type: "bank" });
+    const savedImports = await runWithWorkspaceDatabaseUser(context, () =>
+      listSavedImports(context, { type: "bank" }),
+    );
 
     return NextResponse.json({
       workspaceCurrency: context.baseCurrency,
@@ -43,14 +48,18 @@ export async function POST(request: Request) {
       buffer: arrayBuffer,
       filename: file.name,
     });
-    const result = await persistBankImport({
-      workbook,
-      originalFilename: file.name,
-      fileBuffer: Buffer.from(arrayBuffer),
-      context,
+    const { result, savedImport } = await runWithWorkspaceDatabaseUser(context, async () => {
+      const result = await persistBankImport({
+        workbook,
+        originalFilename: file.name,
+        fileBuffer: Buffer.from(arrayBuffer),
+        context,
+      });
+      const savedImports = await listSavedImports(context, { type: "bank" });
+      const savedImport = savedImports.find((item) => item.id === result.importId) ?? null;
+
+      return { result, savedImport };
     });
-    const savedImports = await listSavedImports(context, { type: "bank" });
-    const savedImport = savedImports.find((item) => item.id === result.importId) ?? null;
 
     return NextResponse.json(
       {
@@ -58,7 +67,7 @@ export async function POST(request: Request) {
         import: savedImport,
       },
       {
-      status: result.status === "duplicate" ? 409 : 201,
+        status: result.status === "duplicate" ? 409 : 201,
       },
     );
   } catch (error) {

@@ -53,14 +53,30 @@ export async function ensureSupportedBankImportCatalog() {
     });
 
     if (!source) {
-      [source] = await db
+      const [insertedSource] = await db
         .insert(importSources)
         .values({
           type: "bank",
           name: definition.sourceName,
           countryCode: definition.countryCode,
         })
+        .onConflictDoNothing({
+          target: [importSources.type, importSources.name],
+        })
         .returning();
+
+      source =
+        insertedSource
+        ?? await db.query.importSources.findFirst({
+          where: and(
+            eq(importSources.type, "bank"),
+            eq(importSources.name, definition.sourceName),
+          ),
+        });
+    }
+
+    if (!source) {
+      throw new Error(`Could not create or load import source ${definition.sourceName}.`);
     }
 
     let template = await db.query.importTemplates.findFirst({
@@ -71,7 +87,7 @@ export async function ensureSupportedBankImportCatalog() {
     });
 
     if (!template) {
-      [template] = await db
+      const [insertedTemplate] = await db
         .insert(importTemplates)
         .values({
           importSourceId: source.id,
@@ -79,7 +95,23 @@ export async function ensureSupportedBankImportCatalog() {
           fileKind: definition.fileKind,
           headerMappingJson: {},
         })
+        .onConflictDoNothing({
+          target: [importTemplates.importSourceId, importTemplates.templateName],
+        })
         .returning();
+
+      template =
+        insertedTemplate
+        ?? await db.query.importTemplates.findFirst({
+          where: and(
+            eq(importTemplates.importSourceId, source.id),
+            eq(importTemplates.templateName, definition.templateId),
+          ),
+        });
+    }
+
+    if (!template) {
+      throw new Error(`Could not create or load import template ${definition.templateId}.`);
     }
 
     templateMap.set(definition.templateId, {

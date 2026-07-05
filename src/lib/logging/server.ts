@@ -25,6 +25,7 @@ function getErrorDetails(error: unknown) {
         "digest" in error && typeof error.digest === "string"
           ? error.digest
           : undefined,
+      cause: getErrorCauseDetails(error.cause),
     };
   }
 
@@ -34,6 +35,51 @@ function getErrorDetails(error: unknown) {
     stack: undefined,
     digest: undefined,
   };
+}
+
+function getErrorCauseDetails(cause: unknown): Record<string, unknown> | undefined {
+  if (!cause) {
+    return undefined;
+  }
+
+  if (cause instanceof Error) {
+    return {
+      name: cause.name,
+      message: cause.message,
+      stack: cause.stack,
+      ...getDatabaseErrorFields(cause),
+      cause: getErrorCauseDetails(cause.cause),
+    };
+  }
+
+  if (typeof cause === "object") {
+    return getDatabaseErrorFields(cause);
+  }
+
+  return {
+    message: String(cause),
+  };
+}
+
+function getDatabaseErrorFields(error: object) {
+  const details: Record<string, unknown> = {};
+
+  for (const field of [
+    "code",
+    "detail",
+    "hint",
+    "schema",
+    "table",
+    "column",
+    "constraint",
+    "routine",
+  ]) {
+    if (field in error) {
+      details[field] = error[field as keyof typeof error];
+    }
+  }
+
+  return details;
 }
 
 export function logRouteError({
