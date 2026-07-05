@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { updateExpenseAllocation } from "@/features/expenses/allocation";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 
@@ -121,11 +122,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to save allocation.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/transaction-allocations",
+      message: "Failed to save transaction allocation",
+      clientMessage: error instanceof Error ? error.message : "Failed to save allocation.",
+    });
   }
 }

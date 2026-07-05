@@ -9,6 +9,7 @@ import {
 } from "@/features/investments/persistence";
 import type { WorkbookData } from "@/features/imports/types";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
 export const runtime = "nodejs";
@@ -78,11 +79,13 @@ export async function POST(request: Request) {
       },
     );
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Investment save failed.",
-      },
-      { status: error instanceof InvestmentImportValidationError ? 400 : 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/investments",
+      status: error instanceof InvestmentImportValidationError ? 400 : 500,
+      message: "Investment save failed",
+      clientMessage: error instanceof Error ? error.message : "Investment save failed.",
+    });
   }
 }

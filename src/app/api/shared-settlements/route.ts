@@ -6,6 +6,7 @@ import {
   upsertSharedSettlement,
 } from "@/features/shared-settlements/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -58,22 +59,21 @@ const requestSchema = z.discriminatedUnion("splitMode", [
   }),
 ]);
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const context = await resolveCurrentWorkspaceContext();
     const data = await getSharedSettlementsPageData(context);
 
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to load shared settlements.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/shared-settlements",
+      message: "Failed to load shared settlements",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to load shared settlements.",
+    });
   }
 }
 
@@ -97,14 +97,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to save shared settlement.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/shared-settlements",
+      message: "Failed to save shared settlement",
+      clientMessage: error instanceof Error ? error.message : "Failed to save shared settlement.",
+    });
   }
 }

@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { updateWorkspaceCategory } from "@/features/workspaces/categories";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -37,14 +38,13 @@ export async function PATCH(request: Request, { params }: RouteProps) {
 
     return NextResponse.json(category);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to update workspace category.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-categories/[categoryId]",
+      message: "Failed to update workspace category",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to update workspace category.",
+    });
   }
 }

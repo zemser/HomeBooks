@@ -6,6 +6,7 @@ import {
   getWorkspaceSettingsSnapshot,
   updateWorkspaceBaseCurrency,
 } from "@/features/workspaces/settings";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,22 +15,21 @@ const patchSchema = z.object({
   baseCurrency: z.string().trim().length(3),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const context = await resolveCurrentWorkspaceContext();
     const settings = await getWorkspaceSettingsSnapshot(context);
 
     return NextResponse.json(settings);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to load workspace settings.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-settings",
+      message: "Failed to load workspace settings",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to load workspace settings.",
+    });
   }
 }
 
@@ -52,14 +52,13 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json(settings);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to update workspace settings.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-settings",
+      message: "Failed to update workspace settings",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to update workspace settings.",
+    });
   }
 }

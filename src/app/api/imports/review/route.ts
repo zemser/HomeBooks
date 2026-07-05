@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { listReviewQueue } from "@/features/expenses/queries";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,11 +16,12 @@ export async function GET(request: Request) {
 
     return NextResponse.json(reviewQueue);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to load review queue.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/imports/review",
+      message: "Failed to load import review queue",
+      clientMessage: error instanceof Error ? error.message : "Failed to load review queue.",
+    });
   }
 }

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import { upsertTransactionClassification } from "@/features/expenses/classifications";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 
@@ -34,14 +35,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to save transaction classification.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/transaction-classifications",
+      message: "Failed to save transaction classification",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to save transaction classification.",
+    });
   }
 }

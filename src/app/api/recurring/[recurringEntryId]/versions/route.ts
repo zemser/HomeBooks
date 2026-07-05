@@ -4,6 +4,7 @@ import { z } from "zod";
 import { NORMALIZATION_MODES, RECURRENCE_RULES } from "@/features/recurring/constants";
 import { createRecurringEntryVersion } from "@/features/recurring/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 
@@ -46,14 +47,15 @@ export async function POST(request: Request, { params }: RouteProps) {
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to create recurring entry version.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/recurring/[recurringEntryId]/versions",
+      message: "Failed to create recurring entry version",
+      clientMessage:
+        error instanceof Error
+          ? error.message
+          : "Failed to create recurring entry version.",
+    });
   }
 }
