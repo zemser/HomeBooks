@@ -4,6 +4,7 @@ import { z } from "zod";
 import { updateWorkspaceMember } from "@/features/workspaces/members";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { WORKSPACE_MEMBER_ROLES } from "@/features/workspaces/types";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 
@@ -47,14 +48,13 @@ export async function PATCH(request: Request, { params }: WorkspaceMemberRoutePr
 
     return NextResponse.json(member);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to update workspace member.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-members/[memberId]",
+      message: "Failed to update workspace member",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to update workspace member.",
+    });
   }
 }

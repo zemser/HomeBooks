@@ -8,6 +8,7 @@ import {
   updateRecurringEntry,
 } from "@/features/recurring/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 
@@ -46,17 +47,17 @@ export async function PATCH(request: Request, { params }: RouteProps) {
 
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to update recurring entry.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/recurring/[recurringEntryId]",
+      message: "Failed to update recurring entry",
+      clientMessage: error instanceof Error ? error.message : "Failed to update recurring entry.",
+    });
   }
 }
 
-export async function DELETE(_: Request, { params }: RouteProps) {
+export async function DELETE(request: Request, { params }: RouteProps) {
   try {
     const context = await resolveCurrentWorkspaceContext();
     const { recurringEntryId } = await params;
@@ -64,12 +65,12 @@ export async function DELETE(_: Request, { params }: RouteProps) {
 
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to delete recurring entry.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/recurring/[recurringEntryId]",
+      message: "Failed to delete recurring entry",
+      clientMessage: error instanceof Error ? error.message : "Failed to delete recurring entry.",
+    });
   }
 }

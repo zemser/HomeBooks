@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
 import { detectBankTemplate } from "@/features/imports/templates/detect";
+import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
 const requestSchema = z.object({
@@ -90,12 +91,12 @@ export async function POST(request: Request) {
       }),
     });
   } catch (error) {
-    console.error("Import preview failed:", error);
-    return NextResponse.json(
-      {
-        error: "Could not preview this file right now. Please try again.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/imports/preview",
+      message: "Import preview failed",
+      clientMessage: "Could not preview this file right now. Please try again.",
+    });
   }
 }

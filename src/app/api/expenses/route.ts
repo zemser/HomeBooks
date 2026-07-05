@@ -4,11 +4,12 @@ import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expens
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
 import { listWorkspaceCategoryNames } from "@/features/workspaces/categories";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const context = await resolveCurrentWorkspaceContext();
     const [transactions, oneTimeManualEntries, members, categories] = await Promise.all([
@@ -25,11 +26,12 @@ export async function GET() {
       categories,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to load expenses.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/expenses",
+      message: "Failed to load expenses",
+      clientMessage: error instanceof Error ? error.message : "Failed to load expenses.",
+    });
   }
 }

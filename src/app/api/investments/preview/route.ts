@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { detectInvestmentTemplate } from "@/features/investments/detect";
 import { parseInvestmentWorkbookToPreview } from "@/features/investments/parse-investment-workbook";
+import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
 export const runtime = "nodejs";
@@ -48,11 +49,12 @@ export async function POST(request: Request) {
       warnings: result.preview.warnings,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Investment preview failed.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/investments/preview",
+      message: "Investment preview failed",
+      clientMessage: error instanceof Error ? error.message : "Investment preview failed.",
+    });
   }
 }

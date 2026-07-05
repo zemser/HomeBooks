@@ -8,6 +8,7 @@ import {
   getRecurringPageData,
 } from "@/features/recurring/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -51,12 +52,13 @@ export async function GET(request: Request) {
 
     return NextResponse.json(data);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to load recurring entries.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/recurring",
+      message: "Failed to load recurring entries",
+      clientMessage: error instanceof Error ? error.message : "Failed to load recurring entries.",
+    });
   }
 }
 
@@ -79,12 +81,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to create recurring entry.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/recurring",
+      message: "Failed to create recurring entry",
+      clientMessage: error instanceof Error ? error.message : "Failed to create recurring entry.",
+    });
   }
 }

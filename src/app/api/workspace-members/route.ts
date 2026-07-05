@@ -6,6 +6,7 @@ import {
   listWorkspaceMembersForSettings,
 } from "@/features/workspaces/members";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ const createSchema = z.object({
   displayName: z.string().trim().min(1),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const context = await resolveCurrentWorkspaceContext();
     const members = await listWorkspaceMembersForSettings(context);
@@ -23,15 +24,14 @@ export async function GET() {
       members,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to load workspace members.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-members",
+      message: "Failed to load workspace members",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to load workspace members.",
+    });
   }
 }
 
@@ -54,14 +54,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(member, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to create workspace member.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-members",
+      message: "Failed to create workspace member",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to create workspace member.",
+    });
   }
 }

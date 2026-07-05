@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { listSavedImports, persistBankImport } from "@/features/imports/persistence";
+import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const context = await resolveCurrentWorkspaceContext();
     const savedImports = await listSavedImports(context, { type: "bank" });
@@ -17,12 +18,13 @@ export async function GET() {
       savedImports,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Failed to load imports.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/imports",
+      message: "Failed to load imports",
+      clientMessage: error instanceof Error ? error.message : "Failed to load imports.",
+    });
   }
 }
 
@@ -60,12 +62,12 @@ export async function POST(request: Request) {
       },
     );
   } catch (error) {
-    console.error("Import save failed:", error);
-    return NextResponse.json(
-      {
-        error: "Could not save this import right now. Please try again.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/imports",
+      message: "Import save failed",
+      clientMessage: "Could not save this import right now. Please try again.",
+    });
   }
 }

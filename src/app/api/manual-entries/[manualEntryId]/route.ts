@@ -10,6 +10,7 @@ import {
   updateOneTimeManualEntry,
 } from "@/features/manual-entries/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 
@@ -49,17 +50,17 @@ export async function PATCH(request: Request, { params }: RouteProps) {
 
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to update manual entry.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/manual-entries/[manualEntryId]",
+      message: "Failed to update manual entry",
+      clientMessage: error instanceof Error ? error.message : "Failed to update manual entry.",
+    });
   }
 }
 
-export async function DELETE(_: Request, { params }: RouteProps) {
+export async function DELETE(request: Request, { params }: RouteProps) {
   try {
     const context = await resolveCurrentWorkspaceContext();
     const { manualEntryId } = await params;
@@ -67,12 +68,12 @@ export async function DELETE(_: Request, { params }: RouteProps) {
 
     return NextResponse.json(result);
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to delete manual entry.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/manual-entries/[manualEntryId]",
+      message: "Failed to delete manual entry",
+      clientMessage: error instanceof Error ? error.message : "Failed to delete manual entry.",
+    });
   }
 }

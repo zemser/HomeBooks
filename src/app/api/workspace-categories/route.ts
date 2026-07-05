@@ -6,6 +6,7 @@ import {
   listWorkspaceCategories,
 } from "@/features/workspaces/categories";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,7 +15,7 @@ const createSchema = z.object({
   name: z.string().trim().min(1),
 });
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const context = await resolveCurrentWorkspaceContext();
     const categories = await listWorkspaceCategories(context);
@@ -23,15 +24,14 @@ export async function GET() {
       categories,
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to load workspace categories.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-categories",
+      message: "Failed to load workspace categories",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to load workspace categories.",
+    });
   }
 }
 
@@ -54,14 +54,13 @@ export async function POST(request: Request) {
 
     return NextResponse.json(category, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to create workspace category.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-categories",
+      message: "Failed to create workspace category",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to create workspace category.",
+    });
   }
 }

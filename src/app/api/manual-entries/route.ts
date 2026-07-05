@@ -7,6 +7,7 @@ import {
 } from "@/features/manual-entries/constants";
 import { createOneTimeManualEntry } from "@/features/manual-entries/service";
 import { resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
 
@@ -39,12 +40,12 @@ export async function POST(request: Request) {
 
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error ? error.message : "Failed to create manual entry.",
-      },
-      { status: 500 },
-    );
+    return errorResponse({
+      error,
+      request,
+      route: "/api/manual-entries",
+      message: "Failed to create manual entry",
+      clientMessage: error instanceof Error ? error.message : "Failed to create manual entry.",
+    });
   }
 }
