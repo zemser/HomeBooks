@@ -75,24 +75,11 @@ async function workspaceHasFinancialData(context: CurrentWorkspaceContext) {
 export async function getWorkspaceSettingsSnapshot(
   context: CurrentWorkspaceContext,
 ): Promise<WorkspaceSettingsSnapshot> {
-  const db = getDb();
-  const workspace = await db.query.workspaces.findFirst({
-    where: eq(workspaces.id, context.workspaceId),
-    columns: {
-      id: true,
-      baseCurrency: true,
-    },
-  });
-
-  if (!workspace) {
-    throw new Error("Workspace was not found.");
-  }
-
   const hasFinancialData = await workspaceHasFinancialData(context);
 
   return {
-    workspaceId: workspace.id,
-    baseCurrency: workspace.baseCurrency,
+    workspaceId: context.workspaceId,
+    baseCurrency: context.baseCurrency,
     canUpdateBaseCurrency: !hasFinancialData,
     baseCurrencyLockReason: hasFinancialData
       ? "Base currency can only be changed before imports, manual entries, recurring inputs, or other financial records exist in the workspace."

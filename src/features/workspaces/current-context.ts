@@ -16,6 +16,7 @@ const DEFAULT_BASE_CURRENCY = "ILS";
 export type CurrentWorkspaceContext = {
   userId: string;
   workspaceId: string;
+  workspaceName?: string;
   memberId: string;
   baseCurrency: string;
 };
@@ -77,6 +78,7 @@ async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceConte
       return {
         userId: user.id,
         workspaceId: workspace.id,
+        workspaceName: workspace.name,
         memberId: existingMember.id,
         baseCurrency: workspace.baseCurrency,
       };
@@ -117,6 +119,7 @@ async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceConte
     return {
       userId: user.id,
       workspaceId: workspace.id,
+      workspaceName: workspace.name,
       memberId: member.id,
       baseCurrency: workspace.baseCurrency,
     };
@@ -190,6 +193,7 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
       return {
         userId: user.id,
         workspaceId: workspace.id,
+        workspaceName: workspace.name,
         memberId: member.id,
         baseCurrency: workspace.baseCurrency,
       };
