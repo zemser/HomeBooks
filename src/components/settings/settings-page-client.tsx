@@ -299,7 +299,7 @@ export function SettingsPageClient({
       {error ? <p className="status error">{error}</p> : null}
       {message ? <p className="status">{message}</p> : null}
 
-      <article className="card stack compact">
+      <article className="card stack compact" id="currency">
         <div className="page-actions">
           <div>
             <h2>Workspace currency</h2>
@@ -355,7 +355,7 @@ export function SettingsPageClient({
         </p>
       </article>
 
-      <article className="card stack compact">
+      <article className="card stack compact" id="categories">
         <div className="page-actions">
           <div>
             <h2>Expense categories</h2>
@@ -467,14 +467,13 @@ export function SettingsPageClient({
         ) : null}
       </article>
 
-      <article className="card stack compact">
+      <article className="card stack compact" id="members">
         <div className="page-actions">
           <div>
-            <h2>Settlement readiness</h2>
+            <h2>Optional shared settlements</h2>
             <p className="muted-text">
-              Shared settlements are designed around exactly two active members. You can keep more
-              member records in the workspace, but only two should stay active when settlement flows
-              are in use.
+              The rest of the app works fine for one person. Shared settlements only matter if
+              you later want to split expenses with another active member.
             </p>
           </div>
         </div>
@@ -493,17 +492,17 @@ export function SettingsPageClient({
             <span>Owners with access</span>
           </div>
           <div>
-            <strong>{settlementReady ? "Exactly 2" : "Needs review"}</strong>
+            <strong>{settlementReady ? "Available" : "Optional"}</strong>
             <span>Settlement rule</span>
           </div>
         </div>
 
         <p className="muted-text">
           {settlementReady
-            ? "The workspace is ready for pairwise settlement flows."
+            ? "Shared settlements are available if you want to use them."
             : activeMembers.length < 2
-              ? "Add or reactivate a second member before relying on shared settlement screens."
-              : "Too many active members are enabled for the current pairwise settlement model. Deactivate extra records when you want settlements to be accurate."}
+              ? "Solo use is fully supported. Add another active member only if you want shared settlements later."
+              : "You have more than one active member, so shared settlements are available if you need them."}
         </p>
       </article>
 
@@ -512,9 +511,8 @@ export function SettingsPageClient({
           <div>
             <h2>Household members</h2>
             <p className="muted-text">
-              Shared settlements need exactly two active members. Add a member here, rename
-              them with a display override, promote another owner if needed, or deactivate old
-              records without breaking the workspace.
+              Add or rename people here if you want collaborators in the workspace. Solo
+              users can ignore this section.
             </p>
           </div>
         </div>
@@ -659,8 +657,8 @@ export function SettingsPageClient({
         ) : null}
 
         <p className="muted-text">
-          At least one active owner and one active household member must remain. Promote another
-          owner before demoting or deactivating the current one.
+          At least one active owner and one active household member must remain. That keeps the
+          workspace usable even if you never add anyone else.
         </p>
       </article>
     </section>

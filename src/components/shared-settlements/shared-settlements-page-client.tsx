@@ -407,11 +407,11 @@ export function SharedSettlementsPageClient() {
         <article className="card">
           <p className="status warning">{data.blockingReason}</p>
           <p className="helper-text">
-            Shared settlements are pairwise in v1. Open{" "}
+            Shared settlements are optional. Open{" "}
             <Link className="link-button" href="/settings">
               settings
             </Link>{" "}
-            to reach exactly two active members.
+            if you want to add another person later.
           </p>
         </article>
       ) : null}

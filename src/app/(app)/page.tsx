@@ -36,12 +36,12 @@ function buildAdjustedReportTarget(month: string) {
 }
 
 function getNextAction(snapshot: WorkspaceHomeSnapshot) {
-  if (!snapshot.setup.pairwiseSettlementReady) {
+  if (snapshot.setup.activeMemberCount === 0) {
     return {
       href: "/settings",
       label: "Finish workspace setup",
       description:
-        "Add or reactivate exactly two active household members so ownership and shared-settlement flows make sense.",
+        "Create your first active household member so the workspace is ready for solo use.",
     };
   }
 
@@ -123,18 +123,19 @@ function getWorkflowSteps(snapshot: WorkspaceHomeSnapshot): HomeStep[] {
     {
       title: "Setup",
       href: "/settings",
-      status: snapshot.setup.pairwiseSettlementReady ? "complete" : "current",
-      description: snapshot.setup.pairwiseSettlementReady
-        ? "Exactly two active members are configured."
-        : "Finish household setup in settings.",
+      status: snapshot.setup.activeMemberCount > 0 ? "complete" : "current",
+      description:
+        snapshot.setup.activeMemberCount > 0
+          ? `${snapshot.setup.activeMemberCount} active member${snapshot.setup.activeMemberCount === 1 ? "" : "s"} configured.`
+          : "Create your first active member in settings.",
     },
     {
       title: "Import",
       href: "/imports",
       status:
-        snapshot.workflow.importCount > 0
-          ? "complete"
-          : snapshot.setup.pairwiseSettlementReady
+          snapshot.workflow.importCount > 0
+            ? "complete"
+          : snapshot.setup.activeMemberCount > 0
             ? "current"
             : "up-next",
       description:
@@ -311,9 +312,9 @@ export default async function HomePage() {
               <div className="info-row">
                 <strong>Settlement readiness</strong>
                 <span>
-                  {snapshot.setup.pairwiseSettlementReady
-                    ? "Ready for pairwise tracking"
-                    : "Needs exactly 2 active members"}
+                  {snapshot.setup.activeMemberCount > 1
+                    ? "Ready for shared tracking"
+                    : "Optional if you add another person"}
                 </span>
               </div>
             </div>

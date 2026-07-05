@@ -84,7 +84,6 @@ export async function getAppShellSnapshot(
       activeMemberCount: activeMembers.length,
       pairwiseSettlementReady,
       reviewQueueCount,
-      settingsNeedsAttention: !pairwiseSettlementReady,
     };
   });
 }
@@ -200,11 +199,11 @@ export async function getWorkspaceHomeSnapshot(
     notableStates.push({
       title: "Shared settlements",
       description: pairwiseSettlementReady
-        ? "Exactly two active household members are in place, so shared settlements are ready when you need them."
-        : "Shared settlements stay blocked until exactly two active household members are configured.",
+        ? "Shared settlements are available if you want to split expenses with someone else."
+        : "Shared settlements are optional and only become relevant after you add another active household member.",
       href: pairwiseSettlementReady ? "/settlements" : "/settings",
       actionLabel: pairwiseSettlementReady ? "Open settlements" : "Open settings",
-      tone: pairwiseSettlementReady ? "neutral" : "warning",
+      tone: "neutral",
     });
 
     notableStates.push({

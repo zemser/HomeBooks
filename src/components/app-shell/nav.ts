@@ -47,8 +47,6 @@ export function createAppNavSections(snapshot: AppShellSnapshot): AppNavSection[
           href: "/settings",
           label: "Settings",
           matchStrategy: "prefix",
-          badge: snapshot.settingsNeedsAttention ? "Setup" : null,
-          badgeTone: "warning",
         },
       ],
     },

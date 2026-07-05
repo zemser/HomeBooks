@@ -19,7 +19,6 @@ export default async function AppLayout({
       activeMemberCount={shellSnapshot.activeMemberCount}
       baseCurrency={shellSnapshot.baseCurrency}
       navSections={navSections}
-      pairwiseSettlementReady={shellSnapshot.pairwiseSettlementReady}
       workspaceName={shellSnapshot.workspaceName}
     >
       {children}

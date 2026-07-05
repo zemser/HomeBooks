@@ -10,7 +10,6 @@ type AppShellClientProps = {
   workspaceName: string;
   baseCurrency: string;
   activeMemberCount: number;
-  pairwiseSettlementReady: boolean;
   children: React.ReactNode;
 };
 
@@ -55,7 +54,6 @@ export function AppShellClient({
   workspaceName,
   baseCurrency,
   activeMemberCount,
-  pairwiseSettlementReady,
   children,
 }: AppShellClientProps) {
   const pathname = usePathname();
@@ -83,11 +81,6 @@ export function AppShellClient({
               {baseCurrency} base currency · {activeMemberCount} active member
               {activeMemberCount === 1 ? "" : "s"}
             </p>
-            <span
-              className={`badge ${pairwiseSettlementReady ? "badge-neutral" : "badge-warning"}`}
-            >
-              {pairwiseSettlementReady ? "Pair ready" : "Setup needed"}
-            </span>
           </section>
 
           <nav className="app-nav" aria-label="Primary application">

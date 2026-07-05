@@ -575,7 +575,7 @@ async function getPairwiseMembers(context: CurrentWorkspaceContext) {
   const blockingReason =
     members.length === 2
       ? null
-      : "Shared settlements need exactly 2 active household members. Add or deactivate members in settings before tracking balances.";
+      : "Shared settlements are optional and only become useful after you add another active household member.";
 
   return {
     activeMembers: members,
