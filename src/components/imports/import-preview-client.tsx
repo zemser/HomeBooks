@@ -118,6 +118,7 @@ export function ImportPreviewClient({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [savedImportList, setSavedImportList] = useState(savedImports);
   const [lastSavedImportId, setLastSavedImportId] = useState<string | null>(null);
+  const [selectedFileName, setSelectedFileName] = useState<string>("No file selected yet");
 
   useEffect(() => {
     setSavedImportList(savedImports);
@@ -125,6 +126,10 @@ export function ImportPreviewClient({
 
   useEffect(() => {
     setWorkspaceCurrency(initialWorkspaceCurrency);
+  }, [initialWorkspaceCurrency]);
+
+  useEffect(() => {
+    setSelectedFileName("No file selected yet");
   }, [initialWorkspaceCurrency]);
 
   async function handleSubmit(formData: FormData) {
@@ -274,7 +279,27 @@ export function ImportPreviewClient({
 
           <label className="field">
             <span>Statement file</span>
-            <input className="input" type="file" name="file" accept=".xlsx,.csv" required />
+            <div className="file-dropzone">
+              <input
+                className="file-input"
+                type="file"
+                name="file"
+                accept=".xlsx,.csv"
+                required
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  setSelectedFileName(file ? file.name : "No file selected yet");
+                }}
+              />
+              <div className="file-dropzone-copy">
+                <strong>Drop a CSV or Excel export here</strong>
+                <p>Or pick a file from your computer to preview the import flow.</p>
+                <span className="file-dropzone-filename" aria-live="polite">
+                  {selectedFileName}
+                </span>
+              </div>
+              <span className="button button-secondary file-dropzone-button">Choose file</span>
+            </div>
           </label>
 
           <button className="button" type="submit" disabled={isPending}>

@@ -9,13 +9,13 @@ import {
 } from "@/features/workspaces/current-context";
 
 const importSteps = [
-  "Upload CSV or Excel export",
-  "Detect provider template",
-  "Preview rows and section metadata",
-  "Confirm and save the import",
-  "Normalize transactions or holdings",
-  "Send uncertain items to review queue",
-];
+  { label: "Upload CSV or Excel export", phase: "on page" },
+  { label: "Detect provider template", phase: "on page" },
+  { label: "Preview rows and section metadata", phase: "on page" },
+  { label: "Confirm and save the import", phase: "on page" },
+  { label: "Normalize transactions or holdings", phase: "next" },
+  { label: "Send uncertain items to review queue", phase: "next" },
+] as const;
 
 const supportedExpenseTemplates = [
   "Max credit-card statements",
@@ -55,6 +55,8 @@ export default async function ImportsPage() {
               <h2>Import workflow</h2>
               <p className="muted-text">
                 This is the operational start of the expense story, not a detached file tool.
+                The pills below show which steps happen on this page and which continue after
+                the import is saved.
               </p>
             </div>
             <div className="action-row">
@@ -73,14 +75,14 @@ export default async function ImportsPage() {
 
           <div className="home-workflow-list">
             {importSteps.map((item, index) => (
-              <div className="home-workflow-step" key={item}>
+              <div className="home-workflow-step" key={item.label}>
                 <span
-                  className={`home-step-state ${index < 4 ? "home-step-state-current" : "home-step-state-up-next"}`}
+                  className={`home-step-state ${item.phase === "on page" ? "home-step-state-current" : "home-step-state-up-next"}`}
                 >
-                  {index < 4 ? "This page" : "Next"}
+                  {item.phase === "on page" ? `On page ${index + 1}` : `Next ${index - 3}`}
                 </span>
                 <div>
-                  <strong>{item}</strong>
+                  <strong>{item.label}</strong>
                 </div>
               </div>
             ))}

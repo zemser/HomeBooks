@@ -752,7 +752,7 @@ export function ExpensesPageClient({
             </div>
           </form>
 
-          <div className="card stack compact">
+          <div className="card stack compact allocation-panel">
             <div>
               <h3>Adjusted-period allocation</h3>
               <p className="muted-text">
