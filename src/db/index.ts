@@ -53,6 +53,14 @@ function isTransactionControlQuery(query: unknown) {
   );
 }
 
+function usesTransactionPooler(connectionString: string) {
+  try {
+    return new URL(connectionString).port === "6543";
+  } catch {
+    return false;
+  }
+}
+
 function wrapClientForCurrentUser(client: PoolClient) {
   const scopedClient = client as WrappedPoolClient;
 
@@ -79,6 +87,7 @@ function wrapClientForCurrentUser(client: PoolClient) {
 }
 
 function createPool(connectionString: string) {
+  const transactionPooler = usesTransactionPooler(connectionString);
   const nextPool = new Pool({
     connectionString,
     // Hosted Supabase session poolers have a small project-wide client limit.
@@ -98,8 +107,22 @@ function createPool(connectionString: string) {
   nextPool.query = (async (...args: unknown[]) => {
     const client = await nextPool.connect();
 
+    if (!transactionPooler) {
+      try {
+        return await (client.query as (...queryArgs: unknown[]) => unknown)(...args);
+      } finally {
+        client.release();
+      }
+    }
+
     try {
-      return await (client.query as (...queryArgs: unknown[]) => unknown)(...args);
+      await client.query("begin");
+      const result = await (client.query as (...queryArgs: unknown[]) => unknown)(...args);
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
     } finally {
       client.release();
     }
@@ -109,7 +132,13 @@ function createPool(connectionString: string) {
 }
 
 function getPoolMax() {
-  const configuredMax = Number(process.env.FINAPP_DB_POOL_MAX ?? "4");
+  const isServerless =
+    process.env.VERCEL === "1"
+    || Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME)
+    || Boolean(process.env.FUNCTIONS_WORKER_RUNTIME);
+  const configuredMax = Number(
+    process.env.FINAPP_DB_POOL_MAX ?? (isServerless ? "1" : "4"),
+  );
 
   if (!Number.isInteger(configuredMax) || configuredMax < 1) {
     throw new Error("FINAPP_DB_POOL_MAX must be a positive integer.");
