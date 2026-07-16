@@ -9,6 +9,12 @@ let pool: Pool | undefined;
 let database: NodePgDatabase<typeof schema> | undefined;
 let validatedConnectionString: string | undefined;
 
+const globalForDb = globalThis as typeof globalThis & {
+  finappPool?: Pool;
+  finappDatabase?: NodePgDatabase<typeof schema>;
+  finappDatabaseConnectionString?: string;
+};
+
 const wrappedClient = Symbol("finappWrappedClient");
 const BYPASS_DATABASE_USERS = new Set([
   "postgres",
@@ -75,6 +81,12 @@ function wrapClientForCurrentUser(client: PoolClient) {
 function createPool(connectionString: string) {
   const nextPool = new Pool({
     connectionString,
+    // Hosted Supabase session poolers have a small project-wide client limit.
+    // Keep this configurable for deployments with a different connection budget,
+    // but avoid pg's default of 10 connections per app process.
+    max: getPoolMax(),
+    idleTimeoutMillis: 10_000,
+    connectionTimeoutMillis: 10_000,
   });
   const originalConnect = nextPool.connect.bind(nextPool);
 
@@ -94,6 +106,16 @@ function createPool(connectionString: string) {
   }) as Pool["query"];
 
   return nextPool;
+}
+
+function getPoolMax() {
+  const configuredMax = Number(process.env.FINAPP_DB_POOL_MAX ?? "4");
+
+  if (!Number.isInteger(configuredMax) || configuredMax < 1) {
+    throw new Error("FINAPP_DB_POOL_MAX must be a positive integer.");
+  }
+
+  return configuredMax;
 }
 
 function assertHostedDatabaseRole(connectionString: string) {
@@ -132,11 +154,28 @@ export function getDb() {
   }
 
   if (!pool) {
+    pool =
+      globalForDb.finappDatabaseConnectionString === connectionString
+        ? globalForDb.finappPool
+        : undefined;
+  }
+
+  if (!pool) {
     pool = createPool(connectionString);
+    globalForDb.finappPool = pool;
+    globalForDb.finappDatabaseConnectionString = connectionString;
+  }
+
+  if (!database) {
+    database =
+      globalForDb.finappDatabaseConnectionString === connectionString
+        ? globalForDb.finappDatabase
+        : undefined;
   }
 
   if (!database) {
     database = drizzle(pool, { schema });
+    globalForDb.finappDatabase = database;
   }
 
   return database;

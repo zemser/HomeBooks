@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useRef } from "react";
 
 import type { AppNavSection, AppNavItem } from "@/components/app-shell/nav";
 
@@ -28,9 +29,11 @@ function isActivePath(pathname: string, item: AppNavItem) {
 function MobileNavItem({
   item,
   pathname,
+  onIntent,
 }: {
   item: AppNavItem;
   pathname: string;
+  onIntent: (href: string) => void;
 }) {
   const active = isActivePath(pathname, item);
 
@@ -39,6 +42,8 @@ function MobileNavItem({
       className={`app-mobile-nav-item ${active ? "app-mobile-nav-item-active" : ""}`}
       href={item.href}
       prefetch={false}
+      onMouseEnter={() => onIntent(item.href)}
+      onFocus={() => onIntent(item.href)}
     >
       <span>{item.label}</span>
       {item.badge ? (
@@ -58,16 +63,30 @@ export function AppShellClient({
   children,
 }: AppShellClientProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const prefetchedHrefs = useRef(new Set<string>());
   const primaryItems = navSections[0]?.items ?? [];
   const secondaryItems = navSections[1]?.items ?? [];
   const flatItems = navSections.flatMap((section) => section.items);
   const currentItem = flatItems.find((item) => isActivePath(pathname, item));
 
+  function prefetchOnIntent(href: string) {
+    if (prefetchedHrefs.current.has(href)) return;
+    prefetchedHrefs.current.add(href);
+    router.prefetch(href);
+  }
+
   return (
     <div className="app-shell">
       <aside className="app-sidebar">
         <div className="app-sidebar-inner">
-          <Link className="app-brand" href="/">
+          <Link
+            className="app-brand"
+            href="/"
+            prefetch={false}
+            onMouseEnter={() => prefetchOnIntent("/")}
+            onFocus={() => prefetchOnIntent("/")}
+          >
             <span className="app-brand-mark">FA</span>
             <span>
               <strong>Fin App</strong>
@@ -97,6 +116,8 @@ export function AppShellClient({
                         className={`app-nav-link ${active ? "app-nav-link-active" : ""}`}
                         href={item.href}
                         prefetch={false}
+                        onMouseEnter={() => prefetchOnIntent(item.href)}
+                        onFocus={() => prefetchOnIntent(item.href)}
                         key={item.href}
                       >
                         <span>{item.label}</span>
@@ -128,7 +149,14 @@ export function AppShellClient({
           </div>
           <div className="app-mobile-actions">
             {secondaryItems.map((item) => (
-              <Link className="mobile-pill-link" href={item.href} prefetch={false} key={item.href}>
+              <Link
+                className="mobile-pill-link"
+                href={item.href}
+                prefetch={false}
+                onMouseEnter={() => prefetchOnIntent(item.href)}
+                onFocus={() => prefetchOnIntent(item.href)}
+                key={item.href}
+              >
                 {item.label}
               </Link>
             ))}
@@ -139,7 +167,12 @@ export function AppShellClient({
 
         <nav className="app-mobile-nav" aria-label="Primary mobile navigation">
           {primaryItems.map((item) => (
-            <MobileNavItem item={item} key={item.href} pathname={pathname} />
+            <MobileNavItem
+              item={item}
+              key={item.href}
+              onIntent={prefetchOnIntent}
+              pathname={pathname}
+            />
           ))}
         </nav>
       </div>
