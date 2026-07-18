@@ -90,7 +90,7 @@ export function AppShellClient({
             <span className="app-brand-mark">FA</span>
             <span>
               <strong>Fin App</strong>
-              <small>Household workflow</small>
+              <small>Shared household money</small>
             </span>
           </Link>
 

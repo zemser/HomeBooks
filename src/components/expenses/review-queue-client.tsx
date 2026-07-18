@@ -9,6 +9,7 @@ import {
   emptyAllocationForm,
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
+import { Modal } from "@/components/shared/modal";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expenses/constants";
@@ -131,6 +132,7 @@ export function ReviewQueueClient({
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [singleForm, setSingleForm] = useState<SingleFormState>(emptySingleForm);
   const [bulkForm, setBulkForm] = useState<BulkFormState>(emptyBulkForm);
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
   const [allocationForm, setAllocationForm] = useState<AllocationFormState>(emptyAllocationForm);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -397,11 +399,20 @@ export function ReviewQueueClient({
     selectedTransactionInQueue && selectedTransaction
       ? queue.findIndex((transaction) => transaction.id === selectedTransaction.id) + 1
       : null;
+  const previousTransactionId = selectedQueuePosition && selectedQueuePosition > 1
+    ? queue[selectedQueuePosition - 2]?.id
+    : null;
+  const nextTransactionId = selectedQueuePosition && selectedQueuePosition < queue.length
+    ? queue[selectedQueuePosition]?.id
+    : null;
   const merchantCanCreateRule = Boolean(selectedTransaction?.merchantRaw?.trim());
   const allocationEditable =
     selectedTransaction?.classification &&
     selectedTransaction.classification.classificationType !== "transfer" &&
     selectedTransaction.classification.classificationType !== "ignore";
+  const memberFieldLabel =
+    singleForm.classificationType === "shared" ? "Paid by" : "Whose personal expense?";
+  const showMemberField = ["personal", "shared"].includes(singleForm.classificationType);
   const selectedTransactionCurrencyState = selectedTransaction
     ? getCurrencyNormalizationDisplayState(selectedTransaction)
     : null;
@@ -490,7 +501,61 @@ export function ReviewQueueClient({
             </div>
           </div>
 
-          <div className="stack compact">
+          <div className="page-actions review-list-actions">
+            <p className="helper-text">
+              {selectedIds.length > 0 ? `${selectedIds.length} selected` : "Select rows to use a batch action."}
+            </p>
+            <div className="action-row">
+              <button className="link-button" type="button" onClick={toggleAllVisible}>
+                {allVisibleSelected ? "Clear selection" : "Select all"}
+              </button>
+              <button
+                className="button button-secondary"
+                type="button"
+                disabled={selectedIds.length < 2}
+                onClick={() => setIsBulkModalOpen(true)}
+              >
+                Bulk actions{selectedIds.length >= 2 ? ` (${selectedIds.length})` : ""}
+              </button>
+            </div>
+          </div>
+
+          <Modal
+            open={isBulkModalOpen}
+            onClose={() => setIsBulkModalOpen(false)}
+            title="Bulk actions"
+            description={`Apply one classification to ${selectedIds.length} selected transactions.`}
+          >
+            <div className="stack">
+              <label className="field">
+                <span>Type</span>
+                <select className="input" value={bulkForm.classificationType} onChange={(event) => setBulkForm((current) => ({ ...current, classificationType: event.target.value as ClassificationType | "" }))}>
+                  <option value="">Select type</option>
+                  {CLASSIFICATION_TYPES.map((type) => <option key={type} value={type}>{type[0].toUpperCase() + type.slice(1)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Category</span>
+                <CategorySelect categories={categories} value={bulkForm.category} onChange={(value) => setBulkForm((current) => ({ ...current, category: value }))} blankLabel="Keep uncategorized" />
+              </label>
+              <label className="field">
+                <span>Member</span>
+                <select className="input" value={bulkForm.memberOwnerId} onChange={(event) => setBulkForm((current) => ({ ...current, memberOwnerId: event.target.value }))}>
+                  <option value="">Unassigned</option>
+                  {members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}
+                </select>
+              </label>
+              {!hasDefinedCategories ? <p className="helper-text">Add categories in <Link href="/settings">settings</Link> before assigning one here.</p> : null}
+              <div className="action-row">
+                <button className="button" type="button" disabled={isSavingBulk} onClick={() => startSavingBulk(() => void submitBulkClassification())}>
+                  {isSavingBulk ? "Applying..." : "Apply to selected"}
+                </button>
+                <button className="button button-secondary" type="button" onClick={() => setIsBulkModalOpen(false)}>Cancel</button>
+              </div>
+            </div>
+          </Modal>
+
+          <div className="stack compact bulk-controls-legacy">
             <div className="inline-form">
               <label className="field">
                 <span>Bulk classification type</span>
@@ -630,15 +695,22 @@ export function ReviewQueueClient({
 
                     return (
                       <tr
-                        className={
-                          selectedTransactionId === transaction.id ? "table-row-active" : undefined
-                        }
+                        className={`table-row-interactive ${selectedTransactionId === transaction.id ? "table-row-active" : ""}`}
+                        tabIndex={0}
+                        onClick={() => setSelectedTransactionId(transaction.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedTransactionId(transaction.id);
+                          }
+                        }}
                         key={transaction.id}
                       >
                         <td className="checkbox-cell">
                           <input
                             type="checkbox"
-                            checked={selectedIds.includes(transaction.id)}
+                          checked={selectedIds.includes(transaction.id)}
+                            onClick={(event) => event.stopPropagation()}
                             onChange={() => toggleSelectedTransaction(transaction.id)}
                             aria-label={`Select ${getTransactionMerchant(transaction)}`}
                           />
@@ -672,15 +744,7 @@ export function ReviewQueueClient({
                         </td>
                         <td>{transaction.accountDisplayName}</td>
                         <td>{transaction.importSourceName ?? "Unknown source"}</td>
-                        <td>
-                          <button
-                            className="link-button"
-                            type="button"
-                            onClick={() => setSelectedTransactionId(transaction.id)}
-                          >
-                            Review
-                          </button>
-                        </td>
+                        <td><span className="table-note">Select row</span></td>
                       </tr>
                     );
                   })}
@@ -835,8 +899,8 @@ export function ReviewQueueClient({
                   />
                 </label>
 
-                <label className="field">
-                  <span>Member owner</span>
+                {showMemberField ? <label className="field">
+                  <span>{memberFieldLabel}</span>
                   <select
                     className="input"
                     value={singleForm.memberOwnerId}
@@ -854,7 +918,7 @@ export function ReviewQueueClient({
                       </option>
                     ))}
                   </select>
-                </label>
+                </label> : null}
 
                 <label className="checkbox-label">
                   <input
@@ -885,8 +949,10 @@ export function ReviewQueueClient({
                   disabled={isSavingSingle}
                   onClick={() => startSavingSingle(() => void submitSingleClassification())}
                 >
-                  {isSavingSingle ? "Saving..." : "Save classification"}
+                  {isSavingSingle ? "Saving..." : nextTransactionId ? "Save and next" : "Save classification"}
                 </button>
+                {previousTransactionId ? <button className="button button-secondary" type="button" onClick={() => setSelectedTransactionId(previousTransactionId)}>Previous</button> : null}
+                {nextTransactionId ? <button className="link-button" type="button" onClick={() => setSelectedTransactionId(nextTransactionId)}>Next</button> : null}
                 <Link className="button button-secondary" href={selectedLedgerHref}>
                   Open in ledger
                 </Link>

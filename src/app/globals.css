@@ -37,13 +37,13 @@ main {
 }
 
 .page-shell {
-  width: min(1120px, calc(100vw - 2rem));
+  width: min(1120px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 2rem 0 4rem;
 }
 
 .settings-shell {
-  width: min(1200px, calc(100vw - 2rem));
+  width: min(1200px, calc(100% - 2rem));
 }
 
 .app-shell {
@@ -210,6 +210,8 @@ main {
 
 .app-main-scroll {
   min-height: 100vh;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .app-mobile-header,
@@ -251,6 +253,24 @@ main {
   max-width: 68ch;
   font-size: 1.05rem;
   line-height: 1.7;
+  color: var(--muted);
+}
+
+.page-header {
+  display: flex;
+  gap: 1rem;
+  align-items: end;
+  justify-content: space-between;
+}
+
+.page-header h1 {
+  margin: 0.55rem 0 0;
+  font-size: clamp(1.8rem, 4vw, 2.7rem);
+  letter-spacing: -0.04em;
+}
+
+.page-header p {
+  margin: 0.5rem 0 0;
   color: var(--muted);
 }
 
@@ -678,6 +698,56 @@ select.input:focus {
   outline-offset: -2px;
 }
 
+.bulk-controls-legacy {
+  display: none;
+}
+
+.modal {
+  width: min(440px, calc(100vw - 2rem));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: 0 24px 80px rgba(31, 42, 31, 0.24);
+}
+
+.modal::backdrop {
+  background: rgba(31, 42, 31, 0.32);
+}
+
+.modal-content {
+  display: grid;
+  gap: 1rem;
+  padding: 1.25rem;
+}
+
+.icon-button {
+  width: 2rem;
+  height: 2rem;
+  border: 0;
+  border-radius: 999px;
+  background: var(--background);
+  color: var(--text);
+  font-size: 1.25rem;
+  cursor: pointer;
+}
+
+.home-next {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface-strong));
+}
+
+.home-next h2 {
+  margin: 0.65rem 0 0.3rem;
+  font-size: clamp(1.25rem, 3vw, 1.7rem);
+}
+
+.home-next p { margin: 0; color: var(--muted); }
+
 .summary-strip,
 .page-actions,
 .action-row,
@@ -788,6 +858,11 @@ select.input:focus {
 .review-layout {
   align-items: start;
   grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.9fr);
+}
+
+.review-list,
+.review-detail {
+  min-width: 0;
 }
 
 .recurring-layout {
@@ -1033,7 +1108,7 @@ select.input:focus {
   }
 
   .page-shell {
-    width: min(100vw - 1rem, 1120px);
+    width: min(calc(100% - 1rem), 1120px);
     padding-top: 1rem;
   }
 
@@ -1123,6 +1198,28 @@ select.input:focus {
     display: block;
   }
 
+  .app-main-scroll {
+    padding-bottom: 8rem;
+  }
+
+  .page-shell {
+    width: min(100% - 1rem, 1120px);
+    padding-top: 1.25rem;
+  }
+
+  .page-header {
+    align-items: flex-start;
+  }
+
+  .home-next {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .home-next .button {
+    width: 100%;
+  }
+
   .app-sidebar {
     display: none;
   }
@@ -1170,10 +1267,11 @@ select.input:focus {
     gap: 0.45rem;
     position: fixed;
     right: 0.5rem;
-    bottom: 0.5rem;
+    bottom: max(0.5rem, env(safe-area-inset-bottom));
     left: 0.5rem;
     z-index: 30;
     padding: 0.55rem;
+    padding-bottom: max(0.55rem, env(safe-area-inset-bottom));
     border: 1px solid rgba(230, 223, 210, 0.92);
     border-radius: 1.25rem;
     background: rgba(255, 253, 247, 0.95);

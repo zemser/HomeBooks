@@ -17,7 +17,7 @@ export type AppNavSection = {
 export function createAppNavSections(snapshot: AppShellSnapshot): AppNavSection[] {
   return [
     {
-      title: "Workflow",
+      title: "Money",
       items: [
         { href: "/", label: "Home", matchStrategy: "exact" },
         { href: "/imports", label: "Imports", matchStrategy: "exact" },

@@ -10,29 +10,9 @@ import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 
 export const dynamic = "force-dynamic";
 
-type HomeStep = {
-  title: string;
-  href: string;
-  status: "complete" | "current" | "up-next";
-  description: string;
-};
-
-function buildPaymentDateReportTarget(month: string) {
+function buildReportTarget(month: string) {
   const normalizedMonth = month.slice(0, 7);
-
-  return {
-    href: `/reports?month=${normalizedMonth}&mode=payment_date`,
-    label: `Open ${formatReportMonthLabel(`${normalizedMonth}-01`)} payment-date report`,
-  };
-}
-
-function buildAdjustedReportTarget(month: string) {
-  const normalizedMonth = month.slice(0, 7);
-
-  return {
-    href: `/reports?month=${normalizedMonth}&mode=allocated_period`,
-    label: `Open ${formatReportMonthLabel(`${normalizedMonth}-01`)} adjusted report`,
-  };
+  return `/reports?month=${normalizedMonth}&mode=payment_date`;
 }
 
 function getNextAction(snapshot: WorkspaceHomeSnapshot) {
@@ -40,8 +20,7 @@ function getNextAction(snapshot: WorkspaceHomeSnapshot) {
     return {
       href: "/settings",
       label: "Finish workspace setup",
-      description:
-        "Create your first active household member so the workspace is ready for solo use.",
+      description: "Add your first household member to get started.",
     };
   }
 
@@ -49,8 +28,7 @@ function getNextAction(snapshot: WorkspaceHomeSnapshot) {
     return {
       href: "/imports",
       label: "Import your first bank file",
-      description:
-        "Bring a real statement into the workspace so the ledger and review queue can start from actual household activity.",
+      description: "Add a statement so your transactions can appear in the ledger.",
     };
   }
 
@@ -58,140 +36,23 @@ function getNextAction(snapshot: WorkspaceHomeSnapshot) {
     return {
       href: "/imports/review",
       label: `Review ${snapshot.workflow.reviewQueueCount} pending transaction${snapshot.workflow.reviewQueueCount === 1 ? "" : "s"}`,
-      description:
-        "Confirm the transactions the importer could not safely classify before you trust the reports.",
+      description: "Confirm the transactions that need a decision before relying on reports.",
     };
   }
 
-  if (snapshot.reporting.available && snapshot.workflow.latestTransactionMonth) {
-    const reportTarget = buildPaymentDateReportTarget(snapshot.workflow.latestTransactionMonth);
-
+  if (snapshot.workflow.latestTransactionMonth) {
     return {
-      href: reportTarget.href,
-      label: reportTarget.label,
-      description:
-        "The queue is clear, so validate the reviewed month in reports. If something looks off, jump back to the ledger from there.",
-    };
-  }
-
-  if (snapshot.workflow.transactionCount > 0 && !snapshot.workflow.hasManualEntries) {
-    return {
-      href: "/expenses",
-      label: "Open the household ledger",
-      description:
-        "Browse imported transactions, add one-off adjustments, and verify that the normalized ledger feels right.",
-    };
-  }
-
-  if (!snapshot.workflow.hasRecurringRules) {
-    return {
-      href: "/recurring",
-      label: "Add recurring income and expenses",
-      description:
-        "Capture rent, salary, and other flows that do not always show up cleanly in statement files.",
-    };
-  }
-
-  if (snapshot.reporting.available) {
-    const reportTarget = buildAdjustedReportTarget(snapshot.reporting.selectedMonth);
-
-    return {
-      href: reportTarget.href,
-      label: reportTarget.label,
-      description:
-        "Check the adjusted-period month view and rolling trend now that the workflow has enough data to be useful.",
+      href: buildReportTarget(snapshot.workflow.latestTransactionMonth),
+      label: `Check your ${formatReportMonthLabel(`${snapshot.workflow.latestTransactionMonth}-01`)} report`,
+      description: "Review the latest month once the queue is clear.",
     };
   }
 
   return {
     href: "/expenses",
-    label: "Keep shaping the ledger",
-    description:
-      "Use the ledger to refine manual entries and allocations before you move deeper into shared-expense or reporting work.",
+    label: "Open the household ledger",
+    description: "Browse transactions and add anything missing.",
   };
-}
-
-function getWorkflowSteps(snapshot: WorkspaceHomeSnapshot): HomeStep[] {
-  const hasImportedTransactions = snapshot.workflow.transactionCount > 0;
-  const ledgerAvailable = hasImportedTransactions || snapshot.workflow.hasManualEntries;
-  const reviewBlocking = hasImportedTransactions && snapshot.workflow.reviewQueueCount > 0;
-  const latestTransactionMonthLabel = snapshot.workflow.latestTransactionMonth
-    ? formatReportMonthLabel(`${snapshot.workflow.latestTransactionMonth}-01`)
-    : null;
-
-  return [
-    {
-      title: "Setup",
-      href: "/settings",
-      status: snapshot.setup.activeMemberCount > 0 ? "complete" : "current",
-      description:
-        snapshot.setup.activeMemberCount > 0
-          ? `${snapshot.setup.activeMemberCount} active member${snapshot.setup.activeMemberCount === 1 ? "" : "s"} configured.`
-          : "Create your first active member in settings.",
-    },
-    {
-      title: "Import",
-      href: "/imports",
-      status:
-          snapshot.workflow.importCount > 0
-            ? "complete"
-          : snapshot.setup.activeMemberCount > 0
-            ? "current"
-            : "up-next",
-      description:
-        snapshot.workflow.importCount > 0
-          ? `${snapshot.workflow.importCount} bank import${snapshot.workflow.importCount === 1 ? "" : "s"} saved.`
-          : "Upload the first bank file.",
-    },
-    {
-      title: "Review",
-      href: "/imports/review",
-      status:
-        snapshot.workflow.importCount === 0
-          ? "up-next"
-          : snapshot.workflow.reviewQueueCount > 0
-            ? "current"
-            : "complete",
-      description:
-        snapshot.workflow.importCount === 0
-          ? "Classify uncertain rows after imports land."
-          : snapshot.workflow.reviewQueueCount > 0
-            ? `${snapshot.workflow.reviewQueueCount} transaction${snapshot.workflow.reviewQueueCount === 1 ? "" : "s"} still need review.`
-            : "Imported rows are no longer waiting in the queue.",
-    },
-    {
-      title: "Ledger",
-      href: "/expenses",
-      status: ledgerAvailable ? (reviewBlocking ? "up-next" : "complete") : "up-next",
-      description:
-        !ledgerAvailable
-          ? "Use the ledger after imports or manual entries exist."
-          : reviewBlocking
-            ? `${snapshot.workflow.reviewQueueCount} imported transaction${snapshot.workflow.reviewQueueCount === 1 ? "" : "s"} still need review before the ledger feels trustworthy.`
-            : "Imported and manual cashflow entries are available.",
-    },
-    {
-      title: "Recurring",
-      href: "/recurring",
-      status: snapshot.workflow.hasRecurringRules ? "complete" : "up-next",
-      description: snapshot.workflow.hasRecurringRules
-        ? `${snapshot.workflow.recurringRuleCount} recurring rule${snapshot.workflow.recurringRuleCount === 1 ? "" : "s"} configured.`
-        : "Add the monthly items imports miss.",
-    },
-    {
-      title: "Reports",
-      href: "/reports",
-      status:
-        snapshot.reporting.available && !reviewBlocking ? "complete" : "up-next",
-      description: snapshot.reporting.available
-        ? reviewBlocking
-          ? "Reports already render, but they stay secondary until imported rows are reviewed."
-          : latestTransactionMonthLabel
-            ? `${latestTransactionMonthLabel} is ready to inspect in reports.`
-            : "Adjusted-period reporting is ready to inspect."
-        : "Reports become useful once reviewed or manual items feed the summaries.",
-    },
-  ];
 }
 
 function formatActivityTimestamp(value: string) {
@@ -206,284 +67,108 @@ export default async function HomePage() {
     getWorkspaceHomeSnapshot(context),
   );
   const nextAction = getNextAction(snapshot);
-  const steps = getWorkflowSteps(snapshot);
-  const reportingTarget = snapshot.reporting.available
-    ? buildAdjustedReportTarget(snapshot.reporting.selectedMonth)
-    : null;
-  const summaryValue =
-    snapshot.reporting.available && snapshot.reporting.monthSummary
-      ? formatReportMoney(
-          snapshot.reporting.monthSummary.savingsTotal,
-          snapshot.setup.baseCurrency,
-        )
-      : `${snapshot.workflow.manualEntryCount} manual`;
+  const reportTarget = snapshot.reporting.available
+    ? buildReportTarget(snapshot.reporting.selectedMonth)
+    : "/reports";
 
   return (
     <main>
       <div className="page-shell stack">
-        <section className="hero">
-          <span className="eyebrow">Home</span>
-          <h1>Make the household workflow feel obvious.</h1>
-          <p>
-            {snapshot.workspaceName} now has a single starting point: see what is configured,
-            what needs attention next, and which surface should carry the workflow forward.
-          </p>
-          <div className="hero-actions">
-            <Link className="button" href={nextAction.href}>
-              {nextAction.label}
-            </Link>
-            <Link
-              className="button button-secondary"
-              href={reportingTarget?.href ?? "/settings"}
-            >
-              {reportingTarget?.label ?? "Open settings"}
-            </Link>
+        <section className="page-header">
+          <div>
+            <span className="eyebrow">Home</span>
+            <h1>Good to see you.</h1>
+            <p>{snapshot.workspaceName} at a glance.</p>
           </div>
+          <Link className="button button-secondary" href="/settings">
+            Settings
+          </Link>
         </section>
 
-        <section className="card">
-          <div className="summary-strip">
-            <div>
-              <strong>{snapshot.setup.activeMemberCount}</strong>
-              <span>Active household members</span>
-            </div>
-            <div>
-              <strong>{snapshot.workflow.importCount}</strong>
-              <span>Bank imports saved</span>
-            </div>
-            <div>
-              <strong>{snapshot.workflow.reviewQueueCount}</strong>
-              <span>Transactions waiting for review</span>
-            </div>
-            <div>
-              <strong>{summaryValue}</strong>
-              <span>
-                {snapshot.reporting.available ? "Selected-month savings" : "Manual entries so far"}
-              </span>
-            </div>
+        <section className="home-next card">
+          <div>
+            <span className="badge badge-warning">Next up</span>
+            <h2>{nextAction.label}</h2>
+            <p>{nextAction.description}</p>
+          </div>
+          <Link className="button" href={nextAction.href}>
+            Open
+          </Link>
+        </section>
+
+        <section className="summary-strip card" aria-label="Household summary">
+          <div>
+            <strong>{snapshot.workflow.reviewQueueCount}</strong>
+            <span>Transactions to review</span>
+          </div>
+          <div>
+            <strong>
+              {snapshot.reporting.available && snapshot.reporting.monthSummary
+                ? formatReportMoney(
+                    snapshot.reporting.monthSummary.savingsTotal,
+                    snapshot.setup.baseCurrency,
+                  )
+                : "—"}
+            </strong>
+            <span>
+              {snapshot.reporting.available
+                ? `${formatReportMonthLabel(snapshot.reporting.selectedMonth)} savings`
+                : "Current-month savings"}
+            </span>
           </div>
         </section>
 
         <section className="two-up">
-          <article className="card">
+          <article className="card stack compact">
             <div className="page-actions">
               <div>
-                <h2>Next action</h2>
-                <p className="muted-text">
-                  The app should keep nudging the next meaningful step instead of leaving you
-                  to stitch the flow together from disconnected screens.
-                </p>
+                <h2>This month</h2>
+                <p className="muted-text">A quick view of the latest reporting period.</p>
               </div>
+              <Link className="link-button" href={reportTarget}>Open reports</Link>
             </div>
-            <div className="home-focus-card">
-              <span className="badge badge-warning">Do now</span>
-              <h3>{nextAction.label}</h3>
-              <p>{nextAction.description}</p>
-              <Link className="link-button" href={nextAction.href}>
-                Go to {nextAction.label.toLowerCase()}
-              </Link>
-            </div>
-          </article>
-
-          <article className="card">
-            <div className="page-actions">
-              <div>
-                <h2>Setup state</h2>
-                <p className="muted-text">
-                  Settings is now the clear setup surface instead of a hidden side route.
-                </p>
-              </div>
-              <Link className="link-button" href="/settings">
-                Open settings
-              </Link>
-            </div>
-            <div className="stack compact">
-              <div className="info-row">
-                <strong>Base currency</strong>
-                <span>{snapshot.setup.baseCurrency}</span>
-              </div>
-              <div className="info-row">
-                <strong>Currency state</strong>
-                <span>{snapshot.setup.canUpdateBaseCurrency ? "Still editable" : "Locked"}</span>
-              </div>
-              <div className="info-row">
-                <strong>Active members</strong>
-                <span>{snapshot.setup.activeMemberCount}</span>
-              </div>
-              <div className="info-row">
-                <strong>Settlement readiness</strong>
-                <span>
-                  {snapshot.setup.activeMemberCount > 1
-                    ? "Ready for shared tracking"
-                    : "Optional if you add another person"}
-                </span>
-              </div>
-            </div>
-          </article>
-        </section>
-
-        <section className="card stack compact">
-          <div className="page-actions">
-            <div>
-              <h2>Workflow map</h2>
-              <p className="muted-text">
-                The expense-first story now reads left to right: setup, import, review, ledger,
-                recurring, then reports.
-              </p>
-            </div>
-          </div>
-          <div className="home-workflow-list">
-            {steps.map((step) => (
-              <Link className="home-workflow-step" href={step.href} key={step.title}>
-                <span className={`home-step-state home-step-state-${step.status}`}>
-                  {step.status === "complete"
-                    ? "Complete"
-                    : step.status === "current"
-                      ? "Current"
-                      : "Up next"}
-                </span>
+            {snapshot.reporting.available && snapshot.reporting.monthSummary ? (
+              <div className="summary-strip">
                 <div>
-                  <strong>{step.title}</strong>
-                  <p>{step.description}</p>
+                  <strong>{formatReportMoney(snapshot.reporting.monthSummary.incomeTotal, snapshot.setup.baseCurrency)}</strong>
+                  <span>Income</span>
                 </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-
-        <section className="two-up">
-          <article className="card stack compact">
-            <div className="page-actions">
-              <div>
-                <h2>Reporting teaser</h2>
-                <p className="muted-text">
-                  Reports stay secondary until the workflow has enough data, then they become the
-                  natural next place to validate behavior and architecture.
-                </p>
+                <div>
+                  <strong>{formatReportMoney(snapshot.reporting.monthSummary.expenseTotal, snapshot.setup.baseCurrency)}</strong>
+                  <span>Expenses</span>
+                </div>
               </div>
-              <Link className="link-button" href={reportingTarget?.href ?? "/reports"}>
-                {reportingTarget?.label ?? "Open reports"}
-              </Link>
-            </div>
-
-            {snapshot.reporting.available &&
-            snapshot.reporting.monthSummary &&
-            snapshot.reporting.rollingTwelveSummary ? (
-              <>
-                <div className="summary-strip">
-                  <div>
-                    <strong>
-                      {formatReportMoney(
-                        snapshot.reporting.monthSummary.incomeTotal,
-                        snapshot.setup.baseCurrency,
-                      )}
-                    </strong>
-                    <span>{formatReportMonthLabel(snapshot.reporting.selectedMonth)} income</span>
-                  </div>
-                  <div>
-                    <strong>
-                      {formatReportMoney(
-                        snapshot.reporting.monthSummary.expenseTotal,
-                        snapshot.setup.baseCurrency,
-                      )}
-                    </strong>
-                    <span>{formatReportMonthLabel(snapshot.reporting.selectedMonth)} expenses</span>
-                  </div>
-                  <div>
-                    <strong>
-                      {formatReportMoney(
-                        snapshot.reporting.rollingTwelveSummary.averageMonthlySavings,
-                        snapshot.setup.baseCurrency,
-                      )}
-                    </strong>
-                    <span>Rolling 12-month average savings</span>
-                  </div>
-                </div>
-                <p className="helper-text">
-                  Adjusted-period reporting is ready for{" "}
-                  {formatReportMonthLabel(snapshot.reporting.selectedMonth)}.
-                </p>
-              </>
             ) : (
-              <p className="empty-state">
-                Reports will become meaningful after reviewed imports or manual entries feed the
-                reporting pipeline.
-              </p>
+              <p className="empty-state">Reports will appear after transactions are added.</p>
             )}
           </article>
 
           <article className="card stack compact">
             <div className="page-actions">
               <div>
-                <h2>Recent bank imports</h2>
-                <p className="muted-text">
-                  Imports now read like a workflow entry point instead of a lonely utility page.
-                </p>
+                <h2>Recent activity</h2>
+                <p className="muted-text">Your latest saved bank imports.</p>
               </div>
-              <Link className="link-button" href="/imports">
-                Open imports
-              </Link>
+              <Link className="link-button" href="/imports">Open imports</Link>
             </div>
-
             {snapshot.recentActivity.latestImports.length === 0 ? (
-              <p className="empty-state">
-                No bank imports have been saved yet. The first file you upload will appear here
-                with its status and normalized transaction count.
-              </p>
+              <p className="empty-state">No imports yet.</p>
             ) : (
-              <div className="stack compact">
-                {snapshot.recentActivity.latestImports.map((item) => (
-                  <div className="activity-row" key={item.id}>
-                    <div>
-                      <strong>{item.originalFilename}</strong>
-                      <p>
-                        {item.sourceName ?? "Unknown source"} · {item.transactionCount} normalized
-                        transaction{item.transactionCount === 1 ? "" : "s"} ·{" "}
-                        {item.reviewPendingCount > 0
-                          ? `${item.reviewPendingCount} still need review`
-                          : "ready for ledger and reports"}
-                      </p>
-                    </div>
-                    <div className="activity-meta">
-                      <span className="badge badge-neutral">{item.importStatus}</span>
-                      <span>{formatActivityTimestamp(item.createdAt)}</span>
-                    </div>
+              snapshot.recentActivity.latestImports.slice(0, 3).map((item) => (
+                <div className="activity-row" key={item.id}>
+                  <div>
+                    <strong>{item.originalFilename}</strong>
+                    <p>
+                      {item.reviewPendingCount > 0
+                        ? `${item.reviewPendingCount} need review`
+                        : `${item.transactionCount} transaction${item.transactionCount === 1 ? "" : "s"} ready`}
+                    </p>
                   </div>
-                ))}
-              </div>
+                  <span className="table-note">{formatActivityTimestamp(item.createdAt)}</span>
+                </div>
+              ))
             )}
           </article>
-        </section>
-
-        <section className="card stack compact">
-          <div className="page-actions">
-            <div>
-              <h2>Notable state</h2>
-              <p className="muted-text">
-                These system cues are the main things worth checking before you decide to keep the
-                current behavior or change the architecture.
-              </p>
-            </div>
-          </div>
-
-          <div className="grid cards">
-            {snapshot.recentActivity.notableStates.map((item) => (
-              <article className="card" key={item.title}>
-                <div className="home-card-header">
-                  <h3>{item.title}</h3>
-                  <span
-                    className={`badge ${item.tone === "warning" ? "badge-warning" : "badge-neutral"}`}
-                  >
-                    {item.tone === "warning" ? "Attention" : "Healthy"}
-                  </span>
-                </div>
-                <p>{item.description}</p>
-                <Link className="link-button" href={item.href}>
-                  {item.actionLabel}
-                </Link>
-              </article>
-            ))}
-          </div>
         </section>
       </div>
     </main>
