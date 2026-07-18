@@ -285,18 +285,7 @@ export function ImportPreviewClient({
           className="stack"
           action={(formData) => startTransition(() => void handleSubmit(formData))}
         >
-          <label className="field">
-            <span>Workspace currency</span>
-            <select
-              className="input"
-              name="workspaceCurrency"
-              value={workspaceCurrency}
-              disabled
-              aria-disabled="true"
-            >
-              <option value={workspaceCurrency}>{workspaceCurrency}</option>
-            </select>
-          </label>
+          <input type="hidden" name="workspaceCurrency" value={workspaceCurrency} />
 
           <label className="field">
             <span>Statement file</span>
@@ -315,7 +304,7 @@ export function ImportPreviewClient({
               />
               <div className="file-dropzone-copy">
                 <strong>Drop a CSV or Excel export here</strong>
-                <p>Or pick a file from your computer to preview the import flow.</p>
+                <p>Supports Max and Cal CSV or Excel exports.</p>
                 <span className="file-dropzone-filename" aria-live="polite">
                   {selectedFileName}
                 </span>
@@ -324,7 +313,11 @@ export function ImportPreviewClient({
             </div>
           </label>
 
-          <button className="button" type="submit" disabled={isPending}>
+          <button
+            className="button"
+            type="submit"
+            disabled={isPending || selectedFileName === "No file selected yet"}
+          >
             {isPending ? "Parsing..." : "Preview file"}
           </button>
         </form>
@@ -358,7 +351,7 @@ export function ImportPreviewClient({
                 <p>{result.statementLabel ?? "Not detected"}</p>
               </div>
               <div>
-                <strong>Rows parsed</strong>
+                <strong>Transactions found</strong>
                 <p>{result.transactionCount}</p>
               </div>
             </div>
@@ -416,7 +409,7 @@ export function ImportPreviewClient({
 
           <article className="card">
             <h2>Previewed transactions</h2>
-            <p>Showing up to 50 parsed rows.</p>
+                <p>Showing up to 50 transactions.</p>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>

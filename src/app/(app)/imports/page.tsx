@@ -2,12 +2,6 @@ import { ImportPreviewClient } from "@/components/imports/import-preview-client"
 import { listSavedImports } from "@/features/imports/persistence";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 
-const supportedExpenseTemplates = [
-  "Max credit-card statements",
-  "Cal card exports",
-  "Cal recent transactions reports",
-];
-
 export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
@@ -21,10 +15,12 @@ export default async function ImportsPage() {
   return (
     <main>
       <div className="page-shell stack">
-        <section className="hero">
-          <span className="eyebrow">Imports</span>
-          <h1>Import bank statement</h1>
-          <p>Upload a CSV or Excel statement, preview the rows, then save the transactions.</p>
+        <section className="page-header">
+          <div>
+            <span className="eyebrow">Imports</span>
+            <h1>Add bank transactions</h1>
+            <p>Add transactions from a bank statement to your ledger.</p>
+          </div>
         </section>
 
         <ImportPreviewClient
@@ -32,22 +28,6 @@ export default async function ImportsPage() {
           workspaceCurrency={workspaceCurrency}
         />
 
-        <article className="card">
-          <div className="page-actions">
-            <div>
-              <h2>Supported parser templates</h2>
-              <p className="muted-text">
-                The current expense-first dogfooding path is intentionally narrow so it is easier
-                to judge behavior before broadening parser coverage.
-              </p>
-            </div>
-          </div>
-          <ul>
-            {supportedExpenseTemplates.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
-        </article>
       </div>
     </main>
   );

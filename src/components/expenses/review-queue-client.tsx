@@ -685,7 +685,6 @@ export function ReviewQueueClient({
                     <th>Normalized</th>
                     <th>Account</th>
                     <th>Import source</th>
-                    <th />
                   </tr>
                 </thead>
                 <tbody>
@@ -744,7 +743,6 @@ export function ReviewQueueClient({
                         </td>
                         <td>{transaction.accountDisplayName}</td>
                         <td>{transaction.importSourceName ?? "Unknown source"}</td>
-                        <td><span className="table-note">Select row</span></td>
                       </tr>
                     );
                   })}
