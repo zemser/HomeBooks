@@ -8,9 +8,10 @@ type ModalProps = {
   open: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  size?: "default" | "wide";
 };
 
-export function Modal({ title, description, open, onClose, children }: ModalProps) {
+export function Modal({ title, description, open, onClose, children, size = "default" }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -22,7 +23,7 @@ export function Modal({ title, description, open, onClose, children }: ModalProp
 
   return (
     <dialog
-      className="modal"
+      className={`modal ${size === "wide" ? "modal-wide" : ""}`}
       ref={dialogRef}
       onCancel={(event) => {
         event.preventDefault();

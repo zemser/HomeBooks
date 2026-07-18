@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { CategorySelect } from "@/components/workspaces/category-select";
+import { Modal } from "@/components/shared/modal";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import {
   formatClassificationTypeLabel,
@@ -85,12 +86,14 @@ const initialVersionState: VersionFormState = {
 export function RecurringPageClient() {
   const [data, setData] = useState<RecurringPageData | null>(null);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [createState, setCreateState] = useState<CreateRuleState>(initialCreateState);
   const [editState, setEditState] = useState<RuleFormState | null>(null);
   const [versionState, setVersionState] = useState<VersionFormState>(initialVersionState);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSavingCreate, startSavingCreate] = useTransition();
   const [isSavingEdit, startSavingEdit] = useTransition();
   const [isSavingVersion, startSavingVersion] = useTransition();
@@ -129,7 +132,7 @@ export function RecurringPageClient() {
           return current;
         }
 
-        return payload.recurringEntries[0]?.id ?? null;
+        return null;
       });
     } catch (loadError) {
       setError(
@@ -219,6 +222,7 @@ export function RecurringPageClient() {
         ? `Recurring definition saved. Applicable months through ${monthLabel(currentMonthString())} are ready for reports.`
         : `Recurring definition saved. It will start in ${monthLabel(createState.effectiveStartMonth)}.`,
     );
+    setIsCreateModalOpen(false);
   }
 
   async function handleSaveRecurringEntry() {
@@ -315,17 +319,18 @@ export function RecurringPageClient() {
   }
 
   return (
-    <section className="stack">
+    <section className="stack recurring-sections">
       {error ? <p className="status error">{error}</p> : null}
       {message ? <p className="status">{message}</p> : null}
 
       <section className="two-up">
-        <article className="card">
-          <h2>Create recurring definition</h2>
-          <p className="muted-text">
-            Saving a recurring definition now prepares the applicable months automatically,
-            so reports can pick it up without a separate generate step.
-          </p>
+        <Modal
+          open={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          title="Add recurring rule"
+          description="Create a regular income or expense for future reports."
+        >
+        <article className="stack compact">
           <div className="stack compact">
             <label className="field">
               <span>Title</span>
@@ -527,12 +532,12 @@ export function RecurringPageClient() {
             </button>
           </div>
         </article>
+        </Modal>
 
-        <article className="card">
-          <h2>Automatic report entries</h2>
+        <article className="card recurring-generated-section">
+          <h2>This month</h2>
           <p className="muted-text">
-            The app now prepares recurring rows for the current applicable month automatically.
-            Use this table to sanity-check what is feeding reports right now.
+            A compact preview of what recurring rules add to this month&apos;s reports.
           </p>
           <div className="stack compact">
             <div className="stack compact">
@@ -586,7 +591,11 @@ export function RecurringPageClient() {
 
       <section className="recurring-layout">
         <article className="card">
-          <h2>Recurring rules</h2>
+          <div className="page-actions recurring-list-header">
+            <button className="button" type="button" onClick={() => setIsCreateModalOpen(true)}>
+              Add recurring rule
+            </button>
+          </div>
           {isLoading ? <p className="status">Loading recurring entries...</p> : null}
           {!isLoading && !data?.recurringEntries.length ? (
             <p className="empty-state">
@@ -601,7 +610,10 @@ export function RecurringPageClient() {
                 className={`selector-card ${selectedEntryId === entry.id ? "selector-card-active" : ""}`}
                 key={entry.id}
                 type="button"
-                onClick={() => setSelectedEntryId(entry.id)}
+                onClick={() => {
+                  setSelectedEntryId(entry.id);
+                  setIsEditModalOpen(true);
+                }}
               >
                 <div className="selector-card-header">
                   <strong>{entry.title}</strong>
@@ -628,8 +640,14 @@ export function RecurringPageClient() {
           </div>
         </article>
 
-        <article className="card">
-          <h2>Selected rule details</h2>
+        <Modal
+          open={isEditModalOpen && Boolean(selectedEntry && editState)}
+          onClose={() => setIsEditModalOpen(false)}
+          size="wide"
+          title={selectedEntry ? `Edit ${selectedEntry.title}` : "Edit recurring rule"}
+          description="Update the rule or schedule a future change."
+        >
+        <article className="stack compact">
           {!selectedEntry || !editState ? (
             <p className="empty-state">Select a recurring rule to edit it.</p>
           ) : (
@@ -763,7 +781,7 @@ export function RecurringPageClient() {
                     {isSavingEdit ? "Saving..." : "Save recurring definition"}
                   </button>
                   <button
-                    className="button button-secondary"
+                    className="button button-danger"
                     type="button"
                     disabled={isDeleting}
                     onClick={() => startDeleting(() => void handleDeleteRecurringEntry())}
@@ -773,12 +791,13 @@ export function RecurringPageClient() {
                 </div>
               </div>
 
-              <div className="stack compact">
-                <h3>Schedule future change</h3>
-                <p className="muted-text">
-                  Use a new effective month when rent, salary, or another recurring amount
-                  changes. Existing prepared months stay unchanged.
-                </p>
+              <details className="disclosure">
+                <summary>Schedule a future change</summary>
+                <div className="stack compact">
+                  <p className="muted-text">
+                    Use a new effective month when rent, salary, or another recurring amount
+                    changes. Existing prepared months stay unchanged.
+                  </p>
                 <div className="inline-form">
                   <label className="field">
                     <span>Effective month</span>
@@ -881,15 +900,16 @@ export function RecurringPageClient() {
                   </label>
                 </div>
 
-                <button
+                  <button
                   className="button"
                   type="button"
                   disabled={isSavingVersion}
                   onClick={() => startSavingVersion(() => void handleCreateVersion())}
                 >
                   {isSavingVersion ? "Saving..." : "Add future version"}
-                </button>
-              </div>
+                  </button>
+                </div>
+              </details>
 
               <div className="stack compact">
                 <h3>Version history</h3>
@@ -925,6 +945,7 @@ export function RecurringPageClient() {
             </div>
           )}
         </article>
+        </Modal>
       </section>
     </section>
   );

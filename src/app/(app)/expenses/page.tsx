@@ -40,13 +40,12 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
   return (
     <main>
       <div className="page-shell stack">
-        <section className="hero">
-          <span className="eyebrow">Expenses</span>
-          <h1>Persisted transactions become the household ledger.</h1>
-          <p>
-            This page shows normalized imported transactions, the source account they came
-            from, and whether each row still needs a human decision.
-          </p>
+        <section className="page-header">
+          <div>
+            <span className="eyebrow">Expenses</span>
+            <h1>Household ledger</h1>
+            <p>Browse, search, and inspect transactions across all months.</p>
+          </div>
         </section>
 
         <section className="card">
@@ -54,8 +53,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
             <div>
               <h2>Ledger actions</h2>
               <p className="muted-text">
-                Use the ledger to validate normalized behavior, add one-off entries, and then move
-                forward into recurring rules or reporting.
+                Use the ledger to check transactions and their reporting details.
               </p>
             </div>
             <div className="action-row">

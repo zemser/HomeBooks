@@ -581,6 +581,27 @@ select.input:focus {
   color: var(--text);
 }
 
+.button-danger {
+  border-color: #efc5c0;
+  background: #fff8f6;
+  color: #8d2f25;
+}
+
+.disclosure {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.disclosure summary {
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.disclosure[open] summary {
+  margin-bottom: 1rem;
+}
+
 .button:disabled {
   cursor: progress;
   opacity: 0.7;
@@ -704,6 +725,8 @@ select.input:focus {
 
 .modal {
   width: min(440px, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 1.25rem;
@@ -716,10 +739,28 @@ select.input:focus {
   background: rgba(31, 42, 31, 0.32);
 }
 
+.modal-wide {
+  width: min(760px, calc(100vw - 2rem));
+}
+
 .modal-content {
   display: grid;
   gap: 1rem;
   padding: 1.25rem;
+}
+
+.modal-content > .page-actions {
+  display: flex;
+  align-items: flex-start;
+}
+
+.modal-content > .page-actions > div {
+  min-width: 0;
+}
+
+.modal-content > .page-actions .icon-button {
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .icon-button {
@@ -747,6 +788,18 @@ select.input:focus {
 }
 
 .home-next p { margin: 0; color: var(--muted); }
+
+.recurring-page-shell > .recurring-sections > .recurring-layout {
+  order: 1;
+}
+
+.recurring-page-shell > .recurring-sections > .two-up {
+  order: 2;
+}
+
+.recurring-page-shell .recurring-layout {
+  grid-template-columns: minmax(0, 1fr);
+}
 
 .summary-strip,
 .page-actions,
@@ -1002,6 +1055,13 @@ select.input:focus {
   align-items: center;
   justify-content: space-between;
 }
+
+.recurring-list-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
 
 .home-focus-card {
   display: grid;

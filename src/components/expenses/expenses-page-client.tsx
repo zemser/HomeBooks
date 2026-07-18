@@ -9,6 +9,7 @@ import {
   emptyAllocationForm,
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
+import { Modal } from "@/components/shared/modal";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import {
@@ -162,6 +163,7 @@ export function ExpensesPageClient({
   const [monthFilter, setMonthFilter] = useState("all");
   const [importFilter, setImportFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(false);
+  const [isManualEntryModalOpen, setIsManualEntryModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -377,6 +379,7 @@ export function ExpensesPageClient({
     setManualEntryAllocationForm(emptyAllocationForm);
     setError(null);
     setMessage(null);
+    setIsManualEntryModalOpen(true);
   }
 
   function clearLedgerFilters() {
@@ -436,6 +439,7 @@ export function ExpensesPageClient({
         transactionId: selectedTransactionId,
       });
       setMessage(selectedManualEntry ? "Manual entry updated." : "Manual entry created.");
+      setIsManualEntryModalOpen(false);
     } catch {
       setError("Could not save the manual entry.");
     }
@@ -579,18 +583,16 @@ export function ExpensesPageClient({
       {error ? <p className="status error">{error}</p> : null}
       {message ? <p className="status">{message}</p> : null}
 
-      <section className="two-up">
-        <article className="card">
-          <div className="page-actions">
-            <div>
-              <h2>{isEditingManualEntry ? "Edit manual entry" : "Create manual entry"}</h2>
-              <p className="muted-text">
-                One-time manual entries stay separate from recurring rules, but shared
-                expenses created here can also flow into settlements after you confirm
-                payer and split details.
-              </p>
-            </div>
-            {isEditingManualEntry ? (
+      <section className="stack">
+        <Modal
+          open={isManualEntryModalOpen}
+          onClose={() => setIsManualEntryModalOpen(false)}
+          title={isEditingManualEntry ? "Edit manual transaction" : "Add manual transaction"}
+          description="Add a one-off transaction that is not part of a bank import."
+        >
+        <article className="stack compact">
+          {isEditingManualEntry ? (
+            <div className="action-row">
               <button
                 className="button button-secondary"
                 type="button"
@@ -598,8 +600,8 @@ export function ExpensesPageClient({
               >
                 New entry
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
 
           <form
             className="stack compact"
@@ -752,7 +754,7 @@ export function ExpensesPageClient({
             </div>
           </form>
 
-          <div className="card stack compact allocation-panel">
+          {isEditingManualEntry ? <div className="card stack compact allocation-panel">
             <div>
               <h3>Adjusted-period allocation</h3>
               <p className="muted-text">
@@ -790,24 +792,26 @@ export function ExpensesPageClient({
                 totalAmount={selectedManualEntry.normalizedAmount}
               />
             )}
-          </div>
+          </div> : null}
         </article>
+        </Modal>
 
         <article className="card">
           <div className="page-actions">
             <div>
               <h2>Saved manual entries</h2>
               <p className="muted-text">
-                Select a row to edit its fields on the left and manage reporting
-                allocation inline.
+                Select a row to edit it, or add a one-off transaction when needed.
               </p>
+              <button className="button" type="button" onClick={startNewManualEntry}>
+                Add manual transaction
+              </button>
             </div>
           </div>
 
           {oneTimeManualEntries.length > 0 ? (
             <p className="helper-text">
-              Click any saved row to load it into the editor. Delete stays in the
-              actions column.
+              Click any saved row to edit it. Delete stays in the actions column.
             </p>
           ) : null}
 
@@ -841,7 +845,10 @@ export function ExpensesPageClient({
                         selectedManualEntryId === entry.id ? "table-row-active" : ""
                       }`.trim()}
                       key={entry.id}
-                      onClick={() => setSelectedManualEntryId(entry.id)}
+                      onClick={() => {
+                        setSelectedManualEntryId(entry.id);
+                        setIsManualEntryModalOpen(true);
+                      }}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
@@ -966,7 +973,7 @@ export function ExpensesPageClient({
               </select>
             </label>
             <label className="field">
-              <span>Month</span>
+                <span>Transaction month</span>
               <select
                 className="input"
                 value={monthFilter}
