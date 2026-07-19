@@ -904,6 +904,10 @@ select.input:focus {
   justify-content: start;
 }
 
+.modal-actions-end {
+  justify-content: end;
+}
+
 .inline-form {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
