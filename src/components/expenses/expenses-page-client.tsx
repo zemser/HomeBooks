@@ -167,6 +167,7 @@ export function ExpensesPageClient({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
   const [isSavingManualEntry, startSavingManualEntry] = useTransition();
   const [isDeletingManualEntry, startDeletingManualEntry] = useTransition();
   const [isSavingManualAllocation, startSavingManualAllocation] = useTransition();
@@ -258,6 +259,8 @@ export function ExpensesPageClient({
 
   const selectedManualEntry =
     oneTimeManualEntries.find((entry) => entry.id === selectedManualEntryId) ?? null;
+  const deleteConfirmationEntry =
+    oneTimeManualEntries.find((entry) => entry.id === deleteConfirmationId) ?? null;
   const selectedTransaction =
     transactions.find((transaction) => transaction.id === selectedTransactionId) ?? null;
   const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
@@ -446,12 +449,9 @@ export function ExpensesPageClient({
   }
 
   async function deleteManualEntry(manualEntryId: string) {
-    if (!window.confirm("Delete this one-time manual entry?")) {
-      return;
-    }
-
     setError(null);
     setMessage(null);
+    setDeleteConfirmationId(null);
     setPendingDeleteId(manualEntryId);
 
     try {
@@ -796,6 +796,41 @@ export function ExpensesPageClient({
         </article>
         </Modal>
 
+        <Modal
+          open={Boolean(deleteConfirmationEntry)}
+          onClose={() => setDeleteConfirmationId(null)}
+          title="Delete manual transaction?"
+          description={
+            deleteConfirmationEntry
+              ? `“${deleteConfirmationEntry.title}” will be permanently removed.`
+              : undefined
+          }
+        >
+          <div className="action-row modal-actions-end">
+            <button
+              className="button button-secondary"
+              type="button"
+              onClick={() => setDeleteConfirmationId(null)}
+            >
+              Cancel
+            </button>
+            <button
+              className="button button-danger"
+              type="button"
+              disabled={isDeletingManualEntry || !deleteConfirmationEntry}
+              onClick={() => {
+                if (deleteConfirmationEntry) {
+                  startDeletingManualEntry(() => {
+                    void deleteManualEntry(deleteConfirmationEntry.id);
+                  });
+                }
+              }}
+            >
+              {isDeletingManualEntry ? "Deleting..." : "Delete transaction"}
+            </button>
+          </div>
+        </Modal>
+
         <article className="card">
           <div className="page-actions">
             <div>
@@ -906,12 +941,10 @@ export function ExpensesPageClient({
                             className="link-button"
                             disabled={isDeletingManualEntry && pendingDeleteId === entry.id}
                             type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              startDeletingManualEntry(() => {
-                                void deleteManualEntry(entry.id);
-                              });
-                            }}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                              setDeleteConfirmationId(entry.id);
+                          }}
                           >
                             {isDeletingManualEntry && pendingDeleteId === entry.id
                               ? "Deleting..."
