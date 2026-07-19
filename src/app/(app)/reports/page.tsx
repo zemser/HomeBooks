@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { syncExpenseEventsForRange } from "@/features/reporting/expense-events";
 import {
@@ -184,32 +182,11 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   return (
     <main>
       <div className="page-shell stack">
-        <section className="hero">
-          <span className="eyebrow">Reports</span>
-          <h1>One month matters, but the story is in the trend.</h1>
-          <p>
-            Compare payment-date cash flow with adjusted-period allocations without
-            leaving the same report surface.
-          </p>
-        </section>
-
-        <section className="card">
-          <div className="page-actions">
-            <div>
-              <h2>Analysis surface</h2>
-              <p className="muted-text">
-                Reports are now the end of the main workflow, not a second home competing with the
-                rest of the app.
-              </p>
-            </div>
-            <div className="action-row">
-              <Link className="button button-secondary" href="/expenses">
-                Open ledger
-              </Link>
-              <Link className="button" href="/recurring">
-                Open recurring
-              </Link>
-            </div>
+        <section className="page-header">
+          <div>
+            <span className="eyebrow">Reports</span>
+            <h1>Understand your household money</h1>
+            <p>See this month clearly, then compare it with the longer-term trend.</p>
           </div>
         </section>
 

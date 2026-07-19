@@ -16,6 +16,7 @@ import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expens
 import {
   buildTransactionReportTargets,
   formatAllocationSummary,
+  formatClassificationTypeLabel,
   formatClassificationSummary,
   formatDecisionSourceLabel,
   formatMoneyDisplay,
@@ -779,7 +780,7 @@ export function ReviewQueueClient({
                 </p>
               ) : null}
 
-              <div className="meta-grid">
+              <div className="meta-grid review-primary-meta">
                 <div>
                   <strong>Date</strong>
                   <p>{selectedTransaction.transactionDate}</p>
@@ -788,6 +789,21 @@ export function ReviewQueueClient({
                   <strong>Merchant</strong>
                   <p>{getTransactionMerchant(selectedTransaction)}</p>
                 </div>
+                <div>
+                  <strong>Amount</strong>
+                  <p>
+                    {formatMoneyDisplay(
+                      selectedTransaction.normalizedAmount,
+                      selectedTransaction.workspaceCurrency,
+                      selectedTransaction.direction,
+                    )}
+                  </p>
+                </div>
+              </div>
+
+              <details className="disclosure">
+                <summary>Transaction details</summary>
+                <div className="meta-grid">
                 <div>
                   <strong>Original</strong>
                   <p>
@@ -820,7 +836,8 @@ export function ReviewQueueClient({
                   <strong>Import file</strong>
                   <p>{selectedTransaction.importOriginalFilename}</p>
                 </div>
-              </div>
+                </div>
+              </details>
 
               <div className="stack compact">
                 <span
@@ -878,7 +895,7 @@ export function ReviewQueueClient({
                     <option value="">Select type</option>
                     {CLASSIFICATION_TYPES.map((type) => (
                       <option key={type} value={type}>
-                        {type}
+                        {formatClassificationTypeLabel(type)}
                       </option>
                     ))}
                   </select>
@@ -975,32 +992,32 @@ export function ReviewQueueClient({
                 </div>
               ) : null}
 
-              <div className="card stack compact">
-                <div>
-                  <h3>Adjusted-period allocation</h3>
+              <details className="disclosure">
+                <summary>How should this appear in reports?</summary>
+                <div className="stack compact">
                   <p className="muted-text">
-                    Keep payment-date behavior or split this transaction across the months it
-                    actually belongs to.
+                    The payment date stays unchanged. Use this only when the expense belongs
+                    across different report months.
                   </p>
-                </div>
 
-                {!allocationEditable ? (
-                  <p className="helper-text">
-                    Save a reportable classification first to enable allocation editing.
-                  </p>
-                ) : (
-                  <AllocationEditor
-                    currency={selectedTransaction.workspaceCurrency}
-                    direction={selectedTransaction.direction}
-                    form={allocationForm}
-                    isSaving={isSavingAllocation}
-                    onSave={() => startSavingAllocation(() => void submitAllocationUpdate())}
-                    setForm={setAllocationForm}
-                    sourceDate={selectedTransaction.transactionDate}
-                    totalAmount={selectedTransaction.normalizedAmount}
-                  />
-                )}
-              </div>
+                  {!allocationEditable ? (
+                    <p className="helper-text">
+                      Save a reportable classification first to enable allocation editing.
+                    </p>
+                  ) : (
+                    <AllocationEditor
+                      currency={selectedTransaction.workspaceCurrency}
+                      direction={selectedTransaction.direction}
+                      form={allocationForm}
+                      isSaving={isSavingAllocation}
+                      onSave={() => startSavingAllocation(() => void submitAllocationUpdate())}
+                      setForm={setAllocationForm}
+                      sourceDate={selectedTransaction.transactionDate}
+                      totalAmount={selectedTransaction.normalizedAmount}
+                    />
+                  )}
+                </div>
+              </details>
             </div>
           )}
         </article>
