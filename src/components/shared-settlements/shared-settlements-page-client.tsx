@@ -405,18 +405,17 @@ export function SharedSettlementsPageClient() {
 
       {data && !data.isPairwiseReady ? (
         <article className="card">
-          <p className="status warning">{data.blockingReason}</p>
-          <p className="helper-text">
-            Shared settlements are optional. Open{" "}
+          <p className="status warning">
+            {data.blockingReason} Shared settlements are optional. Open{" "}
             <Link className="link-button" href="/settings">
               settings
             </Link>{" "}
-            if you want to add another person later.
+            to add another person later.
           </p>
         </article>
       ) : null}
 
-      {data ? (
+      {data && data.isPairwiseReady ? (
         <article className="card">
           <div className="summary-strip">
             <div>
