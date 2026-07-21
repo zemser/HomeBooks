@@ -32,6 +32,11 @@ a {
   text-decoration: none;
 }
 
+:where(a, button, input, select, summary, [tabindex]):focus-visible {
+  outline: 3px solid rgba(39, 93, 76, 0.42);
+  outline-offset: 3px;
+}
+
 main {
   min-height: 100vh;
 }
@@ -685,6 +690,7 @@ select.input:focus {
 
 .data-table {
   width: 100%;
+  min-width: 42rem;
   border-collapse: collapse;
 }
 
@@ -1238,6 +1244,11 @@ select.input:focus {
     padding-top: 1rem;
   }
 
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .hero {
     padding: 1.25rem;
   }
@@ -1262,12 +1273,14 @@ select.input:focus {
   }
 
   .report-controls-form {
+    display: grid;
     grid-template-columns: 1fr;
   }
 
   .report-controls-form .field:last-child {
     grid-column: auto;
     justify-self: stretch;
+    margin-left: 0;
   }
 
   .currency-input {

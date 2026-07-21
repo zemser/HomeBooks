@@ -606,6 +606,10 @@ export function ReviewQueueClient({
                   {queue.map((transaction) => {
                     const transactionCurrencyState =
                       getCurrencyNormalizationDisplayState(transaction);
+                    const merchant = getTransactionMerchant(transaction);
+                    const description = transaction.description.trim();
+                    const showDescription =
+                      description.length > 0 && description.toLowerCase() !== merchant.trim().toLowerCase();
 
                     return (
                       <tr
@@ -626,13 +630,13 @@ export function ReviewQueueClient({
                           checked={selectedIds.includes(transaction.id)}
                             onClick={(event) => event.stopPropagation()}
                             onChange={() => toggleSelectedTransaction(transaction.id)}
-                            aria-label={`Select ${getTransactionMerchant(transaction)}`}
+                            aria-label={`Select ${merchant}`}
                           />
                         </td>
                         <td>{transaction.transactionDate}</td>
                         <td>
-                          <strong>{getTransactionMerchant(transaction)}</strong>
-                          <div className="table-note">{transaction.description}</div>
+                          <strong>{merchant}</strong>
+                          {showDescription ? <div className="table-note">{description}</div> : null}
                         </td>
                         <td>
                           <div className="stack compact">
