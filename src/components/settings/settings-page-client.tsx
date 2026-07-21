@@ -60,6 +60,7 @@ export function SettingsPageClient({
   const [draftCategoryNames, setDraftCategoryNames] = useState<Record<string, string>>(
     () => buildCategoryDrafts(initialCategories),
   );
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [baseCurrencyDraft, setBaseCurrencyDraft] = useState(initialSettings.baseCurrency);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newMemberName, setNewMemberName] = useState("");
@@ -202,6 +203,7 @@ export function SettingsPageClient({
     }
 
     await loadCategories();
+    setEditingCategoryId(null);
     setMessage("Workspace category updated.");
   }
 
@@ -311,7 +313,7 @@ export function SettingsPageClient({
         </div>
 
         <form
-          className="inline-form"
+          className="inline-form currency-form"
           onSubmit={(event) => {
             event.preventDefault();
             startSaving(() => {
@@ -322,7 +324,7 @@ export function SettingsPageClient({
           <label className="field">
             <span>Base currency</span>
             <input
-              className="input"
+              className="input currency-input"
               value={baseCurrencyDraft}
               onChange={(event) => setBaseCurrencyDraft(event.target.value.toUpperCase())}
               placeholder="ILS"
@@ -419,36 +421,72 @@ export function SettingsPageClient({
                   return (
                     <tr key={category.id}>
                       <td>
-                        <input
-                          className="input"
-                          value={draftCategoryName}
-                          disabled={pendingCategoryId === category.id}
-                          onChange={(event) =>
-                            setDraftCategoryNames((current) => ({
-                              ...current,
-                              [category.id]: event.target.value,
-                            }))
-                          }
-                        />
+                        {editingCategoryId === category.id ? (
+                          <input
+                            className="input"
+                            value={draftCategoryName}
+                            disabled={pendingCategoryId === category.id}
+                            onChange={(event) =>
+                              setDraftCategoryNames((current) => ({
+                                ...current,
+                                [category.id]: event.target.value,
+                              }))
+                            }
+                          />
+                        ) : (
+                          <strong>{category.name}</strong>
+                        )}
                       </td>
                       <td>
                         <div className="action-row">
-                          <button
-                            className="button"
-                            type="button"
-                            disabled={
-                              pendingCategoryId === category.id
-                              || normalizedDraftCategoryName.length === 0
-                              || !hasPendingChanges
-                            }
-                            onClick={() =>
-                              startSaving(() => {
-                                void handleUpdateCategory(category.id, draftCategoryName);
-                              })
-                            }
-                          >
-                            {pendingCategoryId === category.id ? "Saving..." : "Save name"}
-                          </button>
+                          {editingCategoryId === category.id ? (
+                            <>
+                              <button
+                                className="button"
+                                type="button"
+                                disabled={
+                                  pendingCategoryId === category.id
+                                  || normalizedDraftCategoryName.length === 0
+                                  || !hasPendingChanges
+                                }
+                                onClick={() =>
+                                  startSaving(() => {
+                                    void handleUpdateCategory(category.id, draftCategoryName);
+                                  })
+                                }
+                              >
+                                {pendingCategoryId === category.id ? "Saving..." : "Save name"}
+                              </button>
+                              <button
+                                className="button button-secondary"
+                                type="button"
+                                disabled={pendingCategoryId === category.id}
+                                onClick={() => {
+                                  setDraftCategoryNames((current) => ({
+                                    ...current,
+                                    [category.id]: category.name,
+                                  }));
+                                  setEditingCategoryId(null);
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              className="link-button"
+                              type="button"
+                              onClick={() => {
+                                setDraftCategoryNames((current) => ({
+                                  ...current,
+                                  [category.id]: category.name,
+                                }));
+                                setEditingCategoryId(category.id);
+                              }}
+                            >
+                              Edit
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -582,7 +620,7 @@ export function SettingsPageClient({
                       <strong>{member.displayName}</strong>
                       <div className="table-note">Account name: {member.userDisplayName}</div>
                     </td>
-                    <td>
+                    <td className="member-status-cell">
                       <span className={`badge ${member.isActive ? "badge-neutral" : "badge-warning"}`}>
                         {member.isActive ? "Active" : "Inactive"}
                       </span>

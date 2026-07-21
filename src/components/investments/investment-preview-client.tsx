@@ -874,7 +874,7 @@ export function InvestmentPreviewClient({
         </>
       ) : null}
 
-      <article className="card stack compact">
+      {investmentAccountHoldings.length > 0 ? <article className="card stack compact">
         <div>
           <h2>Latest saved holdings</h2>
           <p className="muted-text">
@@ -884,10 +884,7 @@ export function InvestmentPreviewClient({
           </p>
         </div>
 
-        {investmentAccountHoldings.length === 0 ? (
-          <p className="empty-state">No investment holdings snapshots have been saved yet.</p>
-        ) : (
-          <div className="stack">
+        <div className="stack">
             {investmentAccountHoldings.map((account) => (
               <article className="card stack compact" key={account.accountId}>
                 <div className="page-actions">
@@ -968,10 +965,9 @@ export function InvestmentPreviewClient({
               </article>
             ))}
           </div>
-        )}
-      </article>
+      </article> : null}
 
-      <article className="card stack compact">
+      {investmentActivities.length > 0 ? <article className="card stack compact">
         <div>
           <h2>Recent saved activity rows</h2>
           <p className="muted-text">
@@ -981,10 +977,7 @@ export function InvestmentPreviewClient({
           </p>
         </div>
 
-        {investmentActivities.length === 0 ? (
-          <p className="empty-state">No investment activity rows have been saved yet.</p>
-        ) : (
-          <div className="table-wrap">
+        <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
@@ -1027,8 +1020,7 @@ export function InvestmentPreviewClient({
               </tbody>
             </table>
           </div>
-        )}
-      </article>
+      </article> : null}
 
       <article className="card stack compact">
         <div className="page-actions">
@@ -1330,15 +1322,9 @@ export function InvestmentPreviewClient({
             )}
           </article>
         </>
-      ) : (
-        <article className="card">
-          <p className="empty-state">
-            Upload an investment workbook to see the parsed snapshot or activity preview here.
-          </p>
-        </article>
-      )}
+      ) : null}
 
-      <article className="card stack compact">
+      {investmentImports.length > 0 ? <article className="card stack compact">
         <div>
           <h2>Investment import history</h2>
           <p className="muted-text">
@@ -1348,10 +1334,7 @@ export function InvestmentPreviewClient({
           </p>
         </div>
 
-        {investmentImports.length === 0 ? (
-          <p className="empty-state">No investment imports have been saved yet.</p>
-        ) : (
-          <div className="stack">
+        <div className="stack">
             {investmentImports.map((item) => (
               <div className="card" key={item.id}>
                 <div className="meta-grid">
@@ -1396,8 +1379,7 @@ export function InvestmentPreviewClient({
               </div>
             ))}
           </div>
-        )}
-      </article>
+      </article> : null}
     </section>
   );
 }

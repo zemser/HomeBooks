@@ -697,6 +697,10 @@ select.input:focus {
   font-size: 0.95rem;
 }
 
+.member-status-cell {
+  vertical-align: middle !important;
+}
+
 .data-table th {
   color: var(--muted);
   font-weight: 700;
@@ -910,6 +914,15 @@ select.input:focus {
 
 .inline-form {
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.currency-form {
+  grid-template-columns: minmax(0, 8rem) auto;
+  justify-content: start;
+}
+
+.currency-input {
+  max-width: 8rem;
 }
 
 .review-layout {
