@@ -21,11 +21,8 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
       <div className="page-shell auth-shell">
         <section className="auth-hero">
           <span className="eyebrow">Private access</span>
-          <h1>Sign in to your household workspace.</h1>
-          <p>
-            Hosted mode uses Supabase Auth while the finance data stays behind the app workspace
-            model.
-          </p>
+          <h1>Welcome back to your household workspace.</h1>
+          <p>Sign in to manage shared household money.</p>
         </section>
 
         {params?.error ? <p className="status error">{params.error}</p> : null}

@@ -46,13 +46,12 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
   return (
     <main>
       <div className="page-shell stack">
-        <section className="hero">
-          <span className="eyebrow">First setup</span>
-          <h1>Create your household workspace.</h1>
-          <p>
-            This connects your Supabase identity to the app-level user, workspace, and owner member
-            records.
-          </p>
+        <section className="page-header">
+          <div>
+            <span className="eyebrow">First setup</span>
+            <h1>Create your household workspace</h1>
+            <p>Choose a name, your display name, and the currency your household uses.</p>
+          </div>
         </section>
 
         {params?.error ? <p className="status error">{params.error}</p> : null}
@@ -81,7 +80,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
           <label className="field">
             <span>Base currency</span>
             <input
-              className="input"
+              className="input currency-input"
               defaultValue="ILS"
               maxLength={3}
               minLength={3}

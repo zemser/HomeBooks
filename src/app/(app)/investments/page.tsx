@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 import { InvestmentPreviewClient } from "@/components/investments/investment-preview-client";
 import {
   listInvestmentActivities,
@@ -34,33 +32,11 @@ export default async function InvestmentsPage() {
   return (
     <main>
       <div className="page-shell stack">
-        <section className="hero">
-          <span className="eyebrow">Investments</span>
-          <h1>Preview, save, and review investment snapshots and activity imports.</h1>
-          <p>
-            Upload an Excellence Excel file to inspect holdings metadata, activity rows,
-            warnings, and household-level portfolio cues before you save the import into
-            the workspace.
-          </p>
-        </section>
-
-        <section className="card">
-          <div className="page-actions">
-            <div>
-              <h2>Secondary beta area</h2>
-              <p className="muted-text">
-                Investments stay accessible in the main shell, but they deliberately sit outside
-                the primary expense workflow until their reporting surfaces mature.
-              </p>
-            </div>
-            <div className="action-row">
-              <Link className="button button-secondary" href="/reports">
-                Open reports
-              </Link>
-              <Link className="button" href="/">
-                Back home
-              </Link>
-            </div>
+        <section className="page-header">
+          <div>
+            <span className="eyebrow">Investments · Beta</span>
+            <h1>Investment snapshots</h1>
+            <p>Preview a workbook, then save the latest holdings and activity.</p>
           </div>
         </section>
 
