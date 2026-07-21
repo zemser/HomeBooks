@@ -8,7 +8,6 @@ import {
   normalizeReportingModeInput,
   type ReportingMonthBucket,
   type ReportingPeriodSummary,
-  type ReportingViewMode,
 } from "@/features/reporting/monthly-report";
 import {
   formatClassificationTypeLabel,
@@ -32,14 +31,6 @@ type ReportsPageProps = {
     mode?: string | string[];
   }>;
 };
-
-function getModeDescription(reportingMode: ReportingViewMode) {
-  if (reportingMode === "allocated_period") {
-    return "Adjusted-period reporting reads expense events and month allocations. Items without explicit coverage rules currently allocate into a single month.";
-  }
-
-  return "Payment-date reporting reads imported transaction dates and manual-entry event dates directly.";
-}
 
 function formatFxAmount(amount: number | null, currency: string | null) {
   return amount === null || currency === null ? null : formatReportMoney(amount, currency);
@@ -191,16 +182,18 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
         </section>
 
         <section className="card">
-          <div className="page-actions">
+          <div className="report-controls-header">
             <div>
               <h2>{formatReportMonthLabel(report.summary.selectedMonth)}</h2>
               <p className="muted-text">
                 {formatReportingModeLabel(report.summary.reportingMode)} view.
                 {" "}
-                {getModeDescription(report.summary.reportingMode)}
+                {report.summary.reportingMode === "allocated_period"
+                  ? "Spread expenses across the months they cover."
+                  : "Use the date each transaction was recorded."}
               </p>
             </div>
-            <form className="inline-form" method="GET">
+            <form className="inline-form report-controls-form" method="GET">
               <label className="field">
                 <span>Selected month</span>
                 <input

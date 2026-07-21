@@ -847,6 +847,51 @@ select.input:focus {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.report-controls-header {
+  display: grid;
+  gap: 1.5rem;
+  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.report-controls-header > div {
+  min-width: 0;
+}
+
+.report-controls-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.report-controls-form .field {
+  flex: 1 1 12rem;
+  min-width: 12rem;
+}
+
+.report-controls-form .field:last-child {
+  flex: 0 0 auto;
+}
+
+.ledger-action-header {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.ledger-action-header > div:first-child {
+  min-width: 0;
+}
+
+.ledger-action-header .action-row {
+  flex: 0 0 auto;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
 .settings-shell .page-actions {
   align-items: center;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1094,6 +1139,10 @@ select.input:focus {
   margin: 0;
 }
 
+.home-card-header h2 {
+  margin: 0;
+}
+
 .home-focus-card p,
 .activity-row p,
 .home-workflow-step p {
@@ -1206,6 +1255,25 @@ select.input:focus {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .meta-grid,
+  .page-actions,
+  .currency-form {
+    grid-template-columns: 1fr;
+  }
+
+  .report-controls-form {
+    grid-template-columns: 1fr;
+  }
+
+  .report-controls-form .field:last-child {
+    grid-column: auto;
+    justify-self: stretch;
+  }
+
+  .currency-input {
+    max-width: none;
+  }
+
   .file-dropzone {
     grid-template-columns: 1fr;
   }
@@ -1220,6 +1288,20 @@ select.input:focus {
   .home-card-header,
   .composition-row-header {
     grid-template-columns: 1fr;
+  }
+
+  .home-card-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .ledger-action-header {
+    flex-direction: column;
+  }
+
+  .ledger-action-header .action-row {
+    margin-left: 0;
+    justify-content: flex-start;
   }
 
   .activity-row,
@@ -1286,6 +1368,18 @@ select.input:focus {
 
   .page-header {
     align-items: flex-start;
+  }
+
+  .report-controls-header {
+    grid-template-columns: 1fr;
+  }
+
+  .report-controls-form {
+    justify-content: flex-start;
+  }
+
+  .report-controls-form .field:last-child {
+    margin-left: auto;
   }
 
   .home-next {

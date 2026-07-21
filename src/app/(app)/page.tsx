@@ -120,7 +120,7 @@ export default async function HomePage() {
 
         <section className="two-up">
           <article className="card stack compact">
-            <div className="page-actions">
+            <div className="home-card-header">
               <div>
                 <h2>This month</h2>
                 <p className="muted-text">A quick view of the latest reporting period.</p>
@@ -144,7 +144,7 @@ export default async function HomePage() {
           </article>
 
           <article className="card stack compact">
-            <div className="page-actions">
+            <div className="home-card-header">
               <div>
                 <h2>Recent activity</h2>
                 <p className="muted-text">Your latest saved bank imports.</p>

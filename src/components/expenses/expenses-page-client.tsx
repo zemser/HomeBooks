@@ -832,23 +832,12 @@ export function ExpensesPageClient({
         </Modal>
 
         <article className="card">
-          <div className="page-actions">
-            <div>
-              <h2>Saved manual entries</h2>
-              <p className="muted-text">
-                Select a row to edit it, or add a one-off transaction when needed.
-              </p>
-              <button className="button" type="button" onClick={startNewManualEntry}>
-                Add manual transaction
-              </button>
-            </div>
+          <div className="home-card-header">
+            <h2>Saved manual entries</h2>
+            <button className="button" type="button" onClick={startNewManualEntry}>
+              Add manual transaction
+            </button>
           </div>
-
-          {oneTimeManualEntries.length > 0 ? (
-            <p className="helper-text">
-              Click any saved row to edit it. Delete stays in the actions column.
-            </p>
-          ) : null}
 
           {isLoading ? <p className="status">Loading manual entries...</p> : null}
 
@@ -896,16 +885,6 @@ export function ExpensesPageClient({
                       <td>
                         <strong>{entry.title}</strong>
                         <div className="table-note">{entry.payerMemberName ?? "Unassigned"}</div>
-                        <button
-                          className="link-button"
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setSelectedManualEntryId(entry.id);
-                          }}
-                        >
-                          {selectedManualEntryId === entry.id ? "Editing now" : "Edit this entry"}
-                        </button>
                       </td>
                       <td>{entry.eventKind}</td>
                       <td>{formatMoneyDisplay(entry.normalizedAmount, entry.workspaceCurrency)}</td>
@@ -933,9 +912,10 @@ export function ExpensesPageClient({
                             onClick={(event) => {
                               event.stopPropagation();
                               setSelectedManualEntryId(entry.id);
+                              setIsManualEntryModalOpen(true);
                             }}
                           >
-                            {selectedManualEntryId === entry.id ? "Editing" : "Edit"}
+                            Edit
                           </button>
                           <button
                             className="link-button"
@@ -962,7 +942,7 @@ export function ExpensesPageClient({
       </section>
 
       <article className="card">
-        <div className="page-actions">
+        <div className="ledger-action-header">
           <div>
             <h2>Imported transactions</h2>
             <p className="muted-text">
