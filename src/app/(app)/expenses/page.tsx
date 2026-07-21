@@ -49,7 +49,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
         </section>
 
         <section className="card">
-          <div className="page-actions">
+          <div className="ledger-action-header">
             <div>
               <h2>Ledger actions</h2>
               <p className="muted-text">

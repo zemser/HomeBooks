@@ -106,6 +106,19 @@ function describeImportNextStep(item: SavedImportSummary) {
   return "Saved without normalized transactions";
 }
 
+function formatTemplateName(value: string | null | undefined) {
+  switch (value) {
+    case "max_credit_statement":
+      return "Max credit-card statement";
+    case "cal_card_export":
+      return "Cal card export";
+    case "cal_recent_transactions_report":
+      return "Cal recent transactions report";
+    default:
+      return value ?? "Unknown template";
+  }
+}
+
 export function ImportPreviewClient({
   savedImports = [],
   workspaceCurrency: initialWorkspaceCurrency,
@@ -300,6 +313,11 @@ export function ImportPreviewClient({
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   setSelectedFileName(file ? file.name : "No file selected yet");
+
+                  if (file && event.currentTarget.form) {
+                    const formData = new FormData(event.currentTarget.form);
+                    startTransition(() => void handleSubmit(formData));
+                  }
                 }}
               />
               <div className="file-dropzone-copy">
@@ -313,13 +331,13 @@ export function ImportPreviewClient({
             </div>
           </label>
 
-          <button
-            className="button"
-            type="submit"
-            disabled={isPending || selectedFileName === "No file selected yet"}
-          >
-            {isPending ? "Parsing..." : "Preview file"}
-          </button>
+          <p className="helper-text" aria-live="polite">
+            {isPending
+              ? "Previewing file..."
+              : selectedFileName === "No file selected yet"
+                ? "Choose a file to preview its transactions."
+                : "Preview ready below. Review it before saving the import."}
+          </p>
         </form>
 
         {error ? (
@@ -331,12 +349,12 @@ export function ImportPreviewClient({
 
       {result ? (
         <section className="stack">
-          <article className="card">
+          <article className="card stack">
             <h2>Detected statement</h2>
             <div className="meta-grid">
               <div>
                 <strong>Template</strong>
-                <p>{result.detectedTemplate.id}</p>
+                <p>{formatTemplateName(result.detectedTemplate.id)}</p>
               </div>
               <div>
                 <strong>Reason</strong>
@@ -409,7 +427,7 @@ export function ImportPreviewClient({
 
           <article className="card">
             <h2>Previewed transactions</h2>
-                <p>Showing up to 50 transactions.</p>
+            <p>Showing up to 50 transactions.</p>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -498,7 +516,7 @@ export function ImportPreviewClient({
                   <div>
                     <h3>{savedImport.originalFilename}</h3>
                     <p className="muted-text">
-                      {savedImport.sourceName ?? "Unknown source"} · {savedImport.templateName ?? "Unknown template"} ·{" "}
+                      {savedImport.sourceName ?? "Unknown source"} · {formatTemplateName(savedImport.templateName)} ·{" "}
                       {formatImportActivityRange(savedImport)}
                     </p>
                   </div>
