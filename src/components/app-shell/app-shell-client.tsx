@@ -41,6 +41,7 @@ function MobileNavItem({
     <Link
       className={`app-mobile-nav-item ${active ? "app-mobile-nav-item-active" : ""}`}
       href={item.href}
+      aria-current={active ? "page" : undefined}
       prefetch={false}
       onMouseEnter={() => onIntent(item.href)}
       onFocus={() => onIntent(item.href)}
@@ -115,6 +116,7 @@ export function AppShellClient({
                       <Link
                         className={`app-nav-link ${active ? "app-nav-link-active" : ""}`}
                         href={item.href}
+                        aria-current={active ? "page" : undefined}
                         prefetch={false}
                         onMouseEnter={() => prefetchOnIntent(item.href)}
                         onFocus={() => prefetchOnIntent(item.href)}

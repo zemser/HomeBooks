@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 
 type ModalProps = {
   title: string;
@@ -13,6 +13,8 @@ type ModalProps = {
 
 export function Modal({ title, description, open, onClose, children, size = "default" }: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  const descriptionId = useId();
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -25,6 +27,8 @@ export function Modal({ title, description, open, onClose, children, size = "def
     <dialog
       className={`modal ${size === "wide" ? "modal-wide" : ""}`}
       ref={dialogRef}
+      aria-labelledby={titleId}
+      aria-describedby={description ? descriptionId : undefined}
       onCancel={(event) => {
         event.preventDefault();
         onClose();
@@ -34,8 +38,8 @@ export function Modal({ title, description, open, onClose, children, size = "def
       <div className="modal-content">
         <div className="page-actions">
           <div>
-            <h2>{title}</h2>
-            {description ? <p className="muted-text">{description}</p> : null}
+            <h2 id={titleId}>{title}</h2>
+            {description ? <p className="muted-text" id={descriptionId}>{description}</p> : null}
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
             ×
