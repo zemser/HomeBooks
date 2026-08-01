@@ -100,7 +100,11 @@ function createPool(connectionString: string) {
     // but avoid pg's default of 10 connections per app process.
     max: getPoolMax(),
     idleTimeoutMillis: 10_000,
-    connectionTimeoutMillis: 10_000,
+    // A sleeping hosted database or a busy serverless function can take longer
+    // than ten seconds to hand out a connection. Failing the whole app shell
+    // during that window makes a transient database wake-up look like an app
+    // error. Keep this configurable for deployments with tighter limits.
+    connectionTimeoutMillis: getConnectionTimeoutMillis(),
   });
   const originalConnect = nextPool.connect.bind(nextPool);
 
@@ -138,6 +142,18 @@ function createPool(connectionString: string) {
   }) as Pool["query"];
 
   return nextPool;
+}
+
+function getConnectionTimeoutMillis() {
+  const configuredTimeout = Number(
+    process.env.FINAPP_DB_CONNECTION_TIMEOUT_MS ?? "30000",
+  );
+
+  if (!Number.isInteger(configuredTimeout) || configuredTimeout < 1_000) {
+    throw new Error("FINAPP_DB_CONNECTION_TIMEOUT_MS must be an integer of at least 1000.");
+  }
+
+  return configuredTimeout;
 }
 
 function getPoolMax() {

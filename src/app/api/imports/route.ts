@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import {
@@ -60,6 +61,14 @@ export async function POST(request: Request) {
 
       return { result, savedImport };
     });
+
+    // The import changes data rendered by the app shell, dashboard, imports
+    // page, review queue, and ledger. Invalidate all of those server-rendered
+    // snapshots before the client navigates to another tab.
+    revalidatePath("/");
+    revalidatePath("/imports");
+    revalidatePath("/imports/review");
+    revalidatePath("/expenses");
 
     return NextResponse.json(
       {
