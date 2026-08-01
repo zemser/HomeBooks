@@ -155,6 +155,13 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
 
   const context = await runWithDatabaseUser(authUser.id, () =>
     db.transaction(async (tx) => {
+      // Set the RLS identity on this exact transaction connection before the
+      // first protected query. The request context wrapper normally keeps this
+      // setting in sync, but the bootstrap insert must not depend on a later
+      // query hook or on async-context propagation through the framework.
+      await tx.execute(
+        sql`select set_config('app.current_user_id', ${authUser.id}, false)`,
+      );
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authUser.id}))`);
 
       let user = await tx.query.users.findFirst({
