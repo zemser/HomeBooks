@@ -1,8 +1,9 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
   financialAccounts,
+  classificationRules,
   imports,
   importSources,
   transactionClassifications,
@@ -12,17 +13,26 @@ import {
 } from "@/db/schema";
 import { listTransactionAllocationStates } from "@/features/expenses/allocation";
 import type {
+  ClassificationSuggestion,
   ExpenseTransactionItem,
   ReviewQueueImportSummary,
   ReviewQueueResponse,
   ReviewQueueSummary,
   WorkspaceMemberOption,
 } from "@/features/expenses/types";
-import { listWorkspaceCategoryNames } from "@/features/workspaces/categories";
+import {
+  buildExactMerchantSuggestions,
+  normalizeMerchantRuleValue,
+} from "@/features/expenses/suggestions";
+import { filterAndSortReviewQueue } from "@/features/expenses/review-filtering";
+import { defaultReviewQuery, type ReviewQuery } from "@/features/expenses/review-query";
+import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
 type RawTransactionRow = {
   id: string;
+  accountId: string;
+  importId: string;
   transactionDate: string;
   bookingDate: string | null;
   description: string;
@@ -47,6 +57,7 @@ type RawTransactionRow = {
     | "ignore"
     | null;
   category: string | null;
+  categoryId: string | null;
   memberOwnerId: string | null;
   decidedBy: "rule" | "user" | "system_default" | null;
   reviewedAt: Date | null;
@@ -95,6 +106,8 @@ async function mapTransactionRows(
 
   return rows.map<ExpenseTransactionItem>((row) => ({
     id: row.id,
+    accountId: row.accountId,
+    importId: row.importId,
     transactionDate: row.transactionDate,
     bookingDate: row.bookingDate,
     description: row.description,
@@ -114,6 +127,7 @@ async function mapTransactionRows(
       ? {
           classificationType: row.classificationType,
           category: row.category,
+          categoryId: row.categoryId,
           memberOwnerId: row.memberOwnerId,
           memberOwnerName: row.memberOwnerId
             ? memberNamesById.get(row.memberOwnerId) ?? null
@@ -123,6 +137,9 @@ async function mapTransactionRows(
         }
       : null,
     allocation: allocationStatesByTransactionId.get(row.id) ?? null,
+    suggestion: null,
+    similarQueueCount: 0,
+    exactRuleExists: false,
   }));
 }
 
@@ -146,6 +163,8 @@ async function listTransactionsByWorkspace(input: {
   const rows = await db
     .select({
       id: transactions.id,
+      accountId: transactions.accountId,
+      importId: transactions.importId,
       transactionDate: transactions.transactionDate,
       bookingDate: transactions.bookingDate,
       description: transactions.description,
@@ -163,6 +182,7 @@ async function listTransactionsByWorkspace(input: {
       importOriginalFilename: imports.originalFilename,
       classificationType: transactionClassifications.classificationType,
       category: transactionClassifications.category,
+      categoryId: transactionClassifications.categoryId,
       memberOwnerId: transactionClassifications.memberOwnerId,
       decidedBy: transactionClassifications.decidedBy,
       reviewedAt: transactionClassifications.reviewedAt,
@@ -215,33 +235,199 @@ export async function listWorkspaceMembers(
 
 export async function listReviewQueue(
   context: CurrentWorkspaceContext,
-  transactionId?: string,
+  query: ReviewQuery = defaultReviewQuery(),
 ): Promise<ReviewQueueResponse> {
-  const [queue, focusTransaction, members, categories, summary] = await Promise.all([
+  const [rawQueue, focusTransaction, members, categoryCatalog, recentCategories, summary] = await Promise.all([
     listTransactionsByWorkspace({
       context,
       workspaceId: context.workspaceId,
       onlyUnclassified: true,
     }),
-    transactionId
+    query.transactionId
       ? listTransactionsByWorkspace({
           context,
           workspaceId: context.workspaceId,
-          transactionId,
+          transactionId: query.transactionId,
         }).then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
     listWorkspaceMembers(context),
-    listWorkspaceCategoryNames(context),
+    listWorkspaceCategories(context),
+    listRecentReviewCategories(context),
     getReviewQueueSummary(context),
   ]);
 
+  const merchantValues = [
+    ...rawQueue.map((transaction) => transaction.merchantRaw),
+    focusTransaction?.merchantRaw ?? null,
+  ];
+  const [suggestionsByMerchant, existingExactRuleValues] = await Promise.all([
+    listHistoricalClassificationSuggestions(context, merchantValues),
+    listExistingExactRuleValues(context, merchantValues),
+  ]);
+  const queueCountByMerchant = new Map<string, number>();
+  rawQueue.forEach((transaction) => {
+    const merchant = transaction.merchantRaw?.trim();
+    if (!merchant) return;
+    const key = normalizeMerchantRuleValue(merchant);
+    queueCountByMerchant.set(key, (queueCountByMerchant.get(key) ?? 0) + 1);
+  });
+  const enrichedQueue = rawQueue.map((transaction) => {
+    const merchant = transaction.merchantRaw?.trim();
+    if (!merchant) return transaction;
+    const key = normalizeMerchantRuleValue(merchant);
+    return {
+      ...transaction,
+      suggestion: suggestionsByMerchant.get(key) ?? null,
+      similarQueueCount: Math.max((queueCountByMerchant.get(key) ?? 1) - 1, 0),
+      exactRuleExists: existingExactRuleValues.has(key),
+    };
+  });
+  const enrichedFocusTransaction = focusTransaction?.merchantRaw?.trim()
+    ? {
+        ...focusTransaction,
+        exactRuleExists: existingExactRuleValues.has(
+          normalizeMerchantRuleValue(focusTransaction.merchantRaw),
+        ),
+      }
+    : focusTransaction;
+  const filteredQueue = filterAndSortReviewQueue(enrichedQueue, query);
+  const filteredCount = filteredQueue.length;
+  const totalPages = Math.max(Math.ceil(filteredCount / query.pageSize), 1);
+  const page = Math.min(query.page, totalPages);
+  const pageStart = (page - 1) * query.pageSize;
+  const queue = filteredQueue.slice(pageStart, pageStart + query.pageSize);
+  const months = Array.from(
+    new Set(rawQueue.map((transaction) => transaction.transactionDate.slice(0, 7))),
+  ).sort((left, right) => right.localeCompare(left));
+  const importLabels = new Map<string, string>();
+  const accountLabels = new Map<string, string>();
+  rawQueue.forEach((transaction) => {
+    importLabels.set(transaction.importId, transaction.importOriginalFilename);
+    accountLabels.set(transaction.accountId, transaction.accountDisplayName);
+  });
+  const categories = categoryCatalog.map((category) => category.name);
+
   return {
     queue,
-    focusTransaction,
+    focusTransaction: enrichedFocusTransaction,
     members,
     categories,
+    categoryCatalog,
+    recentCategories,
     summary,
+    pagination: {
+      page,
+      pageSize: query.pageSize,
+      filteredCount,
+      totalPages,
+    },
+    filterOptions: {
+      months,
+      imports: Array.from(importLabels, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)),
+      accounts: Array.from(accountLabels, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)),
+    },
   };
+}
+
+async function listExistingExactRuleValues(
+  context: CurrentWorkspaceContext,
+  merchantValues: Array<string | null>,
+) {
+  const normalizedMerchants = Array.from(
+    new Set(
+      merchantValues
+        .map((merchant) => merchant?.trim())
+        .filter((merchant): merchant is string => Boolean(merchant))
+        .map(normalizeMerchantRuleValue),
+    ),
+  );
+  if (normalizedMerchants.length === 0) return new Set<string>();
+
+  const db = getDb();
+  const rows = await db
+    .select({ matchValue: classificationRules.matchValue })
+    .from(classificationRules)
+    .where(
+      and(
+        eq(classificationRules.workspaceId, context.workspaceId),
+        eq(classificationRules.matchType, "exact"),
+        inArray(classificationRules.matchValue, normalizedMerchants),
+      ),
+    );
+  return new Set(rows.map((row) => row.matchValue));
+}
+
+async function listRecentReviewCategories(context: CurrentWorkspaceContext) {
+  const db = getDb();
+  const rows = await db
+    .select({ category: transactionClassifications.category })
+    .from(transactionClassifications)
+    .innerJoin(transactions, eq(transactions.id, transactionClassifications.transactionId))
+    .where(
+      and(
+        eq(transactions.workspaceId, context.workspaceId),
+        isNotNull(transactionClassifications.category),
+      ),
+    )
+    .orderBy(desc(transactionClassifications.reviewedAt), desc(transactionClassifications.updatedAt))
+    .limit(30);
+
+  const seen = new Set<string>();
+  const recent: string[] = [];
+  rows.forEach((row) => {
+    const category = row.category?.trim();
+    if (!category) return;
+    const key = category.toLocaleLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    recent.push(category);
+  });
+  return recent.slice(0, 6);
+}
+
+async function listHistoricalClassificationSuggestions(
+  context: CurrentWorkspaceContext,
+  merchantValues: Array<string | null>,
+) {
+  const normalizedMerchants = Array.from(
+    new Set(
+      merchantValues
+        .map((merchant) => merchant?.trim())
+        .filter((merchant): merchant is string => Boolean(merchant))
+        .map(normalizeMerchantRuleValue),
+    ),
+  );
+  if (normalizedMerchants.length === 0) return new Map<string, ClassificationSuggestion>();
+
+  const db = getDb();
+  const rows = await db
+    .select({
+      merchantRaw: transactions.merchantRaw,
+      classificationType: transactionClassifications.classificationType,
+      category: transactionClassifications.category,
+      categoryId: transactionClassifications.categoryId,
+      memberOwnerId: transactionClassifications.memberOwnerId,
+    })
+    .from(transactions)
+    .innerJoin(
+      transactionClassifications,
+      eq(transactionClassifications.transactionId, transactions.id),
+    )
+    .where(
+      and(
+        eq(transactions.workspaceId, context.workspaceId),
+        isNotNull(transactions.merchantRaw),
+        inArray(sql<string>`lower(btrim(${transactions.merchantRaw}))`, normalizedMerchants),
+      ),
+    )
+    .orderBy(desc(transactionClassifications.reviewedAt), desc(transactionClassifications.updatedAt))
+    .limit(5000);
+
+  const memberIds = Array.from(
+    new Set(rows.map((row) => row.memberOwnerId).filter((id): id is string => Boolean(id))),
+  );
+  const memberNames = await listMemberNamesById(memberIds);
+  return buildExactMerchantSuggestions(rows, memberNames);
 }
 
 async function getReviewQueueSummary(

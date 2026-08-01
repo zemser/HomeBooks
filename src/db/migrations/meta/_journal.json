@@ -43,6 +43,34 @@
       "when": 1783267200000,
       "tag": "0005_seed_import_catalog",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784643641774,
+      "tag": "0006_greedy_sentinels",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1784740911341,
+      "tag": "0007_nervous_squadron_supreme",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784745144517,
+      "tag": "0008_purple_living_tribunal",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785600948038,
+      "tag": "0009_elite_kat_farrell",
+      "breakpoints": true
     }
   ]
 }

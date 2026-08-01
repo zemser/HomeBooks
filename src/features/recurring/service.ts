@@ -12,9 +12,9 @@ import type { ClassificationType } from "@/features/expenses/constants";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
 import {
-  assertWorkspaceCategory,
-  listWorkspaceCategoryNames,
+  listWorkspaceCategories,
   normalizeOptionalWorkspaceCategoryName,
+  resolveWorkspaceCategory,
 } from "@/features/workspaces/categories";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import type {
@@ -40,6 +40,7 @@ type CreateRecurringEntryInput = {
   payerMemberId?: string | null;
   classificationType: ClassificationType;
   category?: string | null;
+  categoryId?: string | null;
   effectiveStartMonth: string;
   amount: number;
   currency: string;
@@ -54,6 +55,7 @@ type UpdateRecurringEntryInput = {
   payerMemberId?: string | null;
   classificationType: ClassificationType;
   category?: string | null;
+  categoryId?: string | null;
   active: boolean;
 };
 
@@ -101,6 +103,7 @@ type RecurringGeneratedRowSeed = {
   payerMemberId: string | null;
   classificationType: ClassificationType;
   category: string | null;
+  categoryId: string | null;
 };
 
 function normalizeOptionalText(value?: string | null) {
@@ -413,6 +416,7 @@ export async function materializeRecurringEntriesForRange(
         payerMemberId: entry.payerMemberId,
         classificationType: entry.classificationType,
         category: entry.category,
+        categoryId: entry.categoryId,
       });
     }
   }
@@ -471,6 +475,7 @@ export async function materializeRecurringEntriesForRange(
             payerMemberId: row.payerMemberId,
             classificationType: row.classificationType,
             category: row.category,
+            categoryId: row.categoryId,
             updatedAt: new Date(),
           })
           .where(eq(manualEntries.id, existingRow.id));
@@ -498,6 +503,7 @@ export async function materializeRecurringEntriesForRange(
           payerMemberId: row.payerMemberId,
           classificationType: row.classificationType,
           category: row.category,
+          categoryId: row.categoryId,
           eventDate: row.eventDate,
         })
         .returning({
@@ -582,6 +588,7 @@ export async function listRecurringEntries(context: CurrentWorkspaceContext) {
         payerMemberId: manualRecurringExpenses.payerMemberId,
         classificationType: manualRecurringExpenses.classificationType,
         category: manualRecurringExpenses.category,
+        categoryId: manualRecurringExpenses.categoryId,
         active: manualRecurringExpenses.active,
       })
       .from(manualRecurringExpenses)
@@ -643,6 +650,7 @@ export async function listRecurringEntries(context: CurrentWorkspaceContext) {
         : null,
       classificationType: entry.classificationType,
       category: entry.category,
+      categoryId: entry.categoryId,
       active: entry.active,
       versions: entryVersions,
       currentVersion,
@@ -674,6 +682,7 @@ export async function listGeneratedManualEntries(
       payerMemberId: manualEntries.payerMemberId,
       classificationType: manualEntries.classificationType,
       category: manualEntries.category,
+      categoryId: manualEntries.categoryId,
       eventDate: manualEntries.eventDate,
     })
     .from(manualEntries)
@@ -700,6 +709,7 @@ export async function listGeneratedManualEntries(
     payerMemberName: entry.payerMemberId ? memberNames.get(entry.payerMemberId) ?? null : null,
     classificationType: entry.classificationType,
     category: entry.category,
+    categoryId: entry.categoryId,
     eventDate: entry.eventDate,
   }));
 }
@@ -720,7 +730,10 @@ export async function createRecurringEntry(
     payerMemberId,
   });
   await assertWorkspaceMember(context, payerMemberId);
-  const savedCategory = await assertWorkspaceCategory(context, category, db);
+  const savedCategory = await resolveWorkspaceCategory(context, {
+    categoryId: input.categoryId,
+    categoryName: category,
+  }, db);
 
   const entry = await db.transaction(async (tx) => {
     const [entry] = await tx
@@ -731,7 +744,8 @@ export async function createRecurringEntry(
         eventKind: input.eventKind,
         payerMemberId,
         classificationType: input.classificationType,
-        category: savedCategory,
+        category: savedCategory?.name ?? null,
+        categoryId: savedCategory?.id ?? null,
         active: true,
       })
       .returning({
@@ -819,7 +833,10 @@ export async function updateRecurringEntry(
     payerMemberId,
   });
   await assertWorkspaceMember(context, payerMemberId);
-  const savedCategory = await assertWorkspaceCategory(context, category, db);
+  const savedCategory = await resolveWorkspaceCategory(context, {
+    categoryId: input.categoryId,
+    categoryName: category,
+  }, db);
 
   await db
     .update(manualRecurringExpenses)
@@ -828,7 +845,8 @@ export async function updateRecurringEntry(
       eventKind: input.eventKind,
       payerMemberId,
       classificationType: input.classificationType,
-      category: savedCategory,
+      category: savedCategory?.name ?? null,
+      categoryId: savedCategory?.id ?? null,
       active: input.active,
       updatedAt: new Date(),
     })
@@ -969,9 +987,9 @@ export async function getRecurringPageData(
     endMonth,
   });
 
-  const [members, categories, recurringEntries, generatedEntries] = await Promise.all([
+  const [members, categoryCatalog, recurringEntries, generatedEntries] = await Promise.all([
     listWorkspaceMembers(context),
-    listWorkspaceCategoryNames(context),
+    listWorkspaceCategories(context),
     listRecurringEntries(context),
     listGeneratedManualEntries(context, {
       startMonth,
@@ -982,7 +1000,8 @@ export async function getRecurringPageData(
   return {
     workspaceCurrency: context.baseCurrency,
     members,
-    categories,
+    categories: categoryCatalog.map((category) => category.name),
+    categoryCatalog,
     recurringEntries,
     generatedEntries,
   };

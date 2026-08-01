@@ -59,6 +59,7 @@ type ManualEntryFormState = {
   classificationType: OneTimeManualEntryClassificationType;
   payerMemberId: string;
   category: string;
+  categoryId: string;
   amount: string;
   eventDate: string;
 };
@@ -92,6 +93,7 @@ function createInitialManualEntryFormState(): ManualEntryFormState {
     classificationType: "household",
     payerMemberId: "",
     category: "",
+    categoryId: "",
     amount: "",
     eventDate: todayDateInputValue(),
   };
@@ -104,6 +106,7 @@ function manualEntryToFormState(entry: OneTimeManualEntryItem): ManualEntryFormS
     classificationType: entry.classificationType,
     payerMemberId: entry.payerMemberId ?? "",
     category: entry.category ?? "",
+    categoryId: entry.categoryId ?? "",
     amount: Number(entry.originalAmount).toFixed(2),
     eventDate: entry.eventDate,
   };
@@ -147,6 +150,7 @@ export function ExpensesPageClient({
   );
   const [members, setMembers] = useState<WorkspaceMemberOption[]>(initialData.members);
   const [categories, setCategories] = useState<string[]>(initialData.categories);
+  const [categoryCatalog, setCategoryCatalog] = useState(initialData.categoryCatalog);
   const [selectedManualEntryId, setSelectedManualEntryId] = useState<string | null>(null);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(
     initialTransactionId,
@@ -182,11 +186,13 @@ export function ExpensesPageClient({
     const nextOneTimeManualEntries = data.oneTimeManualEntries;
     const nextMembers = data.members;
     const nextCategories = data.categories;
+    const nextCategoryCatalog = data.categoryCatalog;
 
     setTransactions(nextTransactions);
     setOneTimeManualEntries(nextOneTimeManualEntries);
     setMembers(nextMembers);
     setCategories(nextCategories);
+    setCategoryCatalog(nextCategoryCatalog);
     setSelectedManualEntryId((current) => {
       if (options?.manualEntryId !== undefined) {
         return options.manualEntryId &&
@@ -230,6 +236,7 @@ export function ExpensesPageClient({
           oneTimeManualEntries: data.oneTimeManualEntries ?? [],
           members: data.members ?? [],
           categories: data.categories ?? [],
+          categoryCatalog: data.categoryCatalog ?? [],
         },
         options,
       );
@@ -239,6 +246,7 @@ export function ExpensesPageClient({
       setOneTimeManualEntries([]);
       setMembers([]);
       setCategories([]);
+      setCategoryCatalog([]);
       setSelectedManualEntryId(null);
       setSelectedTransactionId(null);
     } finally {
@@ -251,6 +259,7 @@ export function ExpensesPageClient({
     setOneTimeManualEntries(initialData.oneTimeManualEntries);
     setMembers(initialData.members);
     setCategories(initialData.categories);
+    setCategoryCatalog(initialData.categoryCatalog);
     setSelectedManualEntryId(null);
     setSelectedTransactionId(initialTransactionId);
     setError(null);
@@ -425,6 +434,7 @@ export function ExpensesPageClient({
             classificationType: manualEntryForm.classificationType,
             payerMemberId: manualEntryForm.payerMemberId || null,
             category: manualEntryForm.category,
+            categoryId: manualEntryForm.categoryId || null,
             amount: Number(manualEntryForm.amount),
             eventDate: manualEntryForm.eventDate,
           }),
@@ -691,10 +701,11 @@ export function ExpensesPageClient({
               <label className="field">
                 <span>Category</span>
                 <CategorySelect
-                  categories={categories}
-                  value={manualEntryForm.category}
-                  onChange={(value) =>
-                    setManualEntryForm((current) => ({ ...current, category: value }))
+                  categories={categoryCatalog}
+                  categoryId={manualEntryForm.categoryId}
+                  categoryName={manualEntryForm.category}
+                  onChange={(categoryId, category) =>
+                    setManualEntryForm((current) => ({ ...current, category, categoryId }))
                   }
                   blankLabel="Uncategorized"
                 />

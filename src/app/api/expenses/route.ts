@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expenses/queries";
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
-import { listWorkspaceCategoryNames } from "@/features/workspaces/categories";
+import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -11,23 +11,24 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const { transactions, oneTimeManualEntries, members, categories } =
+    const { transactions, oneTimeManualEntries, members, categoryCatalog } =
       await withCurrentWorkspace(async (context) => {
-        const [transactions, oneTimeManualEntries, members, categories] = await Promise.all([
+        const [transactions, oneTimeManualEntries, members, categoryCatalog] = await Promise.all([
           listExpenseTransactions(context),
           listOneTimeManualEntries(context),
           listWorkspaceMembers(context),
-          listWorkspaceCategoryNames(context),
+          listWorkspaceCategories(context),
         ]);
 
-        return { transactions, oneTimeManualEntries, members, categories };
+        return { transactions, oneTimeManualEntries, members, categoryCatalog };
       });
 
     return NextResponse.json({
       transactions,
       oneTimeManualEntries,
       members,
-      categories,
+      categories: categoryCatalog.map((category) => category.name),
+      categoryCatalog,
     });
   } catch (error) {
     return errorResponse({

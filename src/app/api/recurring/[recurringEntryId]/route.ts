@@ -8,6 +8,7 @@ import {
   updateRecurringEntry,
 } from "@/features/recurring/service";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { WorkspaceCategoryInputError } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -18,6 +19,7 @@ const updateSchema = z.object({
   payerMemberId: z.string().uuid().optional().nullable(),
   classificationType: z.enum(CLASSIFICATION_TYPES),
   category: z.string().trim().optional().nullable(),
+  categoryId: z.string().uuid().optional().nullable(),
   active: z.boolean(),
 });
 
@@ -54,6 +56,7 @@ export async function PATCH(request: Request, { params }: RouteProps) {
       route: "/api/recurring/[recurringEntryId]",
       message: "Failed to update recurring entry",
       clientMessage: error instanceof Error ? error.message : "Failed to update recurring entry.",
+      status: error instanceof WorkspaceCategoryInputError ? 400 : 500,
     });
   }
 }

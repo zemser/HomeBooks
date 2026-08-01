@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, or, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -17,6 +17,29 @@ import type { WorkspaceCategoryItem } from "@/features/workspaces/types";
 type DbClient = ReturnType<typeof getDb>;
 type DbTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
 type DbExecutor = DbClient | DbTransaction;
+
+export class WorkspaceCategoryInputError extends Error {
+  name = "WorkspaceCategoryInputError";
+}
+
+export const STARTER_WORKSPACE_CATEGORIES = [
+  ["Groceries", "expense"],
+  ["Dining", "expense"],
+  ["Housing", "expense"],
+  ["Utilities", "expense"],
+  ["Transport", "expense"],
+  ["Healthcare", "expense"],
+  ["Insurance", "expense"],
+  ["Shopping", "expense"],
+  ["Entertainment", "expense"],
+  ["Travel", "expense"],
+  ["Education", "expense"],
+  ["Gifts", "expense"],
+  ["Fees", "expense"],
+  ["Income", "income"],
+  ["Uncategorized", "both"],
+  ["Other", "both"],
+] as const;
 
 function normalizeCategoryKey(value: string) {
   return value.trim().toLocaleLowerCase();
@@ -37,6 +60,30 @@ export function normalizeWorkspaceCategoryName(value?: string | null) {
   return normalized;
 }
 
+export async function seedStarterWorkspaceCategories(
+  workspaceId: string,
+  db: DbExecutor = getDb(),
+) {
+  const now = new Date();
+
+  await db
+    .insert(workspaceCategories)
+    .values(
+      STARTER_WORKSPACE_CATEGORIES.map(([name, applicability], index) => ({
+        workspaceId,
+        name,
+        canonicalName: normalizeCategoryKey(name),
+        applicability,
+        sortOrder: (index + 1) * 10,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    )
+    .onConflictDoNothing({
+      target: [workspaceCategories.workspaceId, workspaceCategories.canonicalName],
+    });
+}
+
 export async function listWorkspaceCategories(
   context: CurrentWorkspaceContext,
   db: DbExecutor = getDb(),
@@ -47,8 +94,17 @@ export async function listWorkspaceCategories(
       name: workspaceCategories.name,
     })
     .from(workspaceCategories)
-    .where(eq(workspaceCategories.workspaceId, context.workspaceId))
-    .orderBy(asc(workspaceCategories.name), asc(workspaceCategories.createdAt));
+    .where(
+      and(
+        eq(workspaceCategories.workspaceId, context.workspaceId),
+        eq(workspaceCategories.active, true),
+      ),
+    )
+    .orderBy(
+      asc(workspaceCategories.sortOrder),
+      asc(workspaceCategories.name),
+      asc(workspaceCategories.createdAt),
+    );
 
   return rows;
 }
@@ -86,10 +142,44 @@ export async function assertWorkspaceCategory(
     .then((rows) => rows[0] ?? null);
 
   if (!category) {
-    throw new Error("Choose an existing category or add it in settings first.");
+    throw new WorkspaceCategoryInputError("Choose an existing category or add it in settings first.");
   }
 
   return category.name;
+}
+
+export async function resolveWorkspaceCategory(
+  context: CurrentWorkspaceContext,
+  input: { categoryId?: string | null; categoryName?: string | null },
+  db: DbExecutor = getDb(),
+): Promise<WorkspaceCategoryItem | null> {
+  const categoryId = input.categoryId?.trim() || null;
+  const categoryName = normalizeOptionalWorkspaceCategoryName(input.categoryName);
+  if (!categoryId && !categoryName) return null;
+
+  const canonicalName = categoryName ? normalizeCategoryKey(categoryName) : null;
+  const category = await db
+    .select({ id: workspaceCategories.id, name: workspaceCategories.name })
+    .from(workspaceCategories)
+    .where(
+      and(
+        eq(workspaceCategories.workspaceId, context.workspaceId),
+        categoryId
+          ? eq(workspaceCategories.id, categoryId)
+          : eq(workspaceCategories.canonicalName, canonicalName!),
+      ),
+    )
+    .then((rows) => rows[0] ?? null);
+
+  if (!category) {
+    throw new WorkspaceCategoryInputError("Choose an existing category or add it in settings first.");
+  }
+  if (canonicalName && normalizeCategoryKey(category.name) !== canonicalName) {
+    throw new WorkspaceCategoryInputError(
+      "The selected category no longer matches its catalog entry. Refresh and try again.",
+    );
+  }
+  return category;
 }
 
 export async function createWorkspaceCategory(
@@ -207,7 +297,10 @@ export async function updateWorkspaceCategory(
         .where(
           and(
             eq(transactions.workspaceId, context.workspaceId),
-            sql`lower(btrim(${transactionClassifications.category})) = ${oldCanonicalName}`,
+            or(
+              eq(transactionClassifications.categoryId, categoryId),
+              sql`lower(btrim(${transactionClassifications.category})) = ${oldCanonicalName}`,
+            ),
           ),
         );
       const recurringRows = await tx
@@ -218,7 +311,10 @@ export async function updateWorkspaceCategory(
         .where(
           and(
             eq(manualRecurringExpenses.workspaceId, context.workspaceId),
-            sql`lower(btrim(${manualRecurringExpenses.category})) = ${oldCanonicalName}`,
+            or(
+              eq(manualRecurringExpenses.categoryId, categoryId),
+              sql`lower(btrim(${manualRecurringExpenses.category})) = ${oldCanonicalName}`,
+            ),
           ),
         );
       const directManualEntryRows = await tx
@@ -229,7 +325,10 @@ export async function updateWorkspaceCategory(
         .where(
           and(
             eq(manualEntries.workspaceId, context.workspaceId),
-            sql`lower(btrim(${manualEntries.category})) = ${oldCanonicalName}`,
+            or(
+              eq(manualEntries.categoryId, categoryId),
+              sql`lower(btrim(${manualEntries.category})) = ${oldCanonicalName}`,
+            ),
           ),
         );
 
@@ -263,6 +362,7 @@ export async function updateWorkspaceCategory(
           .update(transactionClassifications)
           .set({
             category: name,
+            categoryId,
             updatedAt: now,
           })
           .where(inArray(transactionClassifications.transactionId, transactionIds));
@@ -273,6 +373,7 @@ export async function updateWorkspaceCategory(
           .update(manualEntries)
           .set({
             category: name,
+            categoryId,
             updatedAt: now,
           })
           .where(inArray(manualEntries.id, manualEntryIds));
@@ -283,6 +384,7 @@ export async function updateWorkspaceCategory(
           .update(manualRecurringExpenses)
           .set({
             category: name,
+            categoryId,
             updatedAt: now,
           })
           .where(inArray(manualRecurringExpenses.id, recurringEntryIds));
@@ -292,12 +394,16 @@ export async function updateWorkspaceCategory(
         .update(classificationRules)
         .set({
           defaultCategory: name,
+          defaultCategoryId: categoryId,
           updatedAt: now,
         })
         .where(
           and(
             eq(classificationRules.workspaceId, context.workspaceId),
-            sql`lower(btrim(${classificationRules.defaultCategory})) = ${oldCanonicalName}`,
+            or(
+              eq(classificationRules.defaultCategoryId, categoryId),
+              sql`lower(btrim(${classificationRules.defaultCategory})) = ${oldCanonicalName}`,
+            ),
           ),
         );
 

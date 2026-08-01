@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
-import { bulkClassifyTransactions } from "@/features/expenses/classifications";
+import {
+  bulkClassifyTransactions,
+  isClassificationInputError,
+} from "@/features/expenses/classifications";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -12,6 +15,7 @@ const requestSchema = z.object({
   transactionIds: z.array(z.string().uuid()).min(1),
   classificationType: z.enum(CLASSIFICATION_TYPES),
   category: z.string().trim().optional().nullable(),
+  categoryId: z.string().uuid().optional().nullable(),
   memberOwnerId: z.string().uuid().optional().nullable(),
 });
 
@@ -42,6 +46,7 @@ export async function POST(request: Request) {
       message: "Failed to bulk classify transactions",
       clientMessage:
         error instanceof Error ? error.message : "Failed to bulk classify transactions.",
+      status: isClassificationInputError(error) ? 400 : 500,
     });
   }
 }

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { listReviewQueue } from "@/features/expenses/queries";
+import { parseReviewQuery } from "@/features/expenses/review-query";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -10,9 +11,9 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const transactionId = searchParams.get("transactionId")?.trim() || undefined;
+    const query = parseReviewQuery(searchParams);
     const reviewQueue = await withCurrentWorkspace((context) =>
-      listReviewQueue(context, transactionId),
+      listReviewQueue(context, query),
     );
 
     return NextResponse.json(reviewQueue);

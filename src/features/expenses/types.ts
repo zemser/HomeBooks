@@ -1,10 +1,12 @@
 import type { ClassificationType, DecisionSource } from "@/features/expenses/constants";
 import type { ExpenseAllocationState } from "@/features/expenses/allocation";
 import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
+import type { WorkspaceCategoryItem } from "@/features/workspaces/types";
 
 export type TransactionClassificationState = {
   classificationType: ClassificationType;
   category: string | null;
+  categoryId: string | null;
   memberOwnerId: string | null;
   memberOwnerName: string | null;
   decidedBy: DecisionSource;
@@ -13,6 +15,8 @@ export type TransactionClassificationState = {
 
 export type ExpenseTransactionItem = {
   id: string;
+  accountId: string;
+  importId: string;
   transactionDate: string;
   bookingDate: string | null;
   description: string;
@@ -30,6 +34,21 @@ export type ExpenseTransactionItem = {
   importOriginalFilename: string;
   classification: TransactionClassificationState;
   allocation: ExpenseAllocationState | null;
+  suggestion: ClassificationSuggestion | null;
+  similarQueueCount: number;
+  exactRuleExists: boolean;
+};
+
+export type ClassificationSuggestion = {
+  classificationType: ClassificationType;
+  category: string | null;
+  categoryId: string | null;
+  memberOwnerId: string | null;
+  memberOwnerName: string | null;
+  matchingTransactionCount: number;
+  supportingTransactionCount: number;
+  confidence: "strong" | "likely";
+  source: "merchant_history";
 };
 
 export type WorkspaceMemberOption = {
@@ -62,7 +81,20 @@ export type ReviewQueueResponse = {
   focusTransaction: ExpenseTransactionItem | null;
   members: WorkspaceMemberOption[];
   categories: string[];
+  categoryCatalog: Array<{ id: string; name: string }>;
+  recentCategories: string[];
   summary: ReviewQueueSummary;
+  pagination: {
+    page: number;
+    pageSize: number;
+    filteredCount: number;
+    totalPages: number;
+  };
+  filterOptions: {
+    months: string[];
+    imports: Array<{ id: string; label: string }>;
+    accounts: Array<{ id: string; label: string }>;
+  };
 };
 
 export type ExpensesPageData = {
@@ -70,4 +102,5 @@ export type ExpensesPageData = {
   oneTimeManualEntries: OneTimeManualEntryItem[];
   members: WorkspaceMemberOption[];
   categories: string[];
+  categoryCatalog: WorkspaceCategoryItem[];
 };

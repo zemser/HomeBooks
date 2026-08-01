@@ -12,6 +12,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "test:review": "tsx --test tests/review/*.test.ts",
+    "test:e2e": "playwright test",
     "imports:cleanup-failed": "node scripts/cleanup-failed-import-files.mjs",
     "imports:setup-storage": "node scripts/setup-supabase-import-storage.mjs",
     "backup:create": "node scripts/create-encrypted-backup.mjs",
@@ -35,11 +37,13 @@
     "zod": "^3.24.2"
   },
   "devDependencies": {
+    "@playwright/test": "1.54.1",
     "@types/big.js": "^6.2.2",
     "@types/node": "^20.17.0",
     "@types/pg": "^8.18.0",
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
+    "axe-core": "4.11.1",
     "drizzle-kit": "^0.31.0",
     "eslint": "^9.20.0",
     "eslint-config-next": "^15.3.0",

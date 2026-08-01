@@ -4,7 +4,7 @@ import { ExpensesPageClient } from "@/components/expenses/expenses-page-client";
 import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expenses/queries";
 import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
-import { listWorkspaceCategoryNames } from "@/features/workspaces/categories";
+import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 
 type ExpensesPageProps = {
@@ -19,13 +19,13 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
   const params = await searchParams;
   const transactionId =
     typeof params.transactionId === "string" ? params.transactionId : null;
-  const [transactions, oneTimeManualEntries, members, categories] =
+  const [transactions, oneTimeManualEntries, members, categoryCatalog] =
     await withCurrentWorkspace((context) =>
       Promise.all([
         listExpenseTransactions(context),
         listOneTimeManualEntries(context),
         listWorkspaceMembers(context),
-        listWorkspaceCategoryNames(context),
+        listWorkspaceCategories(context),
       ]),
     );
   const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
@@ -74,7 +74,8 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
             transactions,
             oneTimeManualEntries,
             members,
-            categories,
+            categories: categoryCatalog.map((category) => category.name),
+            categoryCatalog,
           }}
           initialTransactionId={transactionId}
         />

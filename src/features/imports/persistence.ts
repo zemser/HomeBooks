@@ -13,7 +13,7 @@ import {
   transactionClassifications,
   transactions,
 } from "@/db/schema";
-import { normalizeMerchantRuleValue } from "@/features/expenses/classifications";
+import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
 import { getSupportedBankImportCatalog } from "@/features/imports/catalog";
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
@@ -37,6 +37,7 @@ type ActiveExactClassificationRule = {
   classificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
   memberOwnerId: string | null;
   category: string | null;
+  categoryId: string | null;
 };
 
 type RetryableFailedImport = {
@@ -435,6 +436,7 @@ export async function persistBankImport(input: {
           classificationType: classificationRules.defaultClassificationType,
           memberOwnerId: classificationRules.defaultMemberOwnerId,
           category: classificationRules.defaultCategory,
+          categoryId: classificationRules.defaultCategoryId,
         })
         .from(classificationRules)
         .where(
@@ -530,6 +532,7 @@ export async function persistBankImport(input: {
               classificationType: matchedRule.classificationType,
               memberOwnerId: matchedRule.memberOwnerId,
               category: matchedRule.category,
+              categoryId: matchedRule.categoryId,
               confidence: null,
               decidedBy: "rule" as const,
               reviewedAt: null,

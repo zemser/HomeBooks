@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   char,
   date,
@@ -36,6 +37,11 @@ export const classificationTypeEnum = pgEnum("classification_type", [
   "ignore",
 ]);
 export const eventKindEnum = pgEnum("event_kind", ["expense", "income"]);
+export const categoryApplicabilityEnum = pgEnum("category_applicability", [
+  "expense",
+  "income",
+  "both",
+]);
 export const sourceTypeEnum = pgEnum("source_type", ["transaction", "manual", "recurring"]);
 export const reportingModeEnum = pgEnum("reporting_mode", [
   "payment_date",
@@ -132,6 +138,15 @@ export const workspaceCategories = pgTable(
       .references(() => workspaces.id),
     name: text("name").notNull(),
     canonicalName: text("canonical_name").notNull(),
+    parentCategoryId: uuid("parent_category_id").references(
+      (): AnyPgColumn => workspaceCategories.id,
+      { onDelete: "set null" },
+    ),
+    applicability: categoryApplicabilityEnum("applicability").notNull().default("both"),
+    active: boolean("active").notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    icon: text("icon"),
+    color: text("color"),
     ...timestamps,
   },
   (table) => ({
@@ -142,6 +157,11 @@ export const workspaceCategories = pgTable(
     workspaceCreatedIdx: index("workspace_categories_workspace_created_idx").on(
       table.workspaceId,
       table.createdAt,
+    ),
+    workspaceSortIdx: index("workspace_categories_workspace_sort_idx").on(
+      table.workspaceId,
+      table.active,
+      table.sortOrder,
     ),
   }),
 );
@@ -294,13 +314,75 @@ export const transactionClassifications = pgTable(
     classificationType: classificationTypeEnum("classification_type").notNull(),
     memberOwnerId: uuid("member_owner_id").references(() => workspaceMembers.id),
     category: text("category"),
+    categoryId: uuid("category_id").references(() => workspaceCategories.id, {
+      onDelete: "set null",
+    }),
     confidence: numeric("confidence", { precision: 5, scale: 4 }),
     decidedBy: decisionSourceEnum("decided_by").notNull(),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    decisionBatchId: uuid("decision_batch_id"),
     ...timestamps,
   },
   (table) => ({
     transactionUnique: unique().on(table.transactionId),
+  }),
+);
+
+export const classificationDecisionBatches = pgTable(
+  "classification_decision_batches",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    actionType: text("action_type").notNull(),
+    transactionIds: jsonb("transaction_ids").$type<string[]>().notNull(),
+    previousClassifications: jsonb("previous_classifications")
+      .$type<Array<{
+        transactionId: string;
+        classification: {
+          id: string;
+          transactionId: string;
+          classificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
+          memberOwnerId: string | null;
+          category: string | null;
+          categoryId: string | null;
+          confidence: string | null;
+          decidedBy: "rule" | "user" | "system_default";
+          reviewedAt: string | null;
+          decisionBatchId: string | null;
+          createdAt: string;
+          updatedAt: string;
+        } | null;
+      }>>()
+      .notNull(),
+    previousRules: jsonb("previous_rules")
+      .$type<Array<{
+        id: string;
+        matchType: "contains" | "regex" | "exact";
+        matchValue: string;
+        defaultClassificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
+        defaultMemberOwnerId: string | null;
+        defaultCategory: string | null;
+        defaultCategoryId: string | null;
+        priority: number;
+        active: boolean;
+        createdAt: string;
+        updatedAt: string;
+      }> | null>()
+      .default(null),
+    ruleMatchValue: text("rule_match_value"),
+    undoneAt: timestamp("undone_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (table) => ({
+    workspaceCreatedIdx: index("classification_decision_batches_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
   }),
 );
 
@@ -316,6 +398,9 @@ export const classificationRules = pgTable(
     defaultClassificationType: classificationTypeEnum("default_classification_type").notNull(),
     defaultMemberOwnerId: uuid("default_member_owner_id").references(() => workspaceMembers.id),
     defaultCategory: text("default_category"),
+    defaultCategoryId: uuid("default_category_id").references(() => workspaceCategories.id, {
+      onDelete: "set null",
+    }),
     priority: integer("priority").notNull().default(100),
     active: boolean("active").notNull().default(true),
     ...timestamps,
@@ -345,6 +430,9 @@ export const expenseEvents = pgTable(
     classificationType: classificationTypeEnum("classification_type").notNull(),
     payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
     category: text("category"),
+    categoryId: uuid("category_id").references(() => workspaceCategories.id, {
+      onDelete: "set null",
+    }),
     reportingMode: reportingModeEnum("reporting_mode").notNull(),
     ...timestamps,
   },
@@ -391,6 +479,9 @@ export const manualRecurringExpenses = pgTable("manual_recurring_expenses", {
   payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
   classificationType: classificationTypeEnum("classification_type").notNull(),
   category: text("category"),
+  categoryId: uuid("category_id").references(() => workspaceCategories.id, {
+    onDelete: "set null",
+  }),
   active: boolean("active").notNull().default(true),
   ...timestamps,
 });
@@ -439,6 +530,9 @@ export const manualEntries = pgTable(
     payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
     classificationType: classificationTypeEnum("classification_type").notNull(),
     category: text("category"),
+    categoryId: uuid("category_id").references(() => workspaceCategories.id, {
+      onDelete: "set null",
+    }),
     eventDate: date("event_date").notNull(),
     ...timestamps,
   },
