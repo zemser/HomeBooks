@@ -74,9 +74,14 @@ function wrapClientForCurrentUser(client: PoolClient) {
     if (!isTransactionControlQuery(args[0])) {
       const currentUserId = getCurrentDatabaseUserId();
 
-      await originalQuery("select set_config('app.current_user_id', $1, false)", [
-        currentUserId ?? "",
-      ]);
+      // A transaction may establish its identity explicitly at its boundary
+      // (for example during first-user bootstrap). Do not erase that identity
+      // merely because a framework callback crossed an async-context boundary.
+      if (currentUserId) {
+        await originalQuery("select set_config('app.current_user_id', $1, false)", [
+          currentUserId,
+        ]);
+      }
     }
 
     return (originalQuery as (...queryArgs: unknown[]) => unknown)(...args);
@@ -101,6 +106,10 @@ function createPool(connectionString: string) {
 
   nextPool.connect = (async () => {
     const client = await originalConnect();
+    // Reset pooled connections before handing them to a request. This keeps
+    // the preservation above safe when the previous request belonged to a
+    // different authenticated user.
+    await client.query("select set_config('app.current_user_id', '', false)");
     return wrapClientForCurrentUser(client);
   }) as Pool["connect"];
 

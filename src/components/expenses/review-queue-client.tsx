@@ -522,6 +522,18 @@ export function ReviewQueueClient({
     return created;
   }
 
+  function changeSingleClassificationType(classificationType: ClassificationType) {
+    setSingleForm((current) => ({
+      ...current,
+      classificationType,
+      category: ["transfer", "ignore"].includes(classificationType) ? "" : current.category,
+      categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
+      memberOwnerId: ["personal", "shared"].includes(classificationType)
+        ? current.memberOwnerId
+        : "",
+    }));
+  }
+
   function acceptSuggestion() {
     const suggestion = selectedTransaction?.suggestion;
     if (!suggestion) return;
@@ -792,7 +804,7 @@ export function ReviewQueueClient({
       } else if (/^[1-6]$/.test(event.key)) {
         event.preventDefault();
         const type = CLASSIFICATION_TYPES[Number(event.key) - 1];
-        if (type) setSingleForm((current) => ({ ...current, classificationType: type }));
+        if (type) changeSingleClassificationType(type);
       } else if (event.key.toLocaleLowerCase() === "c") {
         event.preventDefault();
         reviewWorkspaceRef.current?.querySelector<HTMLInputElement>(".review-detail .category-combobox input")?.focus();
@@ -1345,13 +1357,7 @@ export function ReviewQueueClient({
               <div className="stack compact">
                 <ClassificationTypePicker
                   value={singleForm.classificationType}
-                  onChange={(classificationType) => setSingleForm((current) => ({
-                    ...current,
-                    classificationType,
-                    category: ["transfer", "ignore"].includes(classificationType) ? "" : current.category,
-                    categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
-                    memberOwnerId: ["personal", "shared"].includes(classificationType) ? current.memberOwnerId : "",
-                  }))}
+                  onChange={changeSingleClassificationType}
                 />
 
                 {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(singleForm.classificationType) ? (

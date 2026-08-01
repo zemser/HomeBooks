@@ -70,12 +70,24 @@ async function assertWorkspaceMember(
   }
 }
 
-function validateClassificationInput(input: {
+export function validateClassificationInput(input: {
   classificationType: ClassificationType;
   memberOwnerId: string | null;
+  category: string | null;
+  categoryId?: string | null;
 }) {
   if (input.classificationType === "personal" && !input.memberOwnerId) {
     throw new ClassificationInputError("Personal classifications require a member owner.");
+  }
+  if (!["personal", "shared"].includes(input.classificationType) && input.memberOwnerId) {
+    throw new ClassificationInputError(
+      "Only Personal and Shared classifications can have a member owner.",
+    );
+  }
+  if (["transfer", "ignore"].includes(input.classificationType) && (input.category || input.categoryId)) {
+    throw new ClassificationInputError(
+      "Transfer and Ignore classifications cannot have a category.",
+    );
   }
 }
 
@@ -90,6 +102,8 @@ export async function upsertTransactionClassification(
   validateClassificationInput({
     classificationType: input.classificationType,
     memberOwnerId,
+    category,
+    categoryId: input.categoryId,
   });
   await assertWorkspaceMember(context.workspaceId, memberOwnerId);
   const savedCategory = await resolveWorkspaceCategory(
@@ -286,6 +300,8 @@ export async function bulkClassifyTransactions(
   validateClassificationInput({
     classificationType: input.classificationType,
     memberOwnerId,
+    category,
+    categoryId: input.categoryId,
   });
   await assertWorkspaceMember(context.workspaceId, memberOwnerId);
   const savedCategory = await resolveWorkspaceCategory(

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -261,7 +261,7 @@ export async function listReviewQueue(
     focusTransaction?.merchantRaw ?? null,
   ];
   const [suggestionsByMerchant, existingExactRuleValues] = await Promise.all([
-    listHistoricalClassificationSuggestions(context, merchantValues),
+    listHistoricalClassificationSuggestions(context, merchantValues, query.transactionId),
     listExistingExactRuleValues(context, merchantValues),
   ]);
   const queueCountByMerchant = new Map<string, number>();
@@ -388,6 +388,7 @@ async function listRecentReviewCategories(context: CurrentWorkspaceContext) {
 async function listHistoricalClassificationSuggestions(
   context: CurrentWorkspaceContext,
   merchantValues: Array<string | null>,
+  excludeTransactionId?: string,
 ) {
   const normalizedMerchants = Array.from(
     new Set(
@@ -400,6 +401,15 @@ async function listHistoricalClassificationSuggestions(
   if (normalizedMerchants.length === 0) return new Map<string, ClassificationSuggestion>();
 
   const db = getDb();
+  const filters = [
+    eq(transactions.workspaceId, context.workspaceId),
+    isNotNull(transactions.merchantRaw),
+    inArray(sql<string>`lower(btrim(${transactions.merchantRaw}))`, normalizedMerchants),
+  ];
+  if (excludeTransactionId) {
+    filters.push(ne(transactions.id, excludeTransactionId));
+  }
+
   const rows = await db
     .select({
       merchantRaw: transactions.merchantRaw,
@@ -413,13 +423,7 @@ async function listHistoricalClassificationSuggestions(
       transactionClassifications,
       eq(transactionClassifications.transactionId, transactions.id),
     )
-    .where(
-      and(
-        eq(transactions.workspaceId, context.workspaceId),
-        isNotNull(transactions.merchantRaw),
-        inArray(sql<string>`lower(btrim(${transactions.merchantRaw}))`, normalizedMerchants),
-      ),
-    )
+    .where(and(...filters))
     .orderBy(desc(transactionClassifications.reviewedAt), desc(transactionClassifications.updatedAt))
     .limit(5000);
 

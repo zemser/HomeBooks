@@ -39,6 +39,12 @@ export async function createFirstWorkspaceAction(formData: FormData) {
 
   await runWithDatabaseUser(authUser.id, () =>
     db.transaction(async (tx) => {
+      // Establish the RLS identity on this transaction before the first
+      // protected read or insert. This is the first database request for a
+      // hosted user, so it must not depend on a later query hook.
+      await tx.execute(
+        sql`select set_config('app.current_user_id', ${authUser.id}, false)`,
+      );
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authUser.id}))`);
 
       let user = await tx.query.users.findFirst({
