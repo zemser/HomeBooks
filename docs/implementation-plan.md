@@ -557,12 +557,11 @@ Remaining:
 
 ## Milestone 4: Review workflow
 
-The current rebuild is tracked in `docs/transaction-review-workflow-task.md`. It adds a
-responsive master-detail queue, visible filtering and sorting, keyboard-first decisions,
+The current rebuild adds a responsive master-detail queue, visible filtering and sorting, keyboard-first decisions,
 historical exact-merchant suggestions, a searchable category picker, explicit rule and
 similar-transaction previews, and auditable single/bulk Undo. The stable category-ID
 migration and server-side filtering/pagination are now implemented. Remaining work is
-the final human screen-reader pass tracked in that task document; automated Chromium,
+the final human screen-reader pass; automated Chromium,
 keyboard, responsive, stable-ID, rule, Undo, and axe coverage is in place.
 
 Status:
