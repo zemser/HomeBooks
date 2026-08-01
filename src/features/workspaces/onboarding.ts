@@ -9,6 +9,7 @@ import { getDb } from "@/db";
 import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
+import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -85,6 +86,8 @@ export async function createFirstWorkspaceAction(formData: FormData) {
           name: workspaceName,
           baseCurrency,
         });
+
+      await seedStarterWorkspaceCategories(workspaceId, tx);
 
       await tx.insert(workspaceMembers).values({
         workspaceId,

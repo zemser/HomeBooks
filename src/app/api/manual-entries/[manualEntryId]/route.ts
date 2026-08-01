@@ -10,6 +10,7 @@ import {
   updateOneTimeManualEntry,
 } from "@/features/manual-entries/service";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { WorkspaceCategoryInputError } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -20,6 +21,7 @@ const requestSchema = z.object({
   payerMemberId: z.string().uuid().optional().nullable(),
   classificationType: z.enum(ONE_TIME_MANUAL_ENTRY_CLASSIFICATION_TYPES),
   category: z.string().trim().optional().nullable(),
+  categoryId: z.string().uuid().optional().nullable(),
   amount: z.coerce.number().positive(),
   eventDate: z.string().trim().min(1),
 });
@@ -57,6 +59,7 @@ export async function PATCH(request: Request, { params }: RouteProps) {
       route: "/api/manual-entries/[manualEntryId]",
       message: "Failed to update manual entry",
       clientMessage: error instanceof Error ? error.message : "Failed to update manual entry.",
+      status: error instanceof WorkspaceCategoryInputError ? 400 : 500,
     });
   }
 }

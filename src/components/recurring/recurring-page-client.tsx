@@ -30,6 +30,7 @@ type RuleFormState = {
   payerMemberId: string;
   classificationType: (typeof CLASSIFICATION_TYPES)[number];
   category: string;
+  categoryId: string;
   active: boolean;
 };
 
@@ -65,6 +66,7 @@ const initialCreateState: CreateRuleState = {
   payerMemberId: "",
   classificationType: "household",
   category: "",
+  categoryId: "",
   active: true,
   effectiveStartMonth: todayMonthInputValue(),
   amount: "",
@@ -173,6 +175,7 @@ export function RecurringPageClient() {
       payerMemberId: selectedEntry.payerMemberId ?? "",
       classificationType: selectedEntry.classificationType,
       category: selectedEntry.category ?? "",
+      categoryId: selectedEntry.categoryId ?? "",
       active: selectedEntry.active,
     });
     setVersionState({
@@ -201,6 +204,7 @@ export function RecurringPageClient() {
         ...createState,
         payerMemberId: createState.payerMemberId || null,
         category: createState.category,
+        categoryId: createState.categoryId || null,
         effectiveStartMonth: `${createState.effectiveStartMonth}-01`,
         amount: Number(createState.amount),
       }),
@@ -241,6 +245,7 @@ export function RecurringPageClient() {
       body: JSON.stringify({
         ...editState,
         payerMemberId: editState.payerMemberId || null,
+        categoryId: editState.categoryId || null,
       }),
     });
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -410,10 +415,11 @@ export function RecurringPageClient() {
               <label className="field">
                 <span>Category</span>
                 <CategorySelect
-                  categories={data?.categories ?? []}
-                  value={createState.category}
-                  onChange={(value) =>
-                    setCreateState((current) => ({ ...current, category: value }))
+                  categories={data?.categoryCatalog ?? []}
+                  categoryId={createState.categoryId}
+                  categoryName={createState.category}
+                  onChange={(categoryId, category) =>
+                    setCreateState((current) => ({ ...current, category, categoryId }))
                   }
                   blankLabel="Uncategorized"
                 />
@@ -746,11 +752,12 @@ export function RecurringPageClient() {
                   <label className="field">
                     <span>Category</span>
                     <CategorySelect
-                      categories={data?.categories ?? []}
-                      value={editState.category}
-                      onChange={(value) =>
+                      categories={data?.categoryCatalog ?? []}
+                      categoryId={editState.categoryId}
+                      categoryName={editState.category}
+                      onChange={(categoryId, category) =>
                         setEditState((current) =>
-                          current ? { ...current, category: value } : current,
+                          current ? { ...current, category, categoryId } : current,
                         )
                       }
                       blankLabel="Uncategorized"

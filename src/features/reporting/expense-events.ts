@@ -35,6 +35,7 @@ type ActiveSourceRow = {
   classificationType: ClassificationType;
   payerMemberId: string | null;
   category: string | null;
+  categoryId: string | null;
   reportingMode: "payment_date";
   reportMonth: string;
   coverageStartDate: string | null;
@@ -162,6 +163,7 @@ async function applyExpenseEventSync(
           classificationType: row.classificationType,
           payerMemberId: row.payerMemberId,
           category: row.category,
+          categoryId: row.categoryId,
           reportingMode: nextReportingMode,
         })
         .returning({
@@ -180,6 +182,7 @@ async function applyExpenseEventSync(
           classificationType: row.classificationType,
           payerMemberId: row.payerMemberId,
           category: row.category,
+          categoryId: row.categoryId,
           reportingMode: nextReportingMode,
           updatedAt: new Date(),
         })
@@ -337,6 +340,7 @@ export async function syncTransactionExpenseEvents(
         classificationType: transactionClassifications.classificationType,
         memberOwnerId: transactionClassifications.memberOwnerId,
         category: transactionClassifications.category,
+        categoryId: transactionClassifications.categoryId,
         transactionDate: transactions.transactionDate,
       })
       .from(transactions)
@@ -368,6 +372,7 @@ export async function syncTransactionExpenseEvents(
     classificationType: transaction.classificationType,
     payerMemberId: transaction.memberOwnerId,
     category: transaction.category,
+    categoryId: transaction.categoryId,
     reportingMode: "payment_date",
     reportMonth: actualDateToReportMonth(transaction.transactionDate),
     coverageStartDate: transaction.transactionDate,
@@ -400,6 +405,7 @@ export async function syncManualEntryExpenseEvents(
         classificationType: manualEntries.classificationType,
         payerMemberId: manualEntries.payerMemberId,
         category: manualEntries.category,
+        categoryId: manualEntries.categoryId,
         eventDate: manualEntries.eventDate,
       })
       .from(manualEntries)
@@ -427,6 +433,7 @@ export async function syncManualEntryExpenseEvents(
     classificationType: entry.classificationType,
     payerMemberId: entry.payerMemberId,
     category: entry.category,
+    categoryId: entry.categoryId,
     reportingMode: "payment_date",
     reportMonth: actualDateToReportMonth(entry.eventDate),
     coverageStartDate: entry.eventDate,

@@ -1,19 +1,24 @@
 import { ReviewQueueClient } from "@/components/expenses/review-queue-client";
 import { listReviewQueue } from "@/features/expenses/queries";
+import { parseReviewQuery } from "@/features/expenses/review-query";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 
 type ReviewPageProps = {
   searchParams: Promise<{
-    transactionId?: string | string[];
+    [key: string]: string | string[] | undefined;
   }>;
 };
 
 export default async function ReviewPage({ searchParams }: ReviewPageProps) {
   const params = await searchParams;
-  const transactionId =
-    typeof params.transactionId === "string" ? params.transactionId : null;
+  const urlParams = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (typeof value === "string") urlParams.set(key, value);
+  });
+  const query = parseReviewQuery(urlParams);
+  const transactionId = query.transactionId ?? null;
   const initialData = await withCurrentWorkspace((context) =>
-    listReviewQueue(context, transactionId ?? undefined),
+    listReviewQueue(context, query),
   );
 
   return (

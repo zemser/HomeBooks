@@ -5,6 +5,7 @@ import { getDb } from "@/db";
 import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
+import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 import { getFinappAuthMode } from "@/lib/supabase/config";
 
 const DEFAULT_USER_EMAIL = "dev@finapp.local";
@@ -104,6 +105,8 @@ async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceConte
           baseCurrency: DEFAULT_BASE_CURRENCY,
         })
         .returning();
+
+      await seedStarterWorkspaceCategories(workspace.id, tx);
     }
 
     let member = await tx.query.workspaceMembers.findFirst({

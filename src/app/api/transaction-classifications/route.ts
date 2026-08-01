@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
-import { upsertTransactionClassification } from "@/features/expenses/classifications";
+import {
+  isClassificationInputError,
+  upsertTransactionClassification,
+} from "@/features/expenses/classifications";
 import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -12,6 +15,7 @@ const requestSchema = z.object({
   transactionId: z.string().uuid(),
   classificationType: z.enum(CLASSIFICATION_TYPES),
   category: z.string().trim().optional().nullable(),
+  categoryId: z.string().uuid().optional().nullable(),
   memberOwnerId: z.string().uuid().optional().nullable(),
   createRule: z.boolean().optional().default(false),
 });
@@ -43,6 +47,7 @@ export async function POST(request: Request) {
       message: "Failed to save transaction classification",
       clientMessage:
         error instanceof Error ? error.message : "Failed to save transaction classification.",
+      status: isClassificationInputError(error) ? 400 : 500,
     });
   }
 }

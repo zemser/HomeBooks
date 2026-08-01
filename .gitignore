@@ -4,8 +4,10 @@ out
 dist
 .env
 .env.local
+.env.supbase
 .env.*.local
 coverage
+output/playwright/
 *.tsbuildinfo
 *.log
 data/

@@ -4,6 +4,7 @@ import type {
   NormalizationMode,
   RecurrenceRule,
 } from "@/features/recurring/constants";
+import type { WorkspaceCategoryItem } from "@/features/workspaces/types";
 
 export type RecurringEntryVersionItem = {
   id: string;
@@ -24,6 +25,7 @@ export type RecurringEntryItem = {
   payerMemberName: string | null;
   classificationType: ClassificationType;
   category: string | null;
+  categoryId: string | null;
   active: boolean;
   versions: RecurringEntryVersionItem[];
   currentVersion: RecurringEntryVersionItem | null;
@@ -42,6 +44,7 @@ export type GeneratedManualEntryItem = {
   payerMemberName: string | null;
   classificationType: ClassificationType;
   category: string | null;
+  categoryId: string | null;
   eventDate: string;
 };
 
@@ -52,6 +55,7 @@ export type RecurringPageData = {
     displayName: string;
   }>;
   categories: string[];
+  categoryCatalog: WorkspaceCategoryItem[];
   recurringEntries: RecurringEntryItem[];
   generatedEntries: GeneratedManualEntryItem[];
 };

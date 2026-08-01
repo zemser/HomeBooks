@@ -16,6 +16,7 @@ export type OneTimeManualEntryItem = {
   payerMemberName: string | null;
   classificationType: OneTimeManualEntryClassificationType;
   category: string | null;
+  categoryId: string | null;
   eventDate: string;
   allocation: ExpenseAllocationState | null;
 };

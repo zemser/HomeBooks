@@ -1,0 +1,1 @@
+ALTER TABLE "transaction_classifications" ADD COLUMN "decision_batch_id" uuid;
