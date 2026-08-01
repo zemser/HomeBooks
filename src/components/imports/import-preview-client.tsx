@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
@@ -123,6 +124,7 @@ export function ImportPreviewClient({
   savedImports = [],
   workspaceCurrency: initialWorkspaceCurrency,
 }: ImportPreviewClientProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [workspaceCurrency, setWorkspaceCurrency] = useState(initialWorkspaceCurrency);
   const [result, setResult] = useState<PreviewResponse | null>(null);
@@ -145,6 +147,39 @@ export function ImportPreviewClient({
   useEffect(() => {
     setSelectedFileName("No file selected yet");
   }, [initialWorkspaceCurrency]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function refreshSavedImports() {
+      try {
+        const response = await fetch("/api/imports", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = (await response.json()) as {
+          savedImports?: SavedImportSummary[];
+          workspaceCurrency?: string;
+        };
+
+        if (!isMounted) return;
+        if (data.savedImports) setSavedImportList(data.savedImports);
+        if (data.workspaceCurrency) setWorkspaceCurrency(data.workspaceCurrency);
+      } catch {
+        // The server-rendered list remains usable if a background refresh fails.
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") void refreshSavedImports();
+    }
+
+    window.addEventListener("pageshow", refreshSavedImports);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("pageshow", refreshSavedImports);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, []);
 
   async function handleSubmit(formData: FormData) {
     setError(null);
@@ -252,6 +287,7 @@ export function ImportPreviewClient({
       }
 
       setSaveState("saved");
+      router.refresh();
     } catch {
       setSaveState("error");
       setError("Could not save this import right now. Please try again.");
@@ -395,7 +431,11 @@ export function ImportPreviewClient({
                   <h3>{savedOutcomeCopy}</h3>
                   <p>{savedOutcomeNextStep}</p>
                   <div className="action-row">
-                    <Link className="button" href="/imports/review">
+                    <Link
+                      className="button"
+                      href="/imports/review"
+                      onClick={() => router.refresh()}
+                    >
                       {totalPendingReviewCount > 0
                         ? `Review transactions (${totalPendingReviewCount})`
                         : "Review transactions"}
@@ -544,7 +584,11 @@ export function ImportPreviewClient({
                 <p className="helper-text">{describeImportNextStep(savedImport)}.</p>
 
                 <div className="action-row">
-                  <Link className="link-button" href="/imports/review">
+                  <Link
+                    className="link-button"
+                    href="/imports/review"
+                    onClick={() => router.refresh()}
+                  >
                     {savedImport.reviewPendingCount > 0
                       ? `Review ${savedImport.reviewPendingCount} row${savedImport.reviewPendingCount === 1 ? "" : "s"}`
                       : "Open review queue"}
