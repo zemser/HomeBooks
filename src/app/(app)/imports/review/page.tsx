@@ -24,7 +24,7 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
   return (
     <main>
       <div className="page-shell stack">
-        <section className="page-header">
+        <section className="page-header review-page-header">
           <div>
             <span className="eyebrow">Review queue</span>
             <h1>Review transactions</h1>

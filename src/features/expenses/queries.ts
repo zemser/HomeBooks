@@ -253,7 +253,7 @@ export async function listReviewQueue(
     listWorkspaceMembers(context),
     listWorkspaceCategories(context),
     listRecentReviewCategories(context),
-    getReviewQueueSummary(context),
+    getReviewQueueSummary(context, query.importId),
   ]);
 
   const merchantValues = [
@@ -444,6 +444,7 @@ async function listHistoricalClassificationSuggestions(
 
 async function getReviewQueueSummary(
   context: CurrentWorkspaceContext,
+  selectedImportId: string = "all",
 ): Promise<ReviewQueueSummary> {
   const db = getDb();
   const [
@@ -451,6 +452,7 @@ async function getReviewQueueSummary(
     totalByImportRows,
     remainingByImportRows,
     latestTransactionRow,
+    selectedImportRow,
   ] = await Promise.all([
     db.$count(transactions, eq(transactions.workspaceId, context.workspaceId)),
     db
@@ -497,6 +499,33 @@ async function getReviewQueueSummary(
       .from(transactions)
       .where(eq(transactions.workspaceId, context.workspaceId))
       .then((rows) => rows[0] ?? null),
+    selectedImportId === "all"
+      ? Promise.resolve(null)
+      : db
+          .select({
+            importId: imports.id,
+            originalFilename: imports.originalFilename,
+            sourceName: importSources.name,
+            totalCount: sql<number>`count(*)::int`,
+            remainingCount: sql<number>`count(*) filter (where ${transactionClassifications.id} is null)::int`,
+            earliestTransactionDate: sql<string | null>`min(${transactions.transactionDate})::text`,
+            latestTransactionDate: sql<string | null>`max(${transactions.transactionDate})::text`,
+          })
+          .from(transactions)
+          .innerJoin(imports, eq(imports.id, transactions.importId))
+          .leftJoin(importSources, eq(importSources.id, imports.importSourceId))
+          .leftJoin(
+            transactionClassifications,
+            eq(transactionClassifications.transactionId, transactions.id),
+          )
+          .where(
+            and(
+              eq(transactions.workspaceId, context.workspaceId),
+              eq(imports.id, selectedImportId),
+            ),
+          )
+          .groupBy(imports.id, imports.originalFilename, importSources.name)
+          .then((rows) => rows[0] ?? null),
   ]);
 
   const totalCountByImportId = new Map(
@@ -522,6 +551,21 @@ async function getReviewQueueSummary(
     totalTransactionCount === 0
       ? 100
       : Math.round((reviewedCount / totalTransactionCount) * 100);
+  const selectedImport = selectedImportRow
+    ? {
+        importId: selectedImportRow.importId,
+        originalFilename: selectedImportRow.originalFilename,
+        sourceName: selectedImportRow.sourceName,
+        totalCount: Number(selectedImportRow.totalCount),
+        reviewedCount: Math.max(
+          Number(selectedImportRow.totalCount) - Number(selectedImportRow.remainingCount),
+          0,
+        ),
+        remainingCount: Number(selectedImportRow.remainingCount),
+        earliestTransactionDate: selectedImportRow.earliestTransactionDate ?? null,
+        latestTransactionDate: selectedImportRow.latestTransactionDate ?? null,
+      }
+    : null;
 
   return {
     totalTransactionCount,
@@ -530,5 +574,6 @@ async function getReviewQueueSummary(
     completionPercentage,
     latestTransactionMonth: latestTransactionRow?.latestTransactionDate?.slice(0, 7) ?? null,
     remainingByImport,
+    selectedImport,
   };
 }

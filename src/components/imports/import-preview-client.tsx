@@ -31,6 +31,9 @@ type PreviewResponse = {
   accountLabel?: string;
   statementLabel?: string;
   transactionCount: number;
+  newTransactionCount: number;
+  duplicateTransactionCount: number;
+  automaticRuleCount: number;
   previewTransactions: PreviewTransaction[];
   warnings: string[];
 };
@@ -45,6 +48,8 @@ type SavedImportSummary = {
   templateName?: string | null;
   transactionCount: number;
   reviewedTransactionCount: number;
+  manuallyReviewedCount: number;
+  ruleAppliedCount: number;
   reviewPendingCount: number;
   earliestTransactionDate: string | null;
   latestTransactionDate: string | null;
@@ -56,6 +61,12 @@ type ImportPreviewClientProps = {
 };
 
 type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
+
+type SaveOutcome = {
+  transactionCount: number;
+  duplicateTransactionCount: number;
+  automaticRuleCount: number;
+};
 
 type PendingSave = {
   file: File;
@@ -119,6 +130,7 @@ export function ImportPreviewClient({
   const [error, setError] = useState<string | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
   const [savedImportList, setSavedImportList] = useState(savedImports);
   const [lastSavedImportId, setLastSavedImportId] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>("No file selected yet");
@@ -174,6 +186,7 @@ export function ImportPreviewClient({
     setResult(null);
     setPendingSave(null);
     setSaveState("idle");
+    setSaveOutcome(null);
 
     const workspaceCurrencyValue = formData.get("workspaceCurrency");
     const selectedWorkspaceCurrency =
@@ -236,11 +249,20 @@ export function ImportPreviewClient({
       const data = (await response.json().catch(() => ({}))) as {
         status?: string;
         duplicate?: boolean;
+        transactionCount?: number;
+        duplicateTransactionCount?: number;
+        automaticRuleCount?: number;
         message?: string;
         error?: string;
         import?: SavedImportSummary | null;
       };
       const savedImport = data.import ?? null;
+
+      setSaveOutcome({
+        transactionCount: data.transactionCount ?? 0,
+        duplicateTransactionCount: data.duplicateTransactionCount ?? 0,
+        automaticRuleCount: data.automaticRuleCount ?? 0,
+      });
 
       if (savedImport) {
         setSavedImportList((current) => [
@@ -287,6 +309,7 @@ export function ImportPreviewClient({
     setResult(null);
     setPendingSave(null);
     setSaveState("idle");
+    setSaveOutcome(null);
     setSelectedFileName("No file selected yet");
     setFileInputVersion((current) => current + 1);
   }
@@ -298,13 +321,13 @@ export function ImportPreviewClient({
   const highlightedImport =
     savedImportList.find((item) => item.id === lastSavedImportId) ?? savedImportList[0] ?? null;
   const hasSavedOutcome = saveState === "saved" || saveState === "duplicate";
-  const savedTransactionCount = highlightedImport?.transactionCount ?? result?.transactionCount ?? 0;
+  const savedTransactionCount = saveOutcome?.transactionCount ?? highlightedImport?.transactionCount ?? 0;
   const savedReviewPendingCount = highlightedImport?.reviewPendingCount ?? 0;
   const savedOutcomeTitle = saveState === "duplicate" ? "Already imported" : "Import saved";
   const savedOutcomeCopy =
     saveState === "duplicate"
       ? "This file is already in the workspace."
-      : `${savedTransactionCount} transaction${savedTransactionCount === 1 ? "" : "s"} saved.`;
+      : `${savedTransactionCount} new transaction${savedTransactionCount === 1 ? "" : "s"} imported.`;
   const savedOutcomeNextStep =
     savedReviewPendingCount > 0
       ? `${savedReviewPendingCount} need review before reports are complete.`
@@ -366,7 +389,7 @@ export function ImportPreviewClient({
 
         {error ? (
           <div className="import-feedback">
-            <p className="status error">{error}</p>
+            <p className="status error" role="alert">{error}</p>
           </div>
         ) : null}
       </article>
@@ -398,6 +421,34 @@ export function ImportPreviewClient({
               </div>
             </div>
 
+            <section className="import-check" aria-labelledby="import-check-title">
+              <div>
+                <span className="eyebrow">Import check</span>
+                <h3 id="import-check-title">Here’s what will happen</h3>
+              </div>
+              <div className="import-check-grid">
+                <div>
+                  <strong>{result.newTransactionCount}</strong>
+                  <span>New transactions</span>
+                </div>
+                <div>
+                  <strong>{result.duplicateTransactionCount}</strong>
+                  <span>Already imported · skipped</span>
+                </div>
+                <div>
+                  <strong>{result.automaticRuleCount}</strong>
+                  <span>Handled by saved rules</span>
+                </div>
+                <div>
+                  <strong>{Math.max(result.newTransactionCount - result.automaticRuleCount, 0)}</strong>
+                  <span>Will need review</span>
+                </div>
+              </div>
+              <p className="helper-text">
+                Existing transactions will not be added again. Saved rules apply only to new exact merchant matches.
+              </p>
+            </section>
+
             {result.warnings.length > 0 ? (
               <div className="stack">
                 {result.warnings.map((warning) => (
@@ -421,23 +472,23 @@ export function ImportPreviewClient({
                   <div className="action-row">
                     <Link
                       className="button"
-                      href="/imports/review"
+                      href={`/imports/review?import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
                       onClick={() => router.refresh()}
                     >
-                      {totalPendingReviewCount > 0
-                        ? `Review transactions (${totalPendingReviewCount})`
-                        : "Review transactions"}
-                    </Link>
-                    <Link className="button button-secondary" href="/expenses">
-                      Open ledger
+                      {savedReviewPendingCount > 0
+                        ? `Review this statement · ${savedReviewPendingCount}`
+                        : "Open this statement"}
                     </Link>
                     <button
-                      className="link-button"
+                      className="button button-secondary"
                       type="button"
                       onClick={handleImportAnotherFile}
                     >
-                      Import another file
+                      Upload another statement
                     </button>
+                    <Link className="link-button" href="/expenses">
+                      Go to all transactions
+                    </Link>
                   </div>
                 </div>
               ) : (
@@ -445,17 +496,20 @@ export function ImportPreviewClient({
                   className="button"
                   type="button"
                   onClick={() => void handleSaveImport()}
-                  disabled={saveState === "saving"}
+                  disabled={saveState === "saving" || result.newTransactionCount === 0}
                 >
-                  {saveState === "saving" ? "Saving..." : "Save transactions"}
+                  {saveState === "saving"
+                    ? "Importing..."
+                    : result.newTransactionCount === 0
+                      ? "Nothing new to import"
+                      : `Import ${result.newTransactionCount} new transaction${result.newTransactionCount === 1 ? "" : "s"}`}
                 </button>
               )}
             </div>
           </article>
 
-          <article className="card">
-            <h2>Previewed transactions</h2>
-            <p>Showing up to 50 transactions.</p>
+          <details className="card disclosure import-preview-disclosure">
+            <summary>Preview up to 50 statement rows</summary>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -517,7 +571,7 @@ export function ImportPreviewClient({
                 </tbody>
               </table>
             </div>
-          </article>
+          </details>
         </section>
       ) : null}
 
@@ -543,8 +597,7 @@ export function ImportPreviewClient({
                 <tr>
                   <th scope="col">Statement</th>
                   <th scope="col">Activity period</th>
-                  <th scope="col">Rows</th>
-                  <th scope="col">Review</th>
+                  <th scope="col">Progress</th>
                   <th scope="col">Imported</th>
                   <th scope="col"><span className="sr-only">Actions</span></th>
                 </tr>
@@ -557,18 +610,14 @@ export function ImportPreviewClient({
                       <div className="table-note">
                         {savedImport.sourceName ?? "Unknown source"} · {formatTemplateName(savedImport.templateName)}
                       </div>
-                      <span className={`badge ${savedImport.importStatus === "completed" ? "badge-neutral" : "badge-warning"}`}>
-                        {savedImport.importStatus}
-                      </span>
+                      <span className="badge badge-neutral">Imported</span>
                     </td>
                     <td>{formatImportActivityRange(savedImport)}</td>
                     <td>
-                      <strong>{savedImport.transactionCount}</strong>
-                      <div className="table-note">{savedImport.reviewedTransactionCount} reviewed</div>
-                    </td>
-                    <td>
-                      <strong>{savedImport.reviewPendingCount}</strong>
-                      <div className="table-note">{savedImport.reviewPendingCount === 0 ? "Complete" : "Still need review"}</div>
+                      <strong>{savedImport.reviewPendingCount === 0 ? "Complete" : `${savedImport.reviewPendingCount} need review`}</strong>
+                      <div className="table-note">
+                        {savedImport.manuallyReviewedCount} reviewed · {savedImport.ruleAppliedCount} by rules · {savedImport.transactionCount} total
+                      </div>
                     </td>
                     <td>{formatSavedAt(savedImport.createdAt)}</td>
                     <td>

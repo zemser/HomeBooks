@@ -151,7 +151,7 @@ test.describe("transaction review workflow", () => {
 
       await expect(page.getByText("This transaction is already classified", { exact: false })).toBeVisible();
       await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeVisible();
-      await page.getByText("How should this appear in reports?", { exact: true }).click();
+      await page.getByText("Report month allocation", { exact: true }).click();
       await expect(page.getByRole("button", { name: "Save allocation", exact: true })).toBeVisible();
 
       const classified = await page.request.get(
@@ -267,6 +267,55 @@ test.describe("transaction review workflow", () => {
     }
   });
 
+  test("one review decision can include matching waiting transactions", async ({ page }) => {
+    const before = await loadReviewData(page);
+    const category = before.categoryCatalog[0];
+    const merchantCounts = new Map<string, number>();
+    for (const item of before.queue) {
+      const merchant = item.merchantRaw?.trim().toLocaleLowerCase();
+      if (merchant) merchantCounts.set(merchant, (merchantCounts.get(merchant) ?? 0) + 1);
+    }
+    const transaction = before.queue.find((item) => {
+      const merchant = item.merchantRaw?.trim().toLocaleLowerCase();
+      return merchant && (merchantCounts.get(merchant) ?? 0) > 1;
+    });
+    test.skip(!transaction || !category, "The matching-merchant test needs repeated queue rows.");
+
+    let undoBatchId: string | undefined;
+    try {
+      await page.goto(`/imports/review?transactionId=${transaction!.id}`);
+      await page.getByRole("radio", { name: /Household/ }).check();
+      const categoryInput = page.getByRole("combobox", { name: "Category", exact: true });
+      await categoryInput.click();
+      await page.getByRole("option", { name: category!.name, exact: true }).click();
+      await page.getByRole("checkbox", { name: /Also apply to/ }).check();
+
+      const saveResponsePromise = page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/transaction-classifications")
+          && response.request().method() === "POST",
+      );
+      await page.getByRole("button", { name: /Save and next|Save classification/ }).click();
+      const saveResponse = await saveResponsePromise;
+      expect(saveResponse.ok()).toBeTruthy();
+      const payload = (await saveResponse.json()) as { undoBatchId?: string; updatedCount?: number };
+      undoBatchId = payload.undoBatchId;
+      expect(payload.updatedCount).toBeGreaterThan(1);
+      await expect(page.getByText(new RegExp(`across ${payload.updatedCount} transactions`))).toBeVisible();
+
+      await page.getByRole("button", { name: "Undo", exact: true }).click();
+      await expect(page.getByText(`Restored ${payload.updatedCount} transactions.`)).toBeVisible();
+      undoBatchId = undefined;
+    } finally {
+      if (undoBatchId) {
+        const cleanup = await page.request.post("/api/transaction-classifications/undo", {
+          data: { batchId: undoBatchId },
+        });
+        expect(cleanup.ok()).toBeTruthy();
+      }
+    }
+  });
+
   test("classification APIs reject categories and members outside the workspace", async ({ page }) => {
     const before = await loadReviewData(page);
     const transaction = before.queue[0];
@@ -368,8 +417,8 @@ test.describe("transaction review workflow", () => {
         await row.getByRole("checkbox").check();
       }
 
-      await page.getByRole("button", { name: "Bulk actions (2)", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "Bulk actions" });
+      await page.getByRole("button", { name: "Classify selected", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Classify selected" });
       await expect(dialog).toBeVisible();
       await dialog.getByRole("radio", { name: /Household/ }).check();
       const categoryInput = dialog.getByRole("combobox", { name: "Category", exact: true });

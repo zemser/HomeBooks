@@ -74,6 +74,7 @@ export type ReviewQueueSummary = {
   completionPercentage: number;
   latestTransactionMonth: string | null;
   remainingByImport: ReviewQueueImportSummary[];
+  selectedImport: ReviewQueueImportSummary | null;
 };
 
 export type ReviewQueueResponse = {
