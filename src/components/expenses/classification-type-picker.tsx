@@ -35,6 +35,7 @@ export function ClassificationTypePicker({
         {CLASSIFICATION_TYPES.map((type, index) => (
           <label
             className={`classification-type-option ${value === type ? "is-selected" : ""}`}
+            title={descriptions[type]}
             key={type}
           >
             <input
@@ -42,6 +43,7 @@ export function ClassificationTypePicker({
               name={groupName}
               value={type}
               checked={value === type}
+              aria-describedby={`${groupName}-${type}-description`}
               onChange={() => onChange(type)}
             />
             <span className="classification-type-number" aria-hidden="true">
@@ -49,7 +51,9 @@ export function ClassificationTypePicker({
             </span>
             <span>
               <strong>{formatClassificationTypeLabel(type)}</strong>
-              <small>{descriptions[type]}</small>
+              <small id={`${groupName}-${type}-description`} className="classification-type-description">
+                {descriptions[type]}
+              </small>
             </span>
           </label>
         ))}

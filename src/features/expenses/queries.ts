@@ -300,9 +300,14 @@ export async function listReviewQueue(
     new Set(rawQueue.map((transaction) => transaction.transactionDate.slice(0, 7))),
   ).sort((left, right) => right.localeCompare(left));
   const importLabels = new Map<string, string>();
+  const importRemainingCounts = new Map<string, number>();
   const accountLabels = new Map<string, string>();
   rawQueue.forEach((transaction) => {
     importLabels.set(transaction.importId, transaction.importOriginalFilename);
+    importRemainingCounts.set(
+      transaction.importId,
+      (importRemainingCounts.get(transaction.importId) ?? 0) + 1,
+    );
     accountLabels.set(transaction.accountId, transaction.accountDisplayName);
   });
   const categories = categoryCatalog.map((category) => category.name);
@@ -323,7 +328,10 @@ export async function listReviewQueue(
     },
     filterOptions: {
       months,
-      imports: Array.from(importLabels, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)),
+      imports: Array.from(importLabels, ([id, label]) => ({
+        id,
+        label: `${label} · ${importRemainingCounts.get(id) ?? 0} left`,
+      })).sort((a, b) => a.label.localeCompare(b.label)),
       accounts: Array.from(accountLabels, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)),
     },
   };

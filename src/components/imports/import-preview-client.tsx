@@ -135,6 +135,7 @@ export function ImportPreviewClient({
   const [lastSavedImportId, setLastSavedImportId] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>("No file selected yet");
   const [fileInputVersion, setFileInputVersion] = useState(0);
+  const [savedImportSearch, setSavedImportSearch] = useState("");
 
   useEffect(() => {
     setSavedImportList(savedImports);
@@ -307,6 +308,16 @@ export function ImportPreviewClient({
     (sum, item) => sum + item.reviewPendingCount,
     0,
   );
+  const normalizedSavedImportSearch = savedImportSearch.trim().toLocaleLowerCase();
+  const matchingSavedImports = savedImportList.filter((savedImport) =>
+    [savedImport.originalFilename, savedImport.sourceName ?? "", savedImport.templateName ?? ""]
+      .join(" ")
+      .toLocaleLowerCase()
+      .includes(normalizedSavedImportSearch),
+  );
+  const displayedSavedImports = normalizedSavedImportSearch
+    ? matchingSavedImports
+    : matchingSavedImports.slice(0, 12);
   const highlightedImport =
     savedImportList.find((item) => item.id === lastSavedImportId) ?? savedImportList[0] ?? null;
   const hasSavedOutcome = saveState === "saved" || saveState === "duplicate";
@@ -549,8 +560,25 @@ export function ImportPreviewClient({
             )}
           </div>
 
+          <label className="field">
+            <span>Find an import</span>
+            <input
+              className="input"
+              type="search"
+              value={savedImportSearch}
+              onChange={(event) => setSavedImportSearch(event.target.value)}
+              placeholder="Search by filename or source"
+            />
+          </label>
+
+          {!normalizedSavedImportSearch && savedImportList.length > displayedSavedImports.length ? (
+            <p className="helper-text">
+              Showing the 12 most recent imports. Search to find an older upload.
+            </p>
+          ) : null}
+
           <div className="stack">
-            {savedImportList.map((savedImport) => (
+            {displayedSavedImports.map((savedImport) => (
               <div className="card stack compact" key={savedImport.id}>
                 <div className="page-actions">
                   <div>
@@ -586,7 +614,7 @@ export function ImportPreviewClient({
                 <div className="action-row">
                   <Link
                     className="link-button"
-                    href="/imports/review"
+                    href={`/imports/review?import=${encodeURIComponent(savedImport.id)}`}
                     onClick={() => router.refresh()}
                   >
                     {savedImport.reviewPendingCount > 0
@@ -599,6 +627,9 @@ export function ImportPreviewClient({
                 </div>
               </div>
             ))}
+            {displayedSavedImports.length === 0 ? (
+              <p className="empty-state">No saved imports match this search.</p>
+            ) : null}
           </div>
         </article>
       ) : null}

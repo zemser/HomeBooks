@@ -72,18 +72,28 @@ export function formatAllocationSummary(allocation: ExpenseAllocationState | nul
   }
 
   if (allocation.allocationMethod === "manual_split") {
-    return `Manual split across ${allocation.allocationCount} month${allocation.allocationCount === 1 ? "" : "s"}`;
+    return `Manual split · ${allocation.allocationCount} report month${allocation.allocationCount === 1 ? "" : "s"}`;
   }
 
   if (allocation.coverageStartDate && allocation.coverageEndDate) {
     if (allocation.coverageStartDate === allocation.coverageEndDate) {
-      return `Adjusted: ${allocation.coverageStartDate}`;
+      return `Adjusted period · ${formatAllocationDate(allocation.coverageStartDate)}`;
     }
 
-    return `Adjusted: ${allocation.coverageStartDate} to ${allocation.coverageEndDate}`;
+    return `Adjusted period · ${formatAllocationDate(allocation.coverageStartDate)} to ${formatAllocationDate(allocation.coverageEndDate)}`;
   }
 
-  return `Adjusted across ${allocation.allocationCount} month${allocation.allocationCount === 1 ? "" : "s"}`;
+  return `Adjusted period · ${allocation.allocationCount} report month${allocation.allocationCount === 1 ? "" : "s"}`;
+}
+
+function formatAllocationDate(value: string) {
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("en", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(date);
 }
 
 export function formatMoneyDisplay(

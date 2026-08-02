@@ -69,6 +69,82 @@ type ActiveFilterKey =
   | "sort"
   | "view";
 
+type ReviewImportOption = {
+  id: string;
+  label: string;
+};
+
+function ImportScopePicker({
+  imports,
+  value,
+  onChange,
+}: {
+  imports: ReviewImportOption[];
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  const [query, setQuery] = useState("");
+  const selectedLabel = imports.find((item) => item.id === value)?.label;
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredImports = imports.filter((item) =>
+    item.label.toLocaleLowerCase().includes(normalizedQuery),
+  );
+
+  function selectImport(importId: string) {
+    onChange(importId);
+    setQuery("");
+    if (detailsRef.current) detailsRef.current.open = false;
+  }
+
+  return (
+    <div className="field import-scope-field">
+      <span id="review-import-scope-label">Import</span>
+      <details className="import-scope-picker" ref={detailsRef}>
+        <summary aria-labelledby="review-import-scope-label">
+          {value === "all" ? "All imports" : selectedLabel ?? "Selected import"}
+        </summary>
+        <div className="import-scope-menu">
+          <input
+            className="input"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search imports"
+            aria-label="Search imports"
+          />
+          <div className="import-scope-options" role="listbox" aria-label="Import options">
+            <button
+              className={value === "all" ? "is-selected" : ""}
+              type="button"
+              role="option"
+              aria-selected={value === "all"}
+              onClick={() => selectImport("all")}
+            >
+              All imports
+            </button>
+            {filteredImports.map((item) => (
+              <button
+                className={value === item.id ? "is-selected" : ""}
+                type="button"
+                role="option"
+                aria-selected={value === item.id}
+                onClick={() => selectImport(item.id)}
+                key={item.id}
+              >
+                {item.label}
+              </button>
+            ))}
+            {filteredImports.length === 0 ? (
+              <p className="helper-text">No imports match this search.</p>
+            ) : null}
+          </div>
+        </div>
+      </details>
+    </div>
+  );
+}
+
 const emptySingleForm: SingleFormState = {
   classificationType: "",
   category: "",
@@ -855,8 +931,8 @@ export function ReviewQueueClient({
 
         {summary.remainingByImport.length > 0 ? (
           <div className="stack compact">
-            <p className="helper-text">What&apos;s left by import</p>
-            {summary.remainingByImport.map((item) => (
+            <p className="helper-text">Incomplete imports</p>
+            {summary.remainingByImport.slice(0, 5).map((item) => (
               <div className="activity-row" key={item.importId}>
                 <div>
                   <strong>{item.originalFilename}</strong>
@@ -877,6 +953,12 @@ export function ReviewQueueClient({
                 </div>
               </div>
             ))}
+            {summary.remainingByImport.length > 5 ? (
+              <p className="helper-text">
+                {summary.remainingByImport.length - 5} more incomplete import
+                {summary.remainingByImport.length - 5 === 1 ? "" : "s"}. Use the Import filter to find one.
+              </p>
+            ) : null}
           </div>
         ) : null}
       </article>
@@ -919,13 +1001,11 @@ export function ReviewQueueClient({
               {availableMonths.map((month) => <option value={month} key={month}>{formatReviewReportMonth(month)}</option>)}
             </select>
           </label>
-          <label className="field">
-            <span>Import</span>
-            <select className="input" value={importFilter} onChange={(event) => setImportFilter(event.target.value)}>
-              <option value="all">All imports</option>
-              {availableImports.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
-            </select>
-          </label>
+          <ImportScopePicker
+            imports={availableImports}
+            value={importFilter}
+            onChange={setImportFilter}
+          />
           <label className="field">
             <span>Account</span>
             <select className="input" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>
@@ -1315,7 +1395,7 @@ export function ReviewQueueClient({
                   </p>
                 ) : null}
                 <p className="table-note">
-                  Allocation: {formatAllocationSummary(selectedTransaction.allocation)}
+                  Reporting: {formatAllocationSummary(selectedTransaction.allocation)}
                 </p>
               </div>
 
@@ -1468,11 +1548,11 @@ export function ReviewQueueClient({
               ) : null}
 
               <details className="disclosure">
-                <summary>How should this appear in reports?</summary>
+                <summary>Report month allocation</summary>
                 <div className="stack compact">
                   <p className="muted-text">
-                    The payment date stays unchanged. Use this only when the expense belongs
-                    across different report months.
+                    Allocation controls which report month or months receive this expense. The
+                    original payment date stays unchanged.
                   </p>
 
                   {!allocationEditable ? (
