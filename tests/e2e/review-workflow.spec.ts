@@ -54,6 +54,14 @@ test.describe("transaction review workflow", () => {
     await trigger.click();
     await expect(filters).toHaveAttribute("open", "");
 
+    const controlHeights = await Promise.all([
+      filters.locator(".import-scope-picker > summary").evaluate((element) => element.getBoundingClientRect().height),
+      filters.getByLabel("Month").evaluate((element) => element.getBoundingClientRect().height),
+      filters.getByLabel("Account").evaluate((element) => element.getBoundingClientRect().height),
+      filters.getByLabel("Sort").evaluate((element) => element.getBoundingClientRect().height),
+    ]);
+    expect(new Set(controlHeights).size).toBe(1);
+
     await page.getByRole("searchbox", { name: "Search" }).click();
     await expect(filters).not.toHaveAttribute("open", "");
 
