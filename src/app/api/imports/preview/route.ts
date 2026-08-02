@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
+import { analyzeParsedBankImport } from "@/features/imports/persistence";
 import { detectBankTemplate } from "@/features/imports/templates/detect";
+import { withCurrentWorkspace } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
@@ -78,12 +80,18 @@ export async function POST(request: Request) {
       workbook,
       workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),
     });
+    const importPlan = await withCurrentWorkspace((context) =>
+      analyzeParsedBankImport({ context, parsed: result.parsed }),
+    );
 
     return NextResponse.json({
       detectedTemplate,
       accountLabel: result.parsed.accountLabel,
       statementLabel: result.parsed.statementLabel,
       transactionCount: result.previewTransactions.length,
+      newTransactionCount: importPlan.newTransactionCount,
+      duplicateTransactionCount: importPlan.duplicateTransactionCount,
+      automaticRuleCount: importPlan.automaticRuleCount,
       previewTransactions: result.previewTransactions.slice(0, 50),
       warnings: buildPreviewWarnings({
         workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),

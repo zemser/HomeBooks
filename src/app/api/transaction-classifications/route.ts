@@ -18,6 +18,7 @@ const requestSchema = z.object({
   categoryId: z.string().uuid().optional().nullable(),
   memberOwnerId: z.string().uuid().optional().nullable(),
   createRule: z.boolean().optional().default(false),
+  additionalTransactionIds: z.array(z.string().uuid()).max(200).optional().default([]),
 });
 
 export async function POST(request: Request) {

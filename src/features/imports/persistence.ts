@@ -17,7 +17,11 @@ import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
 import { getSupportedBankImportCatalog } from "@/features/imports/catalog";
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
-import type { ParsedBankTransaction, WorkbookData } from "@/features/imports/types";
+import type {
+  ParsedBankStatement,
+  ParsedBankTransaction,
+  WorkbookData,
+} from "@/features/imports/types";
 import { isEffectivelyEmptyRow, normalizeRow } from "@/features/imports/utils";
 import {
   buildImportStoragePath,
@@ -55,6 +59,8 @@ export type SavedImportSummary = {
   sourceName: string | null;
   transactionCount: number;
   reviewedTransactionCount: number;
+  manuallyReviewedCount: number;
+  ruleAppliedCount: number;
   reviewPendingCount: number;
   earliestTransactionDate: string | null;
   latestTransactionDate: string | null;
@@ -65,6 +71,8 @@ export type SaveImportResult =
       status: "saved";
       importId: string;
       transactionCount: number;
+      duplicateTransactionCount: number;
+      automaticRuleCount: number;
       importStatus: string;
       duplicateOfImportId?: undefined;
     }
@@ -72,6 +80,8 @@ export type SaveImportResult =
       status: "duplicate";
       importId: string;
       transactionCount: number;
+      duplicateTransactionCount: number;
+      automaticRuleCount: number;
       importStatus: string;
       duplicateOfImportId: string;
     };
@@ -107,6 +117,90 @@ function buildTransactionDedupeHash(input: {
       }),
     )
     .digest("hex");
+}
+
+export async function analyzeParsedBankImport(input: {
+  context: CurrentImportContext;
+  parsed: ParsedBankStatement;
+}) {
+  const db = getDb();
+  const importCatalog = await getSupportedBankImportCatalog();
+  const templateRecord = importCatalog.get(input.parsed.templateId);
+
+  if (!templateRecord) {
+    throw new Error(`No seeded template exists for ${input.parsed.templateId}`);
+  }
+
+  const accountLabel =
+    input.parsed.accountLabel?.trim() || `${templateRecord.sourceName} imported account`;
+  const transactionDedupeHashes = input.parsed.transactions.map((transaction) =>
+    buildTransactionDedupeHash({
+      workspaceId: input.context.workspaceId,
+      sourceId: templateRecord.sourceId,
+      accountLabel,
+      transaction,
+    }),
+  );
+  const [existingHashRows, activeRuleRows] = await Promise.all([
+    transactionDedupeHashes.length > 0
+      ? db
+          .select({ dedupeHash: transactions.dedupeHash })
+          .from(transactions)
+          .where(
+            and(
+              eq(transactions.workspaceId, input.context.workspaceId),
+              inArray(transactions.dedupeHash, transactionDedupeHashes),
+            ),
+          )
+      : Promise.resolve([]),
+    db
+      .select({
+        matchValue: classificationRules.matchValue,
+        classificationType: classificationRules.defaultClassificationType,
+        memberOwnerId: classificationRules.defaultMemberOwnerId,
+        category: classificationRules.defaultCategory,
+        categoryId: classificationRules.defaultCategoryId,
+      })
+      .from(classificationRules)
+      .where(
+        and(
+          eq(classificationRules.workspaceId, input.context.workspaceId),
+          eq(classificationRules.active, true),
+          eq(classificationRules.matchType, "exact"),
+        ),
+      )
+      .orderBy(asc(classificationRules.priority), asc(classificationRules.createdAt)),
+  ]);
+  const seenHashes = new Set(existingHashRows.map((row) => row.dedupeHash));
+  const activeRuleByMatch = new Map<string, ActiveExactClassificationRule>();
+
+  for (const rule of activeRuleRows) {
+    if (!activeRuleByMatch.has(rule.matchValue)) {
+      activeRuleByMatch.set(rule.matchValue, rule);
+    }
+  }
+
+  const transactionPlans = input.parsed.transactions.map((transaction, index) => {
+    const dedupeHash = transactionDedupeHashes[index];
+    const duplicate = seenHashes.has(dedupeHash);
+    if (!duplicate) seenHashes.add(dedupeHash);
+    const merchantValue = transaction.merchantRaw?.trim();
+    const matchedRule = !duplicate && merchantValue
+      ? activeRuleByMatch.get(normalizeMerchantRuleValue(merchantValue)) ?? null
+      : null;
+
+    return { transaction, index, dedupeHash, duplicate, matchedRule };
+  });
+
+  return {
+    templateRecord,
+    accountLabel,
+    transactionPlans,
+    transactionCount: transactionPlans.length,
+    newTransactionCount: transactionPlans.filter((item) => !item.duplicate).length,
+    duplicateTransactionCount: transactionPlans.filter((item) => item.duplicate).length,
+    automaticRuleCount: transactionPlans.filter((item) => item.matchedRule).length,
+  };
 }
 
 function createImportRowStatusMap(input: {
@@ -233,7 +327,7 @@ export async function listSavedImports(
   }
 
   const importIds = savedImports.map((savedImport) => savedImport.id);
-  const [transactionCounts, pendingReviewCounts, transactionDateRanges] = await Promise.all([
+  const [transactionCounts, pendingReviewCounts, classificationCounts, transactionDateRanges] = await Promise.all([
     db
       .select({
         importId: transactions.importId,
@@ -262,6 +356,19 @@ export async function listSavedImports(
     db
       .select({
         importId: transactions.importId,
+        ruleAppliedCount: sql<number>`count(*) filter (where ${transactionClassifications.decidedBy} = 'rule')::int`,
+        manuallyReviewedCount: sql<number>`count(*) filter (where ${transactionClassifications.decidedBy} <> 'rule')::int`,
+      })
+      .from(transactions)
+      .innerJoin(
+        transactionClassifications,
+        eq(transactionClassifications.transactionId, transactions.id),
+      )
+      .where(inArray(transactions.importId, importIds))
+      .groupBy(transactions.importId),
+    db
+      .select({
+        importId: transactions.importId,
         earliestTransactionDate: sql<string | null>`min(${transactions.transactionDate})::text`,
         latestTransactionDate: sql<string | null>`max(${transactions.transactionDate})::text`,
       })
@@ -274,6 +381,15 @@ export async function listSavedImports(
   );
   const pendingCountByImportId = new Map(
     pendingReviewCounts.map((item) => [item.importId, Number(item.count)]),
+  );
+  const classificationCountByImportId = new Map(
+    classificationCounts.map((item) => [
+      item.importId,
+      {
+        ruleAppliedCount: Number(item.ruleAppliedCount),
+        manuallyReviewedCount: Number(item.manuallyReviewedCount),
+      },
+    ]),
   );
   const dateRangeByImportId = new Map(
     transactionDateRanges.map((item) => [
@@ -289,11 +405,14 @@ export async function listSavedImports(
     ...(() => {
       const transactionCount = countByImportId.get(savedImport.id) ?? 0;
       const reviewPendingCount = pendingCountByImportId.get(savedImport.id) ?? 0;
+      const classificationCount = classificationCountByImportId.get(savedImport.id);
       const dateRange = dateRangeByImportId.get(savedImport.id);
 
       return {
         transactionCount,
         reviewedTransactionCount: Math.max(transactionCount - reviewPendingCount, 0),
+        manuallyReviewedCount: classificationCount?.manuallyReviewedCount ?? 0,
+        ruleAppliedCount: classificationCount?.ruleAppliedCount ?? 0,
         reviewPendingCount,
         earliestTransactionDate: dateRange?.earliestTransactionDate ?? null,
         latestTransactionDate: dateRange?.latestTransactionDate ?? null,
@@ -343,6 +462,8 @@ export async function persistBankImport(input: {
         importId: existingImport.id,
         duplicateOfImportId: existingImport.id,
         transactionCount: existingTransactionCount,
+        duplicateTransactionCount: existingTransactionCount,
+        automaticRuleCount: 0,
         importStatus: existingImport.importStatus,
       };
     }
@@ -352,15 +473,11 @@ export async function persistBankImport(input: {
     workbook: input.workbook,
     workspaceCurrency: input.context.baseCurrency,
   });
-  const importCatalog = await getSupportedBankImportCatalog();
-  const templateRecord = importCatalog.get(preview.parsed.templateId);
-
-  if (!templateRecord) {
-    throw new Error(`No seeded template exists for ${preview.parsed.templateId}`);
-  }
-
-  const accountLabel =
-    preview.parsed.accountLabel?.trim() || `${templateRecord.sourceName} imported account`;
+  const importPlan = await analyzeParsedBankImport({
+    context: input.context,
+    parsed: preview.parsed,
+  });
+  const { accountLabel, templateRecord } = importPlan;
   const account = await findOrCreateFinancialAccount({
     workspaceId: input.context.workspaceId,
     memberId: input.context.memberId,
@@ -430,31 +547,6 @@ export async function persistBankImport(input: {
     });
 
     await db.transaction(async (tx) => {
-      const activeRuleRows = await tx
-        .select({
-          matchValue: classificationRules.matchValue,
-          classificationType: classificationRules.defaultClassificationType,
-          memberOwnerId: classificationRules.defaultMemberOwnerId,
-          category: classificationRules.defaultCategory,
-          categoryId: classificationRules.defaultCategoryId,
-        })
-        .from(classificationRules)
-        .where(
-          and(
-            eq(classificationRules.workspaceId, input.context.workspaceId),
-            eq(classificationRules.active, true),
-            eq(classificationRules.matchType, "exact"),
-          ),
-        )
-        .orderBy(asc(classificationRules.priority), asc(classificationRules.createdAt));
-      const activeRuleByMatch = new Map<string, ActiveExactClassificationRule>();
-
-      for (const rule of activeRuleRows) {
-        if (!activeRuleByMatch.has(rule.matchValue)) {
-          activeRuleByMatch.set(rule.matchValue, rule);
-        }
-      }
-
       if (stagingRows.length > 0) {
         await tx.insert(importRows).values(
           stagingRows.map((row) => ({
@@ -469,11 +561,13 @@ export async function persistBankImport(input: {
         );
       }
 
-      if (preview.parsed.transactions.length > 0) {
+      const newTransactionPlans = importPlan.transactionPlans.filter((item) => !item.duplicate);
+
+      if (newTransactionPlans.length > 0) {
         const insertedTransactions = await tx
           .insert(transactions)
           .values(
-            preview.parsed.transactions.map((transaction, index) => {
+            newTransactionPlans.map(({ transaction, index, dedupeHash }) => {
               const normalizedPreview = preview.previewTransactions[index];
 
               return {
@@ -498,30 +592,15 @@ export async function persistBankImport(input: {
                 normalizationRateSource: normalizedPreview.normalizationRateSource,
                 direction: transaction.direction,
                 externalReference: null,
-                dedupeHash: buildTransactionDedupeHash({
-                  workspaceId: input.context.workspaceId,
-                  sourceId: templateRecord.sourceId,
-                  accountLabel,
-                  transaction,
-                }),
+                dedupeHash,
               };
             }),
           )
           .returning({
             id: transactions.id,
-            merchantRaw: transactions.merchantRaw,
           });
-        const automaticClassifications = insertedTransactions.flatMap((transaction) => {
-          const merchantValue = transaction.merchantRaw?.trim();
-
-          if (!merchantValue) {
-            return [];
-          }
-
-          const matchedRule = activeRuleByMatch.get(
-            normalizeMerchantRuleValue(merchantValue),
-          );
-
+        const automaticClassifications = insertedTransactions.flatMap((transaction, index) => {
+          const matchedRule = newTransactionPlans[index]?.matchedRule;
           if (!matchedRule) {
             return [];
           }
@@ -583,7 +662,9 @@ export async function persistBankImport(input: {
     return {
       status: "saved" as const,
       importId,
-      transactionCount: preview.parsed.transactions.length,
+      transactionCount: importPlan.newTransactionCount,
+      duplicateTransactionCount: importPlan.duplicateTransactionCount,
+      automaticRuleCount: importPlan.automaticRuleCount,
       importStatus: "completed",
     };
   } catch (error) {

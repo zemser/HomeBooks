@@ -25,6 +25,7 @@ type SingleClassificationInput = {
   categoryId?: string | null;
   memberOwnerId?: string | null;
   createRule?: boolean;
+  additionalTransactionIds?: string[];
 };
 
 type BulkClassificationInput = {
@@ -112,31 +113,55 @@ export async function upsertTransactionClassification(
     db,
   );
 
-  const transaction = await db.query.transactions.findFirst({
-    columns: {
-      id: true,
-      merchantRaw: true,
-    },
-    where: and(
-      eq(transactions.id, input.transactionId),
-      eq(transactions.workspaceId, context.workspaceId),
-    ),
-  });
+  const requestedTransactionIds = Array.from(new Set([
+    input.transactionId,
+    ...(input.additionalTransactionIds ?? []),
+  ]));
+  const matchingTransactions = await db
+    .select({ id: transactions.id, merchantRaw: transactions.merchantRaw })
+    .from(transactions)
+    .where(
+      and(
+        eq(transactions.workspaceId, context.workspaceId),
+        inArray(transactions.id, requestedTransactionIds),
+      ),
+    );
+  const transaction = matchingTransactions.find((item) => item.id === input.transactionId);
 
   if (!transaction) {
     throw new Error("Transaction was not found in the current workspace.");
   }
+  if (matchingTransactions.length !== requestedTransactionIds.length) {
+    throw new Error("One or more matching transactions were not found.");
+  }
 
   const now = new Date();
   const merchantValue = normalizeOptionalText(transaction.merchantRaw);
-  const ruleMatchValue = input.createRule && merchantValue
+  const normalizedMerchantValue = merchantValue
     ? normalizeMerchantRuleValue(merchantValue)
+    : null;
+  if (
+    requestedTransactionIds.length > 1 &&
+    (!normalizedMerchantValue || matchingTransactions.some(
+      (item) => !item.merchantRaw || normalizeMerchantRuleValue(item.merchantRaw) !== normalizedMerchantValue,
+    ))
+  ) {
+    throw new ClassificationInputError(
+      "Additional transactions must have the same merchant as the selected transaction.",
+    );
+  }
+  const ruleMatchValue = input.createRule && merchantValue
+    ? normalizedMerchantValue
     : null;
 
   const undoBatchId = await db.transaction(async (tx) => {
-    const previousClassification = await tx.query.transactionClassifications.findFirst({
-      where: eq(transactionClassifications.transactionId, transaction.id),
-    });
+    const previousRows = await tx
+      .select()
+      .from(transactionClassifications)
+      .where(inArray(transactionClassifications.transactionId, requestedTransactionIds));
+    const previousByTransactionId = new Map(
+      previousRows.map((classification) => [classification.transactionId, classification]),
+    );
     const previousRules = ruleMatchValue
       ? await tx
           .select()
@@ -155,19 +180,22 @@ export async function upsertTransactionClassification(
         workspaceId: context.workspaceId,
         userId: context.userId,
         actionType: "single_classification",
-        transactionIds: [transaction.id],
-        previousClassifications: [{
-          transactionId: transaction.id,
-          classification: previousClassification
-            ? {
-                ...previousClassification,
-                confidence: previousClassification.confidence ?? null,
-                reviewedAt: previousClassification.reviewedAt?.toISOString() ?? null,
-                createdAt: previousClassification.createdAt.toISOString(),
-                updatedAt: previousClassification.updatedAt.toISOString(),
-              }
-            : null,
-        }],
+        transactionIds: requestedTransactionIds,
+        previousClassifications: requestedTransactionIds.map((transactionId) => {
+          const previousClassification = previousByTransactionId.get(transactionId);
+          return {
+            transactionId,
+            classification: previousClassification
+              ? {
+                  ...previousClassification,
+                  confidence: previousClassification.confidence ?? null,
+                  reviewedAt: previousClassification.reviewedAt?.toISOString() ?? null,
+                  createdAt: previousClassification.createdAt.toISOString(),
+                  updatedAt: previousClassification.updatedAt.toISOString(),
+                }
+              : null,
+          };
+        }),
         previousRules: previousRules?.map((rule) => ({
           ...rule,
           createdAt: rule.createdAt.toISOString(),
@@ -181,17 +209,17 @@ export async function upsertTransactionClassification(
 
     await tx
       .insert(transactionClassifications)
-      .values({
-        transactionId: transaction.id,
+      .values(requestedTransactionIds.map((transactionId) => ({
+        transactionId,
         classificationType: input.classificationType,
         memberOwnerId,
         category: savedCategory?.name ?? null,
         categoryId: savedCategory?.id ?? null,
         confidence: null,
-        decidedBy: "user",
+        decidedBy: "user" as const,
         reviewedAt: now,
         decisionBatchId: decisionBatch.id,
-      })
+      })))
       .onConflictDoUpdate({
         target: transactionClassifications.transactionId,
         set: {
@@ -273,12 +301,13 @@ export async function upsertTransactionClassification(
       }
     }
 
-    await syncTransactionExpenseEvents(context, [transaction.id], tx);
+    await syncTransactionExpenseEvents(context, requestedTransactionIds, tx);
     return decisionBatch.id;
   });
 
   return {
     transactionId: transaction.id,
+    updatedCount: requestedTransactionIds.length,
     createdRule: Boolean(input.createRule),
     undoBatchId,
   };

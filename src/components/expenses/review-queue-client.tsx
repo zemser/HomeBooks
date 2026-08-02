@@ -50,6 +50,7 @@ type SingleFormState = {
   categoryId: string;
   memberOwnerId: string;
   createRule: boolean;
+  applyToSimilar: boolean;
 };
 
 type BulkFormState = {
@@ -151,6 +152,7 @@ const emptySingleForm: SingleFormState = {
   categoryId: "",
   memberOwnerId: "",
   createRule: false,
+  applyToSimilar: false,
 };
 
 const emptyBulkForm: BulkFormState = {
@@ -167,6 +169,7 @@ const emptyReviewSummary: ReviewQueueSummary = {
   completionPercentage: 100,
   latestTransactionMonth: null,
   remainingByImport: [],
+  selectedImport: null,
 };
 
 function getSelectedTransaction(input: {
@@ -256,6 +259,7 @@ export function ReviewQueueClient({
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const reviewWorkspaceRef = useRef<HTMLElement>(null);
+  const filterDisclosureRef = useRef<HTMLDetailsElement>(null);
   const memberSelectRef = useRef<HTMLSelectElement>(null);
   const previousServerQueryRef = useRef<string | null>(null);
   const previousServerFilterRef = useRef<string | null>(null);
@@ -524,6 +528,7 @@ export function ReviewQueueClient({
       categoryId: selectedTransaction.classification?.categoryId ?? "",
       memberOwnerId: selectedTransaction.classification?.memberOwnerId ?? "",
       createRule: false,
+      applyToSimilar: false,
     });
 
     setAllocationForm(
@@ -556,6 +561,12 @@ export function ReviewQueueClient({
     setMaximumAmount(defaultReviewFilterState.maximumAmount);
     setSort(defaultReviewFilterState.sort);
     setView(defaultReviewFilterState.view);
+  }
+
+  function selectImportForReview(importId: string) {
+    setImportFilter(importId);
+    setPage(1);
+    setSelectedIds([]);
   }
 
   function clearFilter(key: ActiveFilterKey) {
@@ -657,6 +668,9 @@ export function ReviewQueueClient({
     setError(null);
     setMessage(null);
 
+    const additionalTransactionIds = singleForm.applyToSimilar
+      ? similarVisibleTransactionIds
+      : [];
     const response = await fetch("/api/transaction-classifications", {
       method: "POST",
       headers: {
@@ -669,6 +683,7 @@ export function ReviewQueueClient({
         categoryId: singleForm.categoryId || null,
         memberOwnerId: singleForm.memberOwnerId || null,
         createRule: singleForm.createRule,
+        additionalTransactionIds,
       }),
     });
     const data = (await response.json().catch(() => ({}))) as { error?: string; undoBatchId?: string };
@@ -683,8 +698,13 @@ export function ReviewQueueClient({
 
     await loadQueue(shouldKeepFocus ? selectedTransaction.id : null, page, searchQuery);
     const savedMerchant = getTransactionMerchant(selectedTransaction);
-    setMessage(singleForm.createRule ? `Classification and rule saved for ${savedMerchant}.` : `Classification saved for ${savedMerchant}.`);
-    setLastUndo(data.undoBatchId ? { batchId: data.undoBatchId, label: savedMerchant } : null);
+    const updatedCount = additionalTransactionIds.length + 1;
+    setMessage(
+      singleForm.createRule
+        ? `Classification and rule saved for ${savedMerchant}${updatedCount > 1 ? ` across ${updatedCount} transactions` : ""}.`
+        : `Classification saved for ${savedMerchant}${updatedCount > 1 ? ` across ${updatedCount} transactions` : ""}.`,
+    );
+    setLastUndo(data.undoBatchId ? { batchId: data.undoBatchId, label: updatedCount > 1 ? `${updatedCount} transactions` : savedMerchant } : null);
   }
 
   async function submitBulkClassification() {
@@ -816,6 +836,16 @@ export function ReviewQueueClient({
   const selectedTransactionInQueue = Boolean(
     selectedTransaction && queue.some((transaction) => transaction.id === selectedTransaction.id),
   );
+  const similarVisibleTransactionIds = selectedTransaction?.merchantRaw?.trim()
+    ? visibleQueue
+        .filter(
+          (transaction) =>
+            transaction.id !== selectedTransaction.id &&
+            transaction.merchantRaw?.trim().toLocaleLowerCase() ===
+              selectedTransaction.merchantRaw?.trim().toLocaleLowerCase(),
+        )
+        .map((transaction) => transaction.id)
+    : [];
   const selectedQueuePosition =
     selectedTransactionInQueue && selectedTransaction && visibleQueue.some((transaction) => transaction.id === selectedTransaction.id)
       ? visibleQueue.findIndex((transaction) => transaction.id === selectedTransaction.id) + 1
@@ -852,6 +882,43 @@ export function ReviewQueueClient({
   const queueClearReportLabel = summary.latestTransactionMonth
     ? `Open ${formatReviewReportMonth(summary.latestTransactionMonth)} report`
     : "Open reports";
+  const activeImportSummary = importFilter === "all" ? null : summary.selectedImport;
+  const activeReviewTotal = activeImportSummary?.totalCount ?? summary.totalTransactionCount;
+  const activeReviewHandled = activeImportSummary?.reviewedCount ?? summary.reviewedCount;
+  const activeReviewRemaining = activeImportSummary?.remainingCount ?? summary.queueCount;
+  const activeReviewPercentage = activeReviewTotal === 0
+    ? 100
+    : Math.round((activeReviewHandled / activeReviewTotal) * 100);
+  const advancedFilterCount = [
+    monthFilter !== "all",
+    importFilter !== "all",
+    accountFilter !== "all",
+    Boolean(minimumAmount),
+    Boolean(maximumAmount),
+    sort !== "newest",
+  ].filter(Boolean).length;
+
+  useEffect(() => {
+    function closeOnOutsidePointer(event: PointerEvent) {
+      const disclosure = filterDisclosureRef.current;
+      if (!disclosure?.open || !(event.target instanceof Node)) return;
+      if (!disclosure.contains(event.target)) disclosure.open = false;
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      const disclosure = filterDisclosureRef.current;
+      if (event.key !== "Escape" || !disclosure?.open) return;
+      disclosure.open = false;
+      disclosure.querySelector<HTMLElement>("summary")?.focus();
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -903,42 +970,65 @@ export function ReviewQueueClient({
   return (
     <section className="stack review-workspace" ref={reviewWorkspaceRef}>
       <article className="card stack compact">
-        <div className="summary-strip">
+        <div className="review-scope-header">
           <div>
-            <strong>{summary.queueCount}</strong>
-            <span>Transactions left to review</span>
+            <span className="eyebrow">{activeImportSummary ? "Statement review" : "Review queue"}</span>
+            <h2>{activeImportSummary?.originalFilename ?? "All imported statements"}</h2>
+            <p className="helper-text">
+              {activeImportSummary
+                ? `${activeImportSummary.sourceName ?? "Imported statement"} · ${formatReviewImportRange(activeImportSummary)}`
+                : `${summary.remainingByImport.length} statement${summary.remainingByImport.length === 1 ? "" : "s"} still in progress`}
+            </p>
           </div>
-          <div>
-            <strong>{summary.reviewedCount}</strong>
-            <span>Already reviewed</span>
-          </div>
-          <div>
-            <strong>{summary.completionPercentage}%</strong>
-            <span>Queue cleared</span>
-          </div>
-          <div>
-            <strong>{selectedFilteredPosition ? `${selectedFilteredPosition}/${pagination.filteredCount}` : "-"}</strong>
-            <span>Selected position</span>
+          <div className="review-scope-stats" aria-label="Review progress">
+            <span><strong>{activeReviewRemaining}</strong> remaining</span>
+            <span><strong>{activeReviewHandled}</strong> handled</span>
+            <span><strong>{activeReviewPercentage}%</strong> complete</span>
           </div>
         </div>
 
-        <div className="progress-meter" aria-hidden="true">
+        <div
+          className="progress-meter"
+          role="progressbar"
+          aria-label="Statement review progress"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={activeReviewPercentage}
+        >
           <span
             className="progress-meter-fill"
-            style={{ width: `${summary.completionPercentage}%` }}
+            style={{ width: `${activeReviewPercentage}%` }}
           />
         </div>
 
         {summary.remainingByImport.length > 0 ? (
-          <div className="stack compact">
-            <p className="helper-text">Incomplete imports</p>
+          <details className="review-import-switcher disclosure">
+            <summary>Switch statement</summary>
+            <div className="stack compact">
+            <button
+              className={`activity-row review-import-row ${importFilter === "all" ? "is-active" : ""}`}
+              type="button"
+              aria-pressed={importFilter === "all"}
+              onClick={() => selectImportForReview("all")}
+            >
+              <div><strong>All statements</strong><p>{summary.queueCount} transactions remaining</p></div>
+            </button>
             {summary.remainingByImport.slice(0, 5).map((item) => (
-              <div className="activity-row" key={item.importId}>
+              <button
+                className={`activity-row review-import-row ${
+                  importFilter === item.importId ? "is-active" : ""
+                }`}
+                type="button"
+                aria-pressed={importFilter === item.importId}
+                aria-label={`Review ${item.originalFilename}, ${item.remainingCount} transactions left`}
+                onClick={() => selectImportForReview(item.importId)}
+                key={item.importId}
+              >
                 <div>
                   <strong>{item.originalFilename}</strong>
                   <p>
                     {item.sourceName ?? "Unknown source"} · {item.remainingCount} left ·{" "}
-                    {item.reviewedCount} reviewed
+                    {item.reviewedCount} handled
                   </p>
                 </div>
                 <div className="activity-meta">
@@ -951,7 +1041,7 @@ export function ReviewQueueClient({
                   </span>
                   <span>{formatReviewImportRange(item)}</span>
                 </div>
-              </div>
+              </button>
             ))}
             {summary.remainingByImport.length > 5 ? (
               <p className="helper-text">
@@ -959,7 +1049,8 @@ export function ReviewQueueClient({
                 {summary.remainingByImport.length - 5 === 1 ? "" : "s"}. Use the Import filter to find one.
               </p>
             ) : null}
-          </div>
+            </div>
+          </details>
         ) : null}
       </article>
 
@@ -983,54 +1074,60 @@ export function ReviewQueueClient({
             </button>
           ))}
         </div>
-        <div className="review-filter-grid">
+        <div className="review-toolbar-primary">
           <label className="field review-search-field">
-            <span>Search</span>
+            <span className="sr-only">Search</span>
             <input
               className="input"
               type="search"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder="Merchant, account, description, or file"
+              placeholder="Search merchant or description"
             />
           </label>
-          <label className="field">
-            <span>Month</span>
-            <select className="input" value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>
-              <option value="all">All months</option>
-              {availableMonths.map((month) => <option value={month} key={month}>{formatReviewReportMonth(month)}</option>)}
-            </select>
-          </label>
-          <ImportScopePicker
-            imports={availableImports}
-            value={importFilter}
-            onChange={setImportFilter}
-          />
-          <label className="field">
-            <span>Account</span>
-            <select className="input" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>
-              <option value="all">All accounts</option>
-              {availableAccounts.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
-            </select>
-          </label>
-          <label className="field review-amount-field">
-            <span>Minimum amount</span>
-            <input className="input" type="number" min="0" step="0.01" value={minimumAmount} onChange={(event) => setMinimumAmount(event.target.value)} placeholder="0" />
-          </label>
-          <label className="field review-amount-field">
-            <span>Maximum amount</span>
-            <input className="input" type="number" min="0" step="0.01" value={maximumAmount} onChange={(event) => setMaximumAmount(event.target.value)} placeholder="Any" />
-          </label>
-          <label className="field">
-            <span>Sort</span>
-            <select className="input" value={sort} onChange={(event) => setSort(event.target.value as ReviewSort)}>
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="amount_desc">Amount: high to low</option>
-              <option value="amount_asc">Amount: low to high</option>
-              <option value="merchant">Merchant A–Z</option>
-            </select>
-          </label>
+          <details className="review-filter-disclosure disclosure" ref={filterDisclosureRef}>
+            <summary>Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}</summary>
+            <div className="review-filter-grid">
+              <ImportScopePicker
+                imports={availableImports}
+                value={importFilter}
+                onChange={setImportFilter}
+              />
+              <label className="field">
+                <span>Month</span>
+                <select className="input" value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>
+                  <option value="all">All months</option>
+                  {availableMonths.map((month) => <option value={month} key={month}>{formatReviewReportMonth(month)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Account</span>
+                <select className="input" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>
+                  <option value="all">All accounts</option>
+                  {availableAccounts.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Sort</span>
+                <select className="input" value={sort} onChange={(event) => setSort(event.target.value as ReviewSort)}>
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="amount_desc">Amount: high to low</option>
+                  <option value="amount_asc">Amount: low to high</option>
+                  <option value="merchant">Merchant A–Z</option>
+                </select>
+              </label>
+            </div>
+          </details>
+          <button
+            className="review-shortcuts-button"
+            type="button"
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts"
+            onClick={() => setIsShortcutHelpOpen(true)}
+          >
+            ?
+          </button>
         </div>
         {activeFilterChips.length > 0 ? (
           <div className="review-active-filters" aria-label="Active filters">
@@ -1054,7 +1151,6 @@ export function ReviewQueueClient({
           </p>
           <div className="action-row">
             {filtersActive ? <button className="link-button" type="button" onClick={clearFilters}>Clear all filters</button> : null}
-            <button className="link-button" type="button" onClick={() => setIsShortcutHelpOpen(true)}>Keyboard shortcuts <kbd>?</kbd></button>
           </div>
         </div>
       </article>
@@ -1079,28 +1175,32 @@ export function ReviewQueueClient({
           </div>
 
           <div className="page-actions review-list-actions">
-            <p className="helper-text">
-              {selectedIds.length > 0 ? `${selectedIds.length} selected` : "Select rows to use a batch action."}
-            </p>
-            <div className="action-row">
-              <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
-                {allVisibleSelected ? "Clear page selection" : `Select all ${visibleQueue.length} on this page`}
-              </button>
-              <button
-                className="button button-secondary"
-                type="button"
-                disabled={selectedIds.length === 0}
-                onClick={() => setIsBulkModalOpen(true)}
-              >
-                Bulk actions{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
-              </button>
-            </div>
+            {selectedIds.length > 0 ? (
+              <div className="review-batch-bar" role="status">
+                <strong>{selectedIds.length} selected</strong>
+                <div className="action-row">
+                  <button className="button" type="button" onClick={() => setIsBulkModalOpen(true)}>
+                    Classify selected
+                  </button>
+                  <button className="link-button" type="button" onClick={() => setSelectedIds([])}>
+                    Clear selection
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="review-selection-prompt">
+                <p className="helper-text">Select rows to classify several transactions together.</p>
+                <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
+                  Select all {visibleQueue.length} on this page
+                </button>
+              </div>
+            )}
           </div>
 
           <Modal
             open={isBulkModalOpen}
             onClose={() => setIsBulkModalOpen(false)}
-            title="Bulk actions"
+            title="Classify selected"
             description={`Apply one classification to ${selectedIds.length} selected transactions.`}
           >
             <div className="stack">
@@ -1138,7 +1238,25 @@ export function ReviewQueueClient({
 
           {isLoading ? <p className="status">Loading review queue...</p> : null}
 
-          {!isLoading && summary.queueCount === 0 ? (
+          {!isLoading && activeImportSummary && activeImportSummary.remainingCount === 0 ? (
+            <div className="home-focus-card">
+              <span className="badge badge-neutral">Statement complete</span>
+              <h3>{activeImportSummary.originalFilename} is ready.</h3>
+              <p>
+                {activeImportSummary.reviewedCount} transaction{activeImportSummary.reviewedCount === 1 ? "" : "s"} handled. Nothing from this statement still needs review.
+              </p>
+              <div className="action-row">
+                <button className="button" type="button" onClick={() => selectImportForReview("all")}>
+                  Review another statement
+                </button>
+                <Link className="button button-secondary" href={queueClearReportHref}>
+                  {queueClearReportLabel}
+                </Link>
+              </div>
+            </div>
+          ) : null}
+
+          {!isLoading && !activeImportSummary && summary.queueCount === 0 ? (
             summary.totalTransactionCount > 0 ? (
               <div className="home-focus-card">
                 <span className="badge badge-neutral">Queue clear</span>
@@ -1162,7 +1280,7 @@ export function ReviewQueueClient({
             )
           ) : null}
 
-          {!isLoading && summary.queueCount > 0 && pagination.filteredCount === 0 ? (
+          {!isLoading && (!activeImportSummary || activeImportSummary.remainingCount > 0) && summary.queueCount > 0 && pagination.filteredCount === 0 ? (
             <div className="empty-state review-empty-filtered">
               <strong>No transactions match these filters.</strong>
               <p>Clear a filter or choose another review view.</p>
@@ -1186,7 +1304,6 @@ export function ReviewQueueClient({
                     <th>Date</th>
                     <th>Merchant</th>
                     <th>Amount</th>
-                    <th>Suggestion</th>
                     <th>Source</th>
                   </tr>
                 </thead>
@@ -1225,7 +1342,19 @@ export function ReviewQueueClient({
                         </td>
                         <td data-label="Date">{transaction.transactionDate}</td>
                         <td data-label="Merchant">
-                          <strong>{merchant}</strong>
+                          <div className="review-merchant-line">
+                            <strong>{merchant}</strong>
+                            {transaction.suggestion ? (
+                              <span
+                                className={`review-suggestion-pill ${transaction.suggestion.confidence}`}
+                                aria-label={`Suggested classification: ${formatClassificationTypeLabel(transaction.suggestion.classificationType)}${
+                                  transaction.suggestion.category ? `, ${transaction.suggestion.category}` : ""
+                                }`}
+                              >
+                                Suggested
+                              </span>
+                            ) : null}
+                          </div>
                           {showDescription ? <div className="table-note">{description}</div> : null}
                         </td>
                         <td data-label="Amount">
@@ -1249,14 +1378,6 @@ export function ReviewQueueClient({
                               </span>
                             ) : null}
                           </div>
-                        </td>
-                        <td data-label="Suggestion">
-                          {transaction.suggestion ? (
-                            <span className={`review-suggestion-pill ${transaction.suggestion.confidence}`}>
-                              {formatClassificationTypeLabel(transaction.suggestion.classificationType)}
-                              {transaction.suggestion.category ? ` · ${transaction.suggestion.category}` : ""}
-                            </span>
-                          ) : <span className="table-note">No suggestion</span>}
                         </td>
                         <td data-label="Source">
                           <strong>{transaction.importSourceName ?? "Unknown"}</strong>
@@ -1481,6 +1602,7 @@ export function ReviewQueueClient({
                 <label className="checkbox-label merchant-rule-toggle">
                   <input
                     type="checkbox"
+                    aria-label="Use this decision for future exact merchant matches"
                     checked={singleForm.createRule}
                     disabled={!merchantCanCreateRule}
                     onChange={(event) =>
@@ -1490,15 +1612,32 @@ export function ReviewQueueClient({
                       }))
                     }
                   />
-                  <span>Use this decision for future exact merchant matches <kbd>R</kbd></span>
+                  <span>
+                    Always categorize “{selectedTransaction.merchantRaw?.trim() || "this merchant"}” this way <kbd>R</kbd>
+                  </span>
                 </label>
                 {singleForm.createRule && selectedTransaction.merchantRaw ? (
                   <div className="merchant-rule-preview">
-                    <strong>{selectedTransaction.exactRuleExists ? "Update existing exact-match rule" : "Create new exact-match rule"}</strong>
-                    <p>Matches merchant “{selectedTransaction.merchantRaw.trim()}”.</p>
-                    <p>Future exact matches will use the treatment, category, and member selected above.</p>
-                    {selectedTransaction.similarQueueCount > 0 ? <p>{selectedTransaction.similarQueueCount} other transaction{selectedTransaction.similarQueueCount === 1 ? "" : "s"} currently waiting share this merchant. They will not be changed automatically.</p> : null}
+                    <strong>{selectedTransaction.exactRuleExists ? "Update saved exact-match rule" : "Save a new exact-match rule"}</strong>
+                    <p>Exact merchant name · applies automatically to future imports.</p>
                   </div>
+                ) : null}
+                {similarVisibleTransactionIds.length > 0 && selectedTransactionInQueue ? (
+                  <label className="checkbox-label merchant-rule-toggle">
+                    <input
+                      type="checkbox"
+                      checked={singleForm.applyToSimilar}
+                      onChange={(event) =>
+                        setSingleForm((current) => ({
+                          ...current,
+                          applyToSimilar: event.target.checked,
+                        }))
+                      }
+                    />
+                    <span>
+                      Also apply to {similarVisibleTransactionIds.length} matching transaction{similarVisibleTransactionIds.length === 1 ? "" : "s"} waiting now
+                    </span>
+                  </label>
                 ) : null}
                 {!merchantCanCreateRule ? (
                   <p className="helper-text">
@@ -1506,9 +1645,9 @@ export function ReviewQueueClient({
                     merchant value.
                   </p>
                 ) : null}
-                {selectedTransaction.similarQueueCount > 0 && selectedTransactionInQueue ? (
+                {similarVisibleTransactionIds.length > 0 && selectedTransactionInQueue && !singleForm.applyToSimilar ? (
                   <button className="similar-transactions-action" type="button" onClick={selectSimilarTransactions}>
-                    <span><strong>{selectedTransaction.similarQueueCount} more</strong> transaction{selectedTransaction.similarQueueCount === 1 ? "" : "s"} from this merchant</span>
+                    <span><strong>{similarVisibleTransactionIds.length} more</strong> transaction{similarVisibleTransactionIds.length === 1 ? "" : "s"} from this merchant</span>
                     <span>Select and classify together →</span>
                   </button>
                 ) : null}
