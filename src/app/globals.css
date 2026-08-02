@@ -1112,7 +1112,7 @@ select.input:focus {
 }
 
 .review-toolbar-primary {
-  align-items: flex-end;
+  align-items: center;
 }
 
 .review-toolbar-primary .review-search-field {
@@ -1137,7 +1137,8 @@ select.input:focus {
 
 .review-filter-disclosure[open] > summary {
   margin-bottom: 0;
-  border-color: var(--review-focus);
+  border-color: rgba(39, 93, 76, 0.28);
+  background: var(--accent-soft);
 }
 
 .review-filter-disclosure .review-filter-grid {
@@ -1145,7 +1146,7 @@ select.input:focus {
   z-index: 20;
   top: calc(100% + 0.5rem);
   right: 0;
-  width: min(52rem, calc(100vw - 4rem));
+  width: min(38rem, calc(100vw - 4rem));
   padding: 1rem;
   border: 1px solid var(--border);
   border-radius: 0.9rem;
@@ -1181,11 +1182,34 @@ select.input:focus {
 .review-filter-grid {
   display: grid;
   gap: 0.75rem;
-  grid-template-columns: minmax(0, 1.7fr) repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .review-filter-grid .field {
   min-width: 0;
+}
+
+.review-shortcuts-button {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.review-shortcuts-button:hover {
+  border-color: var(--border);
+  background: var(--background);
+  color: var(--text);
 }
 
 .import-scope-picker {

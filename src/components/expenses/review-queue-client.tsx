@@ -1065,46 +1065,46 @@ export function ReviewQueueClient({
           <details className="review-filter-disclosure disclosure">
             <summary>Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}</summary>
             <div className="review-filter-grid">
-          <label className="field">
-            <span>Month</span>
-            <select className="input" value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>
-              <option value="all">All months</option>
-              {availableMonths.map((month) => <option value={month} key={month}>{formatReviewReportMonth(month)}</option>)}
-            </select>
-          </label>
-          <ImportScopePicker
-            imports={availableImports}
-            value={importFilter}
-            onChange={setImportFilter}
-          />
-          <label className="field">
-            <span>Account</span>
-            <select className="input" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>
-              <option value="all">All accounts</option>
-              {availableAccounts.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
-            </select>
-          </label>
-          <label className="field review-amount-field">
-            <span>Minimum amount</span>
-            <input className="input" type="number" min="0" step="0.01" value={minimumAmount} onChange={(event) => setMinimumAmount(event.target.value)} placeholder="0" />
-          </label>
-          <label className="field review-amount-field">
-            <span>Maximum amount</span>
-            <input className="input" type="number" min="0" step="0.01" value={maximumAmount} onChange={(event) => setMaximumAmount(event.target.value)} placeholder="Any" />
-          </label>
-          <label className="field">
-            <span>Sort</span>
-            <select className="input" value={sort} onChange={(event) => setSort(event.target.value as ReviewSort)}>
-              <option value="newest">Newest first</option>
-              <option value="oldest">Oldest first</option>
-              <option value="amount_desc">Amount: high to low</option>
-              <option value="amount_asc">Amount: low to high</option>
-              <option value="merchant">Merchant A–Z</option>
-            </select>
-          </label>
+              <ImportScopePicker
+                imports={availableImports}
+                value={importFilter}
+                onChange={setImportFilter}
+              />
+              <label className="field">
+                <span>Month</span>
+                <select className="input" value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>
+                  <option value="all">All months</option>
+                  {availableMonths.map((month) => <option value={month} key={month}>{formatReviewReportMonth(month)}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Account</span>
+                <select className="input" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>
+                  <option value="all">All accounts</option>
+                  {availableAccounts.map((item) => <option value={item.id} key={item.id}>{item.label}</option>)}
+                </select>
+              </label>
+              <label className="field">
+                <span>Sort</span>
+                <select className="input" value={sort} onChange={(event) => setSort(event.target.value as ReviewSort)}>
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="amount_desc">Amount: high to low</option>
+                  <option value="amount_asc">Amount: low to high</option>
+                  <option value="merchant">Merchant A–Z</option>
+                </select>
+              </label>
             </div>
           </details>
-          <button className="link-button" type="button" aria-label="Keyboard shortcuts" onClick={() => setIsShortcutHelpOpen(true)}>Shortcuts <kbd>?</kbd></button>
+          <button
+            className="review-shortcuts-button"
+            type="button"
+            aria-label="Keyboard shortcuts"
+            title="Keyboard shortcuts"
+            onClick={() => setIsShortcutHelpOpen(true)}
+          >
+            ?
+          </button>
         </div>
         {activeFilterChips.length > 0 ? (
           <div className="review-active-filters" aria-label="Active filters">
