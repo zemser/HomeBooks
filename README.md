@@ -39,6 +39,22 @@ This repo is pinned to the public npm registry through `.npmrc`.
 
 ## Local DB Smoke Test
 
+For the easiest local development workflow, run:
+
+```bash
+npm run dev:local
+```
+
+This starts the local Supabase/Postgres Docker stack if needed, ensures the Drizzle schema and import catalog are present, and opens the app against the isolated local database. Stop the app with `Ctrl-C`; the Docker database remains available for the next run. Run `supabase stop` when you want to stop the local stack.
+
+The E2E suite uses the same local setup automatically:
+
+```bash
+npm run test:e2e
+```
+
+The first run may take a few minutes while Docker images and Playwright browsers download.
+
 Use this checkpoint when you want to run the app against a real PostgreSQL database instead of only relying on lint/build.
 
 1. Start a local PostgreSQL instance and create an empty database.

@@ -11,7 +11,14 @@ const compat = new FlatCompat({
 
 const config = [
   {
-    ignores: [".next/**", "node_modules/**", "next-env.d.ts", "src/db/migrations/**"],
+    ignores: [
+      ".next/**",
+      "node_modules/**",
+      "next-env.d.ts",
+      "src/db/migrations/**",
+      "supabase/.branches/**",
+      "supabase/.temp/**",
+    ],
   },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
