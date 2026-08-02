@@ -295,7 +295,7 @@ export function ExpensesPageClient({
     const matchesMonth =
       monthFilter === "all" || transactionMonth(transaction.transactionDate) === monthFilter;
     const matchesImport =
-      importFilter === "all" || transaction.importOriginalFilename === importFilter;
+      importFilter === "all" || transaction.importId === importFilter;
     const matchesSearch =
       normalizedSearchQuery.length === 0 ||
       [
@@ -316,9 +316,19 @@ export function ExpensesPageClient({
   const availableMonths = Array.from(
     new Set(transactions.map((transaction) => transactionMonth(transaction.transactionDate))),
   ).sort((left, right) => right.localeCompare(left));
-  const availableImportFiles = Array.from(
-    new Set(transactions.map((transaction) => transaction.importOriginalFilename)),
-  ).sort((left, right) => left.localeCompare(right));
+  const availableImports = Array.from(
+    transactions.reduce((imports, transaction) => {
+      const current = imports.get(transaction.importId) ?? {
+        label: transaction.importOriginalFilename,
+        count: 0,
+      };
+      current.count += 1;
+      imports.set(transaction.importId, current);
+      return imports;
+    }, new Map<string, { label: string; count: number }>()),
+  )
+    .map(([id, item]) => ({ id, ...item }))
+    .sort((left, right) => left.label.localeCompare(right.label));
   const filtersActive =
     searchQuery.trim().length > 0 ||
     reviewStatusFilter !== "all" ||
@@ -1012,16 +1022,16 @@ export function ExpensesPageClient({
               </select>
             </label>
             <label className="field">
-              <span>Import file</span>
+              <span>Import</span>
               <select
                 className="input"
                 value={importFilter}
                 onChange={(event) => setImportFilter(event.target.value)}
               >
                 <option value="all">All imports</option>
-                {availableImportFiles.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
+                {availableImports.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label} · {item.count} row{item.count === 1 ? "" : "s"}
                   </option>
                 ))}
               </select>
@@ -1162,7 +1172,9 @@ export function ExpensesPageClient({
                             type="button"
                             onClick={() => setSelectedTransactionId(transaction.id)}
                           >
-                            {selectedTransactionId === transaction.id ? "Selected" : "Allocation"}
+                            {selectedTransactionId === transaction.id
+                              ? "Editing allocation"
+                              : "Edit allocation"}
                           </button>
                           <Link
                             className="link-button"
