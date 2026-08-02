@@ -21,8 +21,7 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command:
-          "DATABASE_URL=\"$(sed -n 's/^DATABASE_URL=//p' .env.supbase | tail -1)\" FINAPP_AUTH_MODE=dev FINAPP_IMPORT_STORAGE=local npm run dev -- --port 3101",
+        command: "npm run dev:local -- --port 3101",
         url: baseURL,
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,
