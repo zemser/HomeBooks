@@ -1304,7 +1304,6 @@ export function ReviewQueueClient({
                     <th>Date</th>
                     <th>Merchant</th>
                     <th>Amount</th>
-                    <th>Suggestion</th>
                     <th>Source</th>
                   </tr>
                 </thead>
@@ -1343,7 +1342,19 @@ export function ReviewQueueClient({
                         </td>
                         <td data-label="Date">{transaction.transactionDate}</td>
                         <td data-label="Merchant">
-                          <strong>{merchant}</strong>
+                          <div className="review-merchant-line">
+                            <strong>{merchant}</strong>
+                            {transaction.suggestion ? (
+                              <span
+                                className={`review-suggestion-pill ${transaction.suggestion.confidence}`}
+                                aria-label={`Suggested classification: ${formatClassificationTypeLabel(transaction.suggestion.classificationType)}${
+                                  transaction.suggestion.category ? `, ${transaction.suggestion.category}` : ""
+                                }`}
+                              >
+                                Suggested
+                              </span>
+                            ) : null}
+                          </div>
                           {showDescription ? <div className="table-note">{description}</div> : null}
                         </td>
                         <td data-label="Amount">
@@ -1367,14 +1378,6 @@ export function ReviewQueueClient({
                               </span>
                             ) : null}
                           </div>
-                        </td>
-                        <td data-label="Suggestion">
-                          {transaction.suggestion ? (
-                            <span className={`review-suggestion-pill ${transaction.suggestion.confidence}`}>
-                              {formatClassificationTypeLabel(transaction.suggestion.classificationType)}
-                              {transaction.suggestion.category ? ` · ${transaction.suggestion.category}` : ""}
-                            </span>
-                          ) : <span className="table-note">No suggestion</span>}
                         </td>
                         <td data-label="Source">
                           <strong>{transaction.importSourceName ?? "Unknown"}</strong>

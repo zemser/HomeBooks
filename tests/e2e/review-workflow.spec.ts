@@ -72,6 +72,14 @@ test.describe("transaction review workflow", () => {
     await expect(trigger).toBeFocused();
   });
 
+  test("review table does not reserve a column for suggestions", async ({ page }) => {
+    await page.goto("/imports/review");
+    await expect(page.getByRole("heading", { name: "Review transactions" })).toBeVisible();
+
+    await expect(page.getByRole("columnheader", { name: "Suggestion" })).toHaveCount(0);
+    await expect(page.locator('.review-table td[data-label="Suggestion"]')).toHaveCount(0);
+  });
+
   test("keyboard shortcuts choose a type, select a category, and skip without saving", async ({
     page,
   }) => {

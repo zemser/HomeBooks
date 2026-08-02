@@ -1432,6 +1432,13 @@ kbd {
   color: var(--accent);
 }
 
+.review-merchant-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
 .classification-type-fieldset {
   min-width: 0;
   margin: 0;
