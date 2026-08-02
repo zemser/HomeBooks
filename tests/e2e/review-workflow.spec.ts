@@ -45,6 +45,25 @@ test.describe("transaction review workflow", () => {
     await expect(search).toHaveValue("");
   });
 
+  test("filter panel closes on outside click and Escape", async ({ page }) => {
+    await page.goto("/imports/review");
+    await expect(page.getByRole("heading", { name: "Review transactions" })).toBeVisible();
+
+    const filters = page.locator("details.review-filter-disclosure");
+    const trigger = filters.locator(":scope > summary");
+    await trigger.click();
+    await expect(filters).toHaveAttribute("open", "");
+
+    await page.getByRole("searchbox", { name: "Search" }).click();
+    await expect(filters).not.toHaveAttribute("open", "");
+
+    await trigger.click();
+    await expect(filters).toHaveAttribute("open", "");
+    await page.keyboard.press("Escape");
+    await expect(filters).not.toHaveAttribute("open", "");
+    await expect(trigger).toBeFocused();
+  });
+
   test("keyboard shortcuts choose a type, select a category, and skip without saving", async ({
     page,
   }) => {

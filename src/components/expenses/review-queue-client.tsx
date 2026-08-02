@@ -259,6 +259,7 @@ export function ReviewQueueClient({
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const reviewWorkspaceRef = useRef<HTMLElement>(null);
+  const filterDisclosureRef = useRef<HTMLDetailsElement>(null);
   const memberSelectRef = useRef<HTMLSelectElement>(null);
   const previousServerQueryRef = useRef<string | null>(null);
   const previousServerFilterRef = useRef<string | null>(null);
@@ -898,6 +899,28 @@ export function ReviewQueueClient({
   ].filter(Boolean).length;
 
   useEffect(() => {
+    function closeOnOutsidePointer(event: PointerEvent) {
+      const disclosure = filterDisclosureRef.current;
+      if (!disclosure?.open || !(event.target instanceof Node)) return;
+      if (!disclosure.contains(event.target)) disclosure.open = false;
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      const disclosure = filterDisclosureRef.current;
+      if (event.key !== "Escape" || !disclosure?.open) return;
+      disclosure.open = false;
+      disclosure.querySelector<HTMLElement>("summary")?.focus();
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
+
+  useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target;
       const isTyping = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement ||
@@ -1062,7 +1085,7 @@ export function ReviewQueueClient({
               placeholder="Search merchant or description"
             />
           </label>
-          <details className="review-filter-disclosure disclosure">
+          <details className="review-filter-disclosure disclosure" ref={filterDisclosureRef}>
             <summary>Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}</summary>
             <div className="review-filter-grid">
               <ImportScopePicker
