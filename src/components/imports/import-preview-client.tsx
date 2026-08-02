@@ -95,18 +95,6 @@ function formatImportActivityRange(item: SavedImportSummary) {
   return `${earliest} to ${latest}`;
 }
 
-function describeImportNextStep(item: SavedImportSummary) {
-  if (item.reviewPendingCount > 0) {
-    return `${item.reviewPendingCount} still need review`;
-  }
-
-  if (item.transactionCount > 0) {
-    return "Ready for ledger and reports";
-  }
-
-  return "Saved without normalized transactions";
-}
-
 function formatTemplateName(value: string | null | undefined) {
   switch (value) {
     case "max_credit_statement":
@@ -135,7 +123,6 @@ export function ImportPreviewClient({
   const [lastSavedImportId, setLastSavedImportId] = useState<string | null>(null);
   const [selectedFileName, setSelectedFileName] = useState<string>("No file selected yet");
   const [fileInputVersion, setFileInputVersion] = useState(0);
-  const [savedImportSearch, setSavedImportSearch] = useState("");
 
   useEffect(() => {
     setSavedImportList(savedImports);
@@ -308,16 +295,6 @@ export function ImportPreviewClient({
     (sum, item) => sum + item.reviewPendingCount,
     0,
   );
-  const normalizedSavedImportSearch = savedImportSearch.trim().toLocaleLowerCase();
-  const matchingSavedImports = savedImportList.filter((savedImport) =>
-    [savedImport.originalFilename, savedImport.sourceName ?? "", savedImport.templateName ?? ""]
-      .join(" ")
-      .toLocaleLowerCase()
-      .includes(normalizedSavedImportSearch),
-  );
-  const displayedSavedImports = normalizedSavedImportSearch
-    ? matchingSavedImports
-    : matchingSavedImports.slice(0, 12);
   const highlightedImport =
     savedImportList.find((item) => item.id === lastSavedImportId) ?? savedImportList[0] ?? null;
   const hasSavedOutcome = saveState === "saved" || saveState === "duplicate";
@@ -548,8 +525,7 @@ export function ImportPreviewClient({
         <article className="card">
           <div className="page-actions">
             <div>
-              <h2>Saved imports</h2>
-              <p>Recent imports already persisted for the current workspace.</p>
+              <h2>Saved bank statements</h2>
             </div>
             {totalPendingReviewCount > 0 ? (
               <span className="badge badge-warning">
@@ -560,76 +536,57 @@ export function ImportPreviewClient({
             )}
           </div>
 
-          <label className="field">
-            <span>Find an import</span>
-            <input
-              className="input"
-              type="search"
-              value={savedImportSearch}
-              onChange={(event) => setSavedImportSearch(event.target.value)}
-              placeholder="Search by filename or source"
-            />
-          </label>
-
-          {!normalizedSavedImportSearch && savedImportList.length > displayedSavedImports.length ? (
-            <p className="helper-text">
-              Showing the 12 most recent imports. Search to find an older upload.
-            </p>
-          ) : null}
-
-          <div className="stack">
-            {displayedSavedImports.map((savedImport) => (
-              <div className="card stack compact" key={savedImport.id}>
-                <div className="page-actions">
-                  <div>
-                    <h3>{savedImport.originalFilename}</h3>
-                    <p className="muted-text">
-                      {savedImport.sourceName ?? "Unknown source"} · {formatTemplateName(savedImport.templateName)} ·{" "}
-                      {formatImportActivityRange(savedImport)}
-                    </p>
-                  </div>
-                  <div className="activity-meta">
-                    <span className="badge badge-neutral">{savedImport.importStatus}</span>
-                    <span>{formatSavedAt(savedImport.createdAt)}</span>
-                  </div>
-                </div>
-
-                <div className="summary-strip">
-                  <div>
-                    <strong>{savedImport.transactionCount}</strong>
-                    <span>Normalized rows</span>
-                  </div>
-                  <div>
-                    <strong>{savedImport.reviewPendingCount}</strong>
-                    <span>Still need review</span>
-                  </div>
-                  <div>
-                    <strong>{savedImport.reviewedTransactionCount}</strong>
-                    <span>Already reviewed</span>
-                  </div>
-                </div>
-
-                <p className="helper-text">{describeImportNextStep(savedImport)}.</p>
-
-                <div className="action-row">
-                  <Link
-                    className="link-button"
-                    href={`/imports/review?import=${encodeURIComponent(savedImport.id)}`}
-                    onClick={() => router.refresh()}
-                  >
-                    {savedImport.reviewPendingCount > 0
-                      ? `Review ${savedImport.reviewPendingCount} row${savedImport.reviewPendingCount === 1 ? "" : "s"}`
-                      : "Open review queue"}
-                  </Link>
-                  <Link className="link-button" href="/expenses">
-                    Open ledger
-                  </Link>
-                </div>
-              </div>
-            ))}
-            {displayedSavedImports.length === 0 ? (
-              <p className="empty-state">No saved imports match this search.</p>
-            ) : null}
+          <div className="table-wrap">
+            <table className="data-table import-history-table">
+              <caption className="sr-only">Saved bank statement imports</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Statement</th>
+                  <th scope="col">Activity period</th>
+                  <th scope="col">Rows</th>
+                  <th scope="col">Review</th>
+                  <th scope="col">Imported</th>
+                  <th scope="col"><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody>
+                {savedImportList.map((savedImport) => (
+                  <tr key={savedImport.id}>
+                    <td>
+                      <strong>{savedImport.originalFilename}</strong>
+                      <div className="table-note">
+                        {savedImport.sourceName ?? "Unknown source"} · {formatTemplateName(savedImport.templateName)}
+                      </div>
+                      <span className={`badge ${savedImport.importStatus === "completed" ? "badge-neutral" : "badge-warning"}`}>
+                        {savedImport.importStatus}
+                      </span>
+                    </td>
+                    <td>{formatImportActivityRange(savedImport)}</td>
+                    <td>
+                      <strong>{savedImport.transactionCount}</strong>
+                      <div className="table-note">{savedImport.reviewedTransactionCount} reviewed</div>
+                    </td>
+                    <td>
+                      <strong>{savedImport.reviewPendingCount}</strong>
+                      <div className="table-note">{savedImport.reviewPendingCount === 0 ? "Complete" : "Still need review"}</div>
+                    </td>
+                    <td>{formatSavedAt(savedImport.createdAt)}</td>
+                    <td>
+                      <div className="import-history-actions">
+                        <Link
+                          className="link-button"
+                          href={`/imports/review?import=${encodeURIComponent(savedImport.id)}`}
+                          onClick={() => router.refresh()}
+                        >
+                          {savedImport.reviewPendingCount > 0 ? "Review" : "Open queue"}
+                        </Link>
+                        <Link className="link-button" href="/expenses">Ledger</Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </article>
       ) : null}

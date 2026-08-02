@@ -558,6 +558,12 @@ export function ReviewQueueClient({
     setView(defaultReviewFilterState.view);
   }
 
+  function selectImportForReview(importId: string) {
+    setImportFilter(importId);
+    setPage(1);
+    setSelectedIds([]);
+  }
+
   function clearFilter(key: ActiveFilterKey) {
     if (key === "search") setSearchQuery(defaultReviewFilterState.searchQuery);
     if (key === "month") setMonthFilter(defaultReviewFilterState.month);
@@ -933,7 +939,16 @@ export function ReviewQueueClient({
           <div className="stack compact">
             <p className="helper-text">Incomplete imports</p>
             {summary.remainingByImport.slice(0, 5).map((item) => (
-              <div className="activity-row" key={item.importId}>
+              <button
+                className={`activity-row review-import-row ${
+                  importFilter === item.importId ? "is-active" : ""
+                }`}
+                type="button"
+                aria-pressed={importFilter === item.importId}
+                aria-label={`Review ${item.originalFilename}, ${item.remainingCount} transactions left`}
+                onClick={() => selectImportForReview(item.importId)}
+                key={item.importId}
+              >
                 <div>
                   <strong>{item.originalFilename}</strong>
                   <p>
@@ -951,7 +966,7 @@ export function ReviewQueueClient({
                   </span>
                   <span>{formatReviewImportRange(item)}</span>
                 </div>
-              </div>
+              </button>
             ))}
             {summary.remainingByImport.length > 5 ? (
               <p className="helper-text">
