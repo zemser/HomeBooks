@@ -266,6 +266,8 @@ export function ReviewQueueClient({
   const [isSavingSingle, startSavingSingle] = useTransition();
   const [isSavingBulk, startSavingBulk] = useTransition();
   const [isSavingAllocation, startSavingAllocation] = useTransition();
+  const [isSubmittingSingle, setIsSubmittingSingle] = useState(false);
+  const [isSubmittingBulk, setIsSubmittingBulk] = useState(false);
 
   function focusReviewRow(transactionId: string) {
     window.requestAnimationFrame(() => {
@@ -312,6 +314,7 @@ export function ReviewQueueClient({
     focusId: string | null,
     requestedPage: number,
     requestedSearch: string,
+    options?: { preserveCurrentDataOnError?: boolean },
   ) => {
     setError(null);
 
@@ -342,11 +345,13 @@ export function ReviewQueueClient({
       setError(
         loadError instanceof Error ? loadError.message : "Could not load the review queue.",
       );
-      setQueue([]);
-      setFocusTransaction(null);
-      setMembers([]);
-      setSummary(emptyReviewSummary);
-      setSelectedTransactionId(null);
+      if (!options?.preserveCurrentDataOnError) {
+        setQueue([]);
+        setFocusTransaction(null);
+        setMembers([]);
+        setSummary(emptyReviewSummary);
+        setSelectedTransactionId(null);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -569,6 +574,48 @@ export function ReviewQueueClient({
     setSelectedIds([]);
   }
 
+  function removeReviewedTransactions(transactionIds: string[]) {
+    const reviewedIds = new Set(transactionIds);
+    const nextTransactionId = queue.find((transaction) => !reviewedIds.has(transaction.id))?.id ?? null;
+
+    setQueue((current) => current.filter((transaction) => !reviewedIds.has(transaction.id)));
+    setSelectedIds((current) => current.filter((transactionId) => !reviewedIds.has(transactionId)));
+    setSelectedTransactionId((current) =>
+      reviewedIds.has(current ?? "") ? nextTransactionId : current,
+    );
+    setSummary((current) => ({
+      ...current,
+      reviewedCount: current.reviewedCount + transactionIds.length,
+      queueCount: Math.max(current.queueCount - transactionIds.length, 0),
+      completionPercentage:
+        current.totalTransactionCount === 0
+          ? 100
+          : Math.round(
+              ((current.reviewedCount + transactionIds.length) / current.totalTransactionCount) * 100,
+            ),
+      selectedImport: current.selectedImport
+        ? {
+            ...current.selectedImport,
+            reviewedCount: current.selectedImport.reviewedCount + transactionIds.length,
+            remainingCount: Math.max(
+              current.selectedImport.remainingCount - transactionIds.length,
+              0,
+            ),
+          }
+        : null,
+    }));
+    setPagination((current) => ({
+      ...current,
+      filteredCount: Math.max(current.filteredCount - transactionIds.length, 0),
+      totalPages: Math.max(
+        1,
+        Math.ceil(
+          Math.max(current.filteredCount - transactionIds.length, 0) / current.pageSize,
+        ),
+      ),
+    }));
+  }
+
   function clearFilter(key: ActiveFilterKey) {
     if (key === "search") setSearchQuery(defaultReviewFilterState.searchQuery);
     if (key === "month") setMonthFilter(defaultReviewFilterState.month);
@@ -693,18 +740,35 @@ export function ReviewQueueClient({
       return;
     }
 
+    const reviewedTransactionIds = [selectedTransaction.id, ...additionalTransactionIds];
     const shouldKeepFocus =
       initialTransactionId === selectedTransaction.id || !selectedTransactionInQueue;
 
-    await loadQueue(shouldKeepFocus ? selectedTransaction.id : null, page, searchQuery);
     const savedMerchant = getTransactionMerchant(selectedTransaction);
     const updatedCount = additionalTransactionIds.length + 1;
+    if (!shouldKeepFocus) {
+      removeReviewedTransactions(reviewedTransactionIds);
+    }
     setMessage(
       singleForm.createRule
         ? `Classification and rule saved for ${savedMerchant}${updatedCount > 1 ? ` across ${updatedCount} transactions` : ""}.`
         : `Classification saved for ${savedMerchant}${updatedCount > 1 ? ` across ${updatedCount} transactions` : ""}.`,
     );
     setLastUndo(data.undoBatchId ? { batchId: data.undoBatchId, label: updatedCount > 1 ? `${updatedCount} transactions` : savedMerchant } : null);
+    void loadQueue(shouldKeepFocus ? selectedTransaction.id : null, page, searchQuery, {
+      preserveCurrentDataOnError: true,
+    });
+  }
+
+  async function runSingleClassification() {
+    setIsSubmittingSingle(true);
+    try {
+      await submitSingleClassification();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Could not save this classification.");
+    } finally {
+      setIsSubmittingSingle(false);
+    }
   }
 
   async function submitBulkClassification() {
@@ -745,11 +809,24 @@ export function ReviewQueueClient({
       return;
     }
 
+    const reviewedTransactionIds = [...selectedIds];
     setSelectedIds([]);
     setIsBulkModalOpen(false);
-    await loadQueue(null, page, searchQuery);
-    setMessage(`Classification applied to ${selectedIds.length} transactions.`);
-    setLastUndo(data.undoBatchId ? { batchId: data.undoBatchId, label: `${selectedIds.length} transactions` } : null);
+    removeReviewedTransactions(reviewedTransactionIds);
+    setMessage(`Classification applied to ${reviewedTransactionIds.length} transactions.`);
+    setLastUndo(data.undoBatchId ? { batchId: data.undoBatchId, label: `${reviewedTransactionIds.length} transactions` } : null);
+    void loadQueue(null, page, searchQuery, { preserveCurrentDataOnError: true });
+  }
+
+  async function runBulkClassification() {
+    setIsSubmittingBulk(true);
+    try {
+      await submitBulkClassification();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Could not apply the bulk classification.");
+    } finally {
+      setIsSubmittingBulk(false);
+    }
   }
 
   async function undoLastClassification() {
@@ -931,7 +1008,7 @@ export function ReviewQueueClient({
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         if (isTyping && !isInsideReviewDetail) return;
         event.preventDefault();
-        if (!isSavingSingle) startSavingSingle(() => void submitSingleClassification());
+        if (!isSavingSingle && !isSubmittingSingle) startSavingSingle(() => void runSingleClassification());
         return;
       }
       if (isTyping) return;
@@ -1228,8 +1305,8 @@ export function ReviewQueueClient({
               </label> : null}
               {!hasDefinedCategories ? <p className="helper-text">Add categories in <Link href="/settings">settings</Link> before assigning one here.</p> : null}
               <div className="action-row">
-                <button className="button" type="button" disabled={isSavingBulk} onClick={() => startSavingBulk(() => void submitBulkClassification())}>
-                  {isSavingBulk ? "Applying..." : "Apply to selected"}
+                <button className="button" type="button" disabled={isSavingBulk || isSubmittingBulk} onClick={() => startSavingBulk(() => void runBulkClassification())}>
+                  {isSavingBulk || isSubmittingBulk ? "Applying..." : "Apply to selected"}
                 </button>
                 <button className="button button-secondary" type="button" onClick={() => setIsBulkModalOpen(false)}>Cancel</button>
               </div>
@@ -1657,10 +1734,11 @@ export function ReviewQueueClient({
                 <button
                   className="button"
                   type="button"
-                  disabled={isSavingSingle}
-                  onClick={() => startSavingSingle(() => void submitSingleClassification())}
+                  disabled={isSavingSingle || isSubmittingSingle}
+                  aria-busy={isSavingSingle || isSubmittingSingle}
+                  onClick={() => startSavingSingle(() => void runSingleClassification())}
                 >
-                  {isSavingSingle ? "Saving..." : nextTransactionId ? "Save and next  ⌘↵" : "Save classification  ⌘↵"}
+                  {isSavingSingle || isSubmittingSingle ? "Saving…" : nextTransactionId ? "Save and next  ⌘↵" : "Save classification  ⌘↵"}
                 </button>
                 {previousTransactionId ? <button className="button button-secondary" type="button" onClick={() => setSelectedTransactionId(previousTransactionId)}>Previous</button> : null}
                 {nextTransactionId ? <button className="link-button" type="button" onClick={() => { setSelectedTransactionId(nextTransactionId); setMessage("Skipped for now. No classification was saved."); }}>Skip for now <kbd>S</kbd></button> : null}
