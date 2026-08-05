@@ -1,5 +1,7 @@
 import type { Instrumentation } from "next";
 
+import { getTelemetrySnapshot } from "@/lib/telemetry/server";
+
 export const onRequestError: Instrumentation.onRequestError = async (
   error,
   request,
@@ -34,6 +36,7 @@ export const onRequestError: Instrumentation.onRequestError = async (
       routeType: context.routeType,
       renderSource: context.renderSource,
       revalidateReason: context.revalidateReason,
+      telemetry: getTelemetrySnapshot(),
       error: errorDetails,
     }),
   );

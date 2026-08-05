@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { getTelemetrySnapshot } from "@/lib/telemetry/server";
+
 type LogValue = boolean | number | string | null | undefined;
 
 type LogRouteErrorInput = {
@@ -103,6 +105,7 @@ export function logRouteError({
         request?.headers.get("x-vercel-id") ??
         request?.headers.get("x-request-id") ??
         undefined,
+      telemetry: getTelemetrySnapshot(),
       error: errorDetails,
       ...context,
     }),

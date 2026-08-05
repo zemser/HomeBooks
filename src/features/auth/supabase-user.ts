@@ -2,10 +2,14 @@ import type { User } from "@supabase/supabase-js";
 
 import { clearCurrentDatabaseUserId, setCurrentDatabaseUserId } from "@/db/request-context";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { recordAuthCall, withTelemetrySpan } from "@/lib/telemetry/server";
 
 export async function getSupabaseAuthenticatedUser(): Promise<User | null> {
   const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getUser();
+  recordAuthCall();
+  const { data, error } = await withTelemetrySpan("auth.verified-user", () =>
+    supabase.auth.getUser(),
+  );
 
   if (error) {
     clearCurrentDatabaseUserId();

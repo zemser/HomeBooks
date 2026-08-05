@@ -4,6 +4,7 @@ import { MfaEnrollmentClient } from "@/components/auth/mfa-enrollment-client";
 import { verifyExistingTotpAction } from "@/features/auth/mfa-actions";
 import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { recordMfaCall, withTelemetryOperation, withTelemetrySpan } from "@/lib/telemetry/server";
 
 type MfaPageProps = {
   searchParams?: Promise<{
@@ -33,10 +34,16 @@ export default async function MfaPage({ searchParams }: MfaPageProps) {
 
   const supabase = await createSupabaseServerClient();
   const [{ data: assuranceData }, { data: factorData, error: factorError }] =
-    await Promise.all([
-      supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
-      supabase.auth.mfa.listFactors(),
-    ]);
+    await withTelemetryOperation({ operation: "mfa.page" }, async () => {
+      recordMfaCall();
+      recordMfaCall();
+      return Promise.all([
+        withTelemetrySpan("mfa.assurance-level", () =>
+          supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+        ),
+        withTelemetrySpan("mfa.list-factors", () => supabase.auth.mfa.listFactors()),
+      ]);
+    });
 
   if (assuranceData?.currentLevel === "aal2") {
     redirect(next);
