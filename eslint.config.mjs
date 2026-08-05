@@ -1,13 +1,5 @@
-import { FlatCompat } from "@eslint/eslintrc";
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-});
+import nextVitals from "eslint-config-next/core-web-vitals";
+import nextTypescript from "eslint-config-next/typescript";
 
 const config = [
   {
@@ -20,7 +12,15 @@ const config = [
       "supabase/.temp/**",
     ],
   },
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  ...nextVitals,
+  ...nextTypescript,
+  {
+    // Existing client effects intentionally synchronize server-provided props
+    // and async request state; migrating those components is outside PLATFORM-003.
+    rules: {
+      "react-hooks/set-state-in-effect": "off",
+    },
+  },
 ];
 
 export default config;

@@ -21,7 +21,7 @@ function isMfaPath(pathname: string) {
   return matchesPathPrefix(pathname, MFA_PATH_PREFIXES);
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   if (getFinappAuthMode() !== "supabase") {
     return NextResponse.next();
   }
