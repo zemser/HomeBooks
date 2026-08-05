@@ -1,4 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getDb } from "@/db";
@@ -7,6 +8,12 @@ import { users, workspaceMembers, workspaces } from "@/db/schema";
 import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 import { getFinappAuthMode } from "@/lib/supabase/config";
+import {
+  recordRlsSetup,
+  recordWorkspaceLookup,
+  withTelemetryOperation,
+  withTelemetrySpan,
+} from "@/lib/telemetry/server";
 
 const DEFAULT_USER_EMAIL = "dev@finapp.local";
 const DEFAULT_USER_NAME = "Dev User";
@@ -44,9 +51,15 @@ export async function runWithWorkspaceDatabaseUser<T>(
 export async function withCurrentWorkspace<T>(
   callback: (context: CurrentWorkspaceContext) => Promise<T>,
 ) {
-  const context = await resolveCurrentWorkspaceContext();
+  const requestId = (await headers()).get("x-request-id") ?? undefined;
+  return withTelemetryOperation({ operation: "workspace.request", requestId }, async () => {
+    const context = await withTelemetrySpan("workspace.context", async () => {
+      recordWorkspaceLookup();
+      return resolveCurrentWorkspaceContext();
+    });
 
-  return runWithWorkspaceDatabaseUser(context, () => callback(context));
+    return runWithWorkspaceDatabaseUser(context, () => callback(context));
+  });
 }
 
 async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceContext> {
@@ -159,6 +172,7 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
       // first protected query. The request context wrapper normally keeps this
       // setting in sync, but the bootstrap insert must not depend on a later
       // query hook or on async-context propagation through the framework.
+      recordRlsSetup();
       await tx.execute(
         sql`select set_config('app.current_user_id', ${authUser.id}, false)`,
       );

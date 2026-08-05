@@ -17,6 +17,7 @@ import {
 } from "@/features/expenses/allocation-core";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { addMonths, monthKey, startOfMonth } from "@/lib/dates/months";
+import { recordReportingProjection, withTelemetrySpan } from "@/lib/telemetry/server";
 
 type DbClient = ReturnType<typeof getDb>;
 type DbTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
@@ -448,42 +449,45 @@ export async function syncExpenseEventsForRange(
   input: MonthRangeInput,
   db: DbExecutor = getDb(),
 ) {
-  const { rangeStart, nextMonthStart } = buildRangeWindow(input);
-  const [transactionRows, manualEntryRows] = await Promise.all([
-    db
-      .select({
-        id: transactions.id,
-      })
-      .from(transactions)
-      .where(
-        and(
-          eq(transactions.workspaceId, context.workspaceId),
-          gte(transactions.transactionDate, rangeStart),
-          lt(transactions.transactionDate, nextMonthStart),
+  recordReportingProjection();
+  return withTelemetrySpan("reporting.projection", async () => {
+    const { rangeStart, nextMonthStart } = buildRangeWindow(input);
+    const [transactionRows, manualEntryRows] = await Promise.all([
+      db
+        .select({
+          id: transactions.id,
+        })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.workspaceId, context.workspaceId),
+            gte(transactions.transactionDate, rangeStart),
+            lt(transactions.transactionDate, nextMonthStart),
+          ),
         ),
-      ),
-    db
-      .select({
-        id: manualEntries.id,
-      })
-      .from(manualEntries)
-      .where(
-        and(
-          eq(manualEntries.workspaceId, context.workspaceId),
-          gte(manualEntries.eventDate, rangeStart),
-          lt(manualEntries.eventDate, nextMonthStart),
+      db
+        .select({
+          id: manualEntries.id,
+        })
+        .from(manualEntries)
+        .where(
+          and(
+            eq(manualEntries.workspaceId, context.workspaceId),
+            gte(manualEntries.eventDate, rangeStart),
+            lt(manualEntries.eventDate, nextMonthStart),
+          ),
         ),
-      ),
-  ]);
+    ]);
 
-  await syncTransactionExpenseEvents(
-    context,
-    transactionRows.map((row) => row.id),
-    db,
-  );
-  await syncManualEntryExpenseEvents(
-    context,
-    manualEntryRows.map((row) => row.id),
-    db,
-  );
+    await syncTransactionExpenseEvents(
+      context,
+      transactionRows.map((row) => row.id),
+      db,
+    );
+    await syncManualEntryExpenseEvents(
+      context,
+      manualEntryRows.map((row) => row.id),
+      db,
+    );
+  });
 }

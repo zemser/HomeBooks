@@ -4,6 +4,12 @@ import { Pool, type PoolClient } from "pg";
 import * as schema from "@/db/schema";
 import { getCurrentDatabaseUserId } from "@/db/request-context";
 import { getFinappAuthMode } from "@/lib/supabase/config";
+import {
+  recordDatabaseUnit,
+  recordRlsSetup,
+  recordSqlStatement,
+  withTelemetrySpan,
+} from "@/lib/telemetry/server";
 
 let pool: Pool | undefined;
 let database: NodePgDatabase<typeof schema> | undefined;
@@ -71,6 +77,7 @@ function wrapClientForCurrentUser(client: PoolClient) {
   const originalQuery = scopedClient.query.bind(scopedClient);
 
   scopedClient.query = (async (...args: unknown[]) => {
+    recordSqlStatement();
     if (!isTransactionControlQuery(args[0])) {
       const currentUserId = getCurrentDatabaseUserId();
 
@@ -78,6 +85,7 @@ function wrapClientForCurrentUser(client: PoolClient) {
       // (for example during first-user bootstrap). Do not erase that identity
       // merely because a framework callback crossed an async-context boundary.
       if (currentUserId) {
+        recordRlsSetup();
         await originalQuery("select set_config('app.current_user_id', $1, false)", [
           currentUserId,
         ]);
@@ -109,7 +117,11 @@ function createPool(connectionString: string) {
   const originalConnect = nextPool.connect.bind(nextPool);
 
   nextPool.connect = (async () => {
-    const client = await originalConnect();
+    const client = await withTelemetrySpan<PoolClient>(
+      "db.pool-acquire",
+      () => originalConnect(),
+    );
+    recordDatabaseUnit();
     // Reset pooled connections before handing them to a request. This keeps
     // the preservation above safe when the previous request belonged to a
     // different authenticated user.
