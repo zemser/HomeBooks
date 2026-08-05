@@ -30,10 +30,10 @@
     "big.js": "7.0.1",
     "csv-parse": "6.2.0",
     "drizzle-orm": "0.44.7",
-    "next": "15.5.14",
+    "next": "16.3.0",
     "pg": "8.20.0",
-    "react": "19.2.4",
-    "react-dom": "19.2.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "xlsx": "0.18.5",
     "zod": "3.25.76"
   },
@@ -42,12 +42,16 @@
     "@types/big.js": "6.2.2",
     "@types/node": "20.19.37",
     "@types/pg": "8.18.0",
-    "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
     "axe-core": "4.11.1",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
-    "eslint-config-next": "15.5.14",
+    "eslint-config-next": "16.3.0",
     "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4"
   }
 }
