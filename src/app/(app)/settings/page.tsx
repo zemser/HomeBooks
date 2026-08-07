@@ -1,7 +1,7 @@
 import { SettingsPageClient } from "@/components/settings/settings-page-client";
 import { signOutAction } from "@/features/auth/actions";
 import { listWorkspaceCategories } from "@/features/workspaces/categories";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { getWorkspaceSettingsSnapshot } from "@/features/workspaces/settings";
 import { getFinappAuthMode } from "@/lib/supabase/config";
@@ -9,11 +9,11 @@ import { getFinappAuthMode } from "@/lib/supabase/config";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const [settings, members, categories] = await withCurrentWorkspace((context) =>
+  const [settings, members, categories] = await withCurrentWorkspaceDb((context, db) =>
     Promise.all([
-      getWorkspaceSettingsSnapshot(context),
-      listWorkspaceMembersForSettings(context),
-      listWorkspaceCategories(context),
+      getWorkspaceSettingsSnapshot(context, db),
+      listWorkspaceMembersForSettings(context, db),
+      listWorkspaceCategories(context, db),
     ]),
   );
 

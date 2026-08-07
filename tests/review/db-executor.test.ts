@@ -11,6 +11,14 @@ const onboardingPath = new URL(
   "../../src/features/workspaces/onboarding.ts",
   import.meta.url,
 );
+const membersPath = new URL(
+  "../../src/features/workspaces/members.ts",
+  import.meta.url,
+);
+const settingsPath = new URL(
+  "../../src/features/workspaces/settings.ts",
+  import.meta.url,
+);
 
 test("transaction executor establishes RLS once and instruments its unit", async () => {
   const source = await readFile(dbPath, "utf8");
@@ -39,3 +47,16 @@ test("workspace context and onboarding use the explicit transaction boundary", a
   assert.doesNotMatch(onboardingSource, /set_config\('app\.current_user_id'/);
 });
 
+test("workspace settings and member services accept an explicit executor", async () => {
+  const [membersSource, settingsSource, contextSource] = await Promise.all([
+    readFile(membersPath, "utf8"),
+    readFile(settingsPath, "utf8"),
+    readFile(contextPath, "utf8"),
+  ]);
+
+  assert.match(contextSource, /export async function withCurrentWorkspaceDb/);
+  assert.match(membersSource, /db: DbExecutor = getDb\(\)/);
+  assert.match(settingsSource, /db: DbExecutor = getDb\(\)/);
+  assert.doesNotMatch(membersSource, /db\.transaction\(/);
+  assert.doesNotMatch(settingsSource, /db\.transaction\(/);
+});
