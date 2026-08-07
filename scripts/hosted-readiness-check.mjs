@@ -141,10 +141,10 @@ function checkRlsSmoke() {
 function checkNodeVersion() {
   const major = Number(process.versions.node.split(".")[0]);
 
-  if (major === 20) {
+  if (major === 22) {
     pass(`Node ${process.versions.node} matches project runtime`);
   } else {
-    fail(`Node ${process.versions.node} matches project runtime`, "expected Node 20.x");
+    fail(`Node ${process.versions.node} matches project runtime`, "expected Node 22.x");
   }
 }
 
