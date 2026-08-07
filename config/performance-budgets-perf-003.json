@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "task": "PERF-003",
+  "baseline": "docs/performance-baseline-perf-002.json",
+  "regression": {
+    "durationMultiplier": 1.2,
+    "durationAbsoluteMs": 150,
+    "counterMultiplier": 1.2,
+    "clientJavaScriptMultiplier": 1.1,
+    "rule": "A measured p75 or p95 regression fails when it exceeds both the multiplier and absolute guardrail. Counter and client-JavaScript regressions use their multiplier guardrail."
+  },
+  "coreWebVitalsP75": {
+    "lcpMs": 2500,
+    "inpMs": 200,
+    "cls": 0.1
+  },
+  "serverDurationMs": {
+    "hardNavigation": {
+      "authenticatedShell": { "warmP50": 400, "warmP95": 800, "coldP95": 1500 },
+      "homepageUsefulContent": { "warmP50": 600, "warmP95": 1200, "coldP95": 2000 }
+    },
+    "softNavigation": { "warmP50": 400, "warmP95": 800 },
+    "reads": { "warmP50": 600, "warmP95": 1200, "coldP95": 2000 },
+    "mutations": {
+      "save-one": { "warmP50": 400, "warmP95": 900, "coldP95": 1500 },
+      "save-bulk": { "warmP50": 700, "warmP95": 1500, "coldP95": 2500 },
+      "small-import-save": { "warmP50": 1500, "warmP95": 3000, "coldP95": 5000 }
+    }
+  },
+  "amplification": {
+    "protectedRead": {
+      "authCallsMax": 1,
+      "workspaceLookupsMax": 1,
+      "rlsSetupsMax": 1,
+      "reportingWritesOnGetMax": 0
+    },
+    "routeSqlStatementsMax": {
+      "/": 190,
+      "/imports": 34,
+      "/imports/review": 51,
+      "/expenses": 39,
+      "/reports": 60
+    },
+    "routeDatabaseUnitsMax": {
+      "/": 88,
+      "/imports": 11,
+      "/imports/review": 20,
+      "/expenses": 14,
+      "/reports": 24
+    },
+    "bulkSaveSqlStatementsMax": 60,
+    "steadyStateAdvisoryLockCallsMax": 0
+  },
+  "clientJavaScriptFirstLoadKbMax": {
+    "shared": 112,
+    "/": 120,
+    "/imports": 130,
+    "/imports/review": 133,
+    "/expenses": 130,
+    "/reports": 130
+  },
+  "notes": [
+    "The server-duration targets retain the investigation-spec targets; PERF-002 supplies the first local distribution for deciding whether they are realistic.",
+    "Route SQL and database-unit ceilings are current-baseline guardrails rounded up by approximately 20%; they are not optimization targets.",
+    "The homepage reporting-write budget is intentionally zero even though PERF-002 observed one projection, because GET must become read-only.",
+    "Client JavaScript caps use the 102 kB shared and 121 kB largest-route production baseline; route-specific output should be measured when the build reporter exposes it.",
+    "The small-import benchmark currently measures preview, not save. The small-import-save target remains the investigation target and is not claimed as measured by PERF-002."
+  ]
+}
