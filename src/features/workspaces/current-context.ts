@@ -84,6 +84,18 @@ export async function withCurrentWorkspace<T>(
   });
 }
 
+/** Run a short, RLS-scoped database unit after resolving workspace context. */
+export async function withCurrentWorkspaceDb<T>(
+  callback: (
+    context: AuthenticatedRequestContext,
+    db: DbExecutor,
+  ) => Promise<T>,
+) {
+  return withCurrentWorkspace((context) =>
+    withDbTransaction(context.userId, (db) => callback(context, db)),
+  );
+}
+
 async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestContext> {
   const existingContext = await withDbTransaction("dev-user", async (tx) => {
     const user = await tx.query.users.findFirst({

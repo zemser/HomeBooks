@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { and, asc, eq } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import { users, workspaceMembers } from "@/db/schema";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import {
@@ -48,8 +48,8 @@ function toSettingsItem(row: {
 
 export async function listWorkspaceMembersForSettings(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<WorkspaceMemberSettingsItem[]> {
-  const db = getDb();
   const rows = await db
     .select({
       id: workspaceMembers.id,
@@ -83,15 +83,14 @@ export async function listWorkspaceMembersForSettings(
 
 export async function createWorkspaceMember(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
   input: {
     displayName: string;
   },
 ) {
-  const db = getDb();
   const displayName = normalizeDisplayName(input.displayName);
 
-  return db.transaction(async (tx) => {
-    const [createdUser] = await tx
+  const [createdUser] = await db
       .insert(users)
       .values({
         email: `member-${randomUUID()}@placeholder.finapp.local`,
@@ -102,7 +101,7 @@ export async function createWorkspaceMember(
         displayName: users.displayName,
       });
 
-    const [createdMember] = await tx
+    const [createdMember] = await db
       .insert(workspaceMembers)
       .values({
         workspaceId: context.workspaceId,
@@ -118,15 +117,15 @@ export async function createWorkspaceMember(
         role: workspaceMembers.role,
       });
 
-    return toSettingsItem({
+  return toSettingsItem({
       ...createdMember,
       userDisplayName: createdUser.displayName,
-    });
   });
 }
 
 export async function updateWorkspaceMember(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
   memberId: string,
   input: {
     displayName?: string | null;
@@ -134,9 +133,7 @@ export async function updateWorkspaceMember(
     role?: WorkspaceMemberRole;
   },
 ) {
-  const db = getDb();
-  return db.transaction(async (tx) => {
-    const existing = await tx
+  const existing = await db
       .select({
         id: workspaceMembers.id,
         userId: workspaceMembers.userId,
@@ -168,7 +165,7 @@ export async function updateWorkspaceMember(
     const nextRole = input.role === undefined ? normalizeRole(existing.role) : normalizeRole(input.role);
     const nextIsActive = input.isActive ?? existing.isActive;
 
-    const roster = await tx
+    const roster = await db
       .select({
         id: workspaceMembers.id,
         role: workspaceMembers.role,
@@ -193,7 +190,7 @@ export async function updateWorkspaceMember(
       throw new Error("At least one active owner is required.");
     }
 
-    const [updatedMember] = await tx
+    const [updatedMember] = await db
       .update(workspaceMembers)
       .set({
         role: nextRole,
@@ -209,9 +206,8 @@ export async function updateWorkspaceMember(
         role: workspaceMembers.role,
       });
 
-    return toSettingsItem({
+  return toSettingsItem({
       ...updatedMember,
       userDisplayName: existing.userDisplayName,
-    });
   });
 }

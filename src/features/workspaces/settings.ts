@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import {
   holdingSnapshots,
   imports,
@@ -25,8 +25,10 @@ function normalizeBaseCurrency(value: string) {
   return normalized;
 }
 
-async function workspaceHasFinancialData(context: CurrentWorkspaceContext) {
-  const db = getDb();
+async function workspaceHasFinancialData(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
+) {
 
   const [
     existingImport,
@@ -74,8 +76,9 @@ async function workspaceHasFinancialData(context: CurrentWorkspaceContext) {
 
 export async function getWorkspaceSettingsSnapshot(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<WorkspaceSettingsSnapshot> {
-  const hasFinancialData = await workspaceHasFinancialData(context);
+  const hasFinancialData = await workspaceHasFinancialData(context, db);
 
   return {
     workspaceId: context.workspaceId,
@@ -89,13 +92,12 @@ export async function getWorkspaceSettingsSnapshot(
 
 export async function updateWorkspaceBaseCurrency(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
   input: { baseCurrency: string },
 ): Promise<WorkspaceSettingsSnapshot> {
-  const db = getDb();
   const nextBaseCurrency = normalizeBaseCurrency(input.baseCurrency);
 
-  return db.transaction(async (tx) => {
-    const workspace = await tx.query.workspaces.findFirst({
+  const workspace = await db.query.workspaces.findFirst({
       where: eq(workspaces.id, context.workspaceId),
       columns: {
         id: true,
@@ -108,10 +110,10 @@ export async function updateWorkspaceBaseCurrency(
     }
 
     if (workspace.baseCurrency === nextBaseCurrency) {
-      return getWorkspaceSettingsSnapshot(context);
+      return getWorkspaceSettingsSnapshot(context, db);
     }
 
-    const hasFinancialData = await workspaceHasFinancialData(context);
+    const hasFinancialData = await workspaceHasFinancialData(context, db);
 
     if (hasFinancialData) {
       throw new Error(
@@ -119,7 +121,7 @@ export async function updateWorkspaceBaseCurrency(
       );
     }
 
-    await tx
+    await db
       .update(workspaces)
       .set({
         baseCurrency: nextBaseCurrency,
@@ -127,11 +129,10 @@ export async function updateWorkspaceBaseCurrency(
       })
       .where(eq(workspaces.id, workspace.id));
 
-    return {
-      workspaceId: workspace.id,
-      baseCurrency: nextBaseCurrency,
-      canUpdateBaseCurrency: true,
-      baseCurrencyLockReason: null,
-    };
-  });
+  return {
+    workspaceId: workspace.id,
+    baseCurrency: nextBaseCurrency,
+    canUpdateBaseCurrency: true,
+    baseCurrencyLockReason: null,
+  };
 }
