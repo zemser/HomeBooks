@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("PERF-003 budget artifact covers web vitals, durations, amplification, and route JS", async () => {
-  const budgets = JSON.parse(await readFile("docs/performance-budgets-perf-003.json", "utf8")) as {
+  const budgets = JSON.parse(await readFile("config/performance-budgets-perf-003.json", "utf8")) as {
     schemaVersion: number;
     regression: { durationMultiplier: number; counterMultiplier: number };
     coreWebVitalsP75: { lcpMs: number; inpMs: number; cls: number };

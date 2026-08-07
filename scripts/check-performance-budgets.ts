@@ -3,7 +3,7 @@ import process from "node:process";
 
 type JsonObject = Record<string, unknown>;
 
-const budgetPath = process.env.PERF_BUDGETS ?? "docs/performance-budgets-perf-003.json";
+const budgetPath = process.env.PERF_BUDGETS ?? "config/performance-budgets-perf-003.json";
 const inputPath = process.env.PERF_INPUT ?? "docs/performance-baseline-perf-002.json";
 
 function isObject(value: unknown): value is JsonObject {
