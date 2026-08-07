@@ -36,7 +36,10 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
 
   const existingMember = await runWithDatabaseUser(user.userId, () =>
     getDb().query.workspaceMembers.findFirst({
-    where: and(eq(workspaceMembers.userId, user.userId), eq(workspaceMembers.isActive, true)),
+      where: and(
+        eq(workspaceMembers.userId, user.userId),
+        eq(workspaceMembers.isActive, true),
+      ),
     }),
   );
 

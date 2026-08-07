@@ -72,10 +72,15 @@ export async function createFirstWorkspaceAction(formData: FormData) {
       }
 
       const existingMember = await tx.query.workspaceMembers.findFirst({
-        where: eq(workspaceMembers.userId, user.id),
+        where: (members, { and, eq }) => and(
+          eq(members.userId, user.id),
+          eq(members.isActive, true),
+        ),
       });
 
       if (existingMember) {
+        // Repeated submissions are safe: an already completed onboarding
+        // command does not create another workspace or membership.
         return;
       }
 
@@ -91,12 +96,17 @@ export async function createFirstWorkspaceAction(formData: FormData) {
 
       await seedStarterWorkspaceCategories(workspaceId, tx);
 
-      await tx.insert(workspaceMembers).values({
-        workspaceId,
-        userId: user.id,
-        role: "owner",
-        displayNameOverride: displayName,
-      });
+      await tx
+        .insert(workspaceMembers)
+        .values({
+          workspaceId,
+          userId: user.id,
+          role: "owner",
+          displayNameOverride: displayName,
+        })
+        .onConflictDoNothing({
+          target: [workspaceMembers.workspaceId, workspaceMembers.userId],
+        });
     }),
   );
 
