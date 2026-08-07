@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { getDb } from "@/db";
-import { runWithDatabaseUser } from "@/db/request-context";
+import { withDbTransaction } from "@/db";
 import { workspaceMembers } from "@/db/schema";
 import {
   AuthContextError,
@@ -34,8 +33,8 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
     throw error;
   }
 
-  const existingMember = await runWithDatabaseUser(user.userId, () =>
-    getDb().query.workspaceMembers.findFirst({
+  const existingMember = await withDbTransaction(user.userId, (db) =>
+    db.query.workspaceMembers.findFirst({
       where: and(
         eq(workspaceMembers.userId, user.userId),
         eq(workspaceMembers.isActive, true),

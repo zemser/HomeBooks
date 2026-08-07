@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool, type PoolClient } from "pg";
 
@@ -20,6 +22,8 @@ const globalForDb = globalThis as typeof globalThis & {
   finappDatabase?: NodePgDatabase<typeof schema>;
   finappDatabaseConnectionString?: string;
 };
+
+const activeExecutor = new AsyncLocalStorage<DbExecutor>();
 
 const wrappedClient = Symbol("finappWrappedClient");
 const transactionScopedClient = Symbol("finappTransactionScopedClient");
@@ -218,7 +222,12 @@ function assertHostedDatabaseRole(connectionString: string) {
   }
 }
 
-export function getDb() {
+export function getDb(): DbExecutor {
+  const executor = activeExecutor.getStore();
+  if (executor) {
+    return executor;
+  }
+
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
@@ -280,7 +289,7 @@ export async function withDbTransaction<T>(
       );
 
       const executor = drizzle(client, { schema });
-      const result = await callback(executor);
+      const result = await activeExecutor.run(executor, () => callback(executor));
       await client.query("commit");
       return result;
     } catch (error) {

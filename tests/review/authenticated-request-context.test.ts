@@ -28,5 +28,6 @@ test("workspace callbacks receive one complete context instead of re-resolving i
     /callback: \(context: AuthenticatedRequestContext\) => Promise<T>/,
   );
   assert.match(source, /return resolveAuthenticatedRequestContext\(\);/);
-  assert.match(source, /runWithWorkspaceDatabaseUser\(context, \(\) => callback\(context\)\)/);
+  assert.match(source, /withDbTransaction\(context\.userId, \(\) => callback\(context\)\)/);
+  assert.match(source, /return withCurrentWorkspace\(\(context\) => callback\(context, getDb\(\)\)\)/);
 });
