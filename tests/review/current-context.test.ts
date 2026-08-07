@@ -9,7 +9,7 @@ const sourcePath = new URL(
 
 test("hosted workspace resolution is read-only and redirects missing state to onboarding", async () => {
   const source = await readFile(sourcePath, "utf8");
-  const hostedResolverStart = source.indexOf("async function resolveSupabaseWorkspaceContext");
+  const hostedResolverStart = source.indexOf("async function resolveSupabaseRequestContext");
   const hostedSource = source.slice(hostedResolverStart);
 
   assert.notEqual(hostedResolverStart, -1);

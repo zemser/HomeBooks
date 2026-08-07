@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 
 import { getDb } from "@/db";
 import { runWithDatabaseUser } from "@/db/request-context";
@@ -8,6 +9,7 @@ import { users, workspaceMembers, workspaces } from "@/db/schema";
 import {
   AuthContextError,
   requireAal2Context,
+  type VerifiedAuthContext,
 } from "@/features/auth/supabase-user";
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 import { getFinappAuthMode } from "@/lib/supabase/config";
@@ -32,12 +34,30 @@ export type CurrentWorkspaceContext = {
   baseCurrency: string;
 };
 
-export async function resolveCurrentWorkspaceContext(): Promise<CurrentWorkspaceContext> {
+export type AuthenticatedRequestContext = CurrentWorkspaceContext & {
+  verifiedSubject: string;
+  aal: VerifiedAuthContext["aal"];
+  appUser: typeof users.$inferSelect;
+  membership: typeof workspaceMembers.$inferSelect;
+  workspace: typeof workspaces.$inferSelect;
+};
+
+/**
+ * React cache is request-scoped when called during a Server Component render;
+ * it is not a process-wide user or workspace cache. Route Handlers and Actions
+ * call this once at their entry point and pass the result to their services.
+ */
+export const resolveAuthenticatedRequestContext = cache(async function resolveAuthenticatedRequestContext(): Promise<AuthenticatedRequestContext> {
   if (getFinappAuthMode() === "supabase") {
-    return resolveSupabaseWorkspaceContext();
+    return resolveSupabaseRequestContext();
   }
 
   return resolveSeededDevWorkspaceContext();
+});
+
+/** Compatibility resolver for callers that only need the legacy workspace shape. */
+export async function resolveCurrentWorkspaceContext(): Promise<AuthenticatedRequestContext> {
+  return resolveAuthenticatedRequestContext();
 }
 
 export async function runWithWorkspaceDatabaseUser<T>(
@@ -52,20 +72,20 @@ export async function runWithWorkspaceDatabaseUser<T>(
 }
 
 export async function withCurrentWorkspace<T>(
-  callback: (context: CurrentWorkspaceContext) => Promise<T>,
+  callback: (context: AuthenticatedRequestContext) => Promise<T>,
 ) {
   const requestId = (await headers()).get("x-request-id") ?? undefined;
   return withTelemetryOperation({ operation: "workspace.request", requestId }, async () => {
     const context = await withTelemetrySpan("workspace.context", async () => {
       recordWorkspaceLookup();
-      return resolveCurrentWorkspaceContext();
+      return resolveAuthenticatedRequestContext();
     });
 
     return runWithWorkspaceDatabaseUser(context, () => callback(context));
   });
 }
 
-async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceContext> {
+async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestContext> {
   const db = getDb();
 
   const existingContext = await db.transaction(async (tx) => {
@@ -89,13 +109,12 @@ async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceConte
       throw new Error("Seeded workspace member exists without a workspace");
     }
 
-    return {
-      userId: user.id,
-      workspaceId: workspace.id,
-      workspaceName: workspace.name,
-      memberId: existingMember.id,
-      baseCurrency: workspace.baseCurrency,
-    };
+    return createAuthenticatedRequestContext(
+      { userId: user.id, aal: "aal2" },
+      user,
+      existingMember,
+      workspace,
+    );
   });
 
   if (existingContext) return existingContext;
@@ -132,13 +151,12 @@ async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceConte
         throw new Error("Seeded workspace member exists without a workspace");
       }
 
-      return {
-        userId: user.id,
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        memberId: existingMember.id,
-        baseCurrency: workspace.baseCurrency,
-      };
+      return createAuthenticatedRequestContext(
+        { userId: user.id, aal: "aal2" },
+        user,
+        existingMember,
+        workspace,
+      );
     }
 
     let workspace = await tx.query.workspaces.findFirst({
@@ -175,17 +193,16 @@ async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceConte
         .returning();
     }
 
-    return {
-      userId: user.id,
-      workspaceId: workspace.id,
-      workspaceName: workspace.name,
-      memberId: member.id,
-      baseCurrency: workspace.baseCurrency,
-    };
+    return createAuthenticatedRequestContext(
+      { userId: user.id, aal: "aal2" },
+      user,
+      member,
+      workspace,
+    );
   });
 }
 
-async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContext> {
+async function resolveSupabaseRequestContext(): Promise<AuthenticatedRequestContext> {
   let authContext;
   try {
     authContext = await requireAal2Context();
@@ -205,7 +222,7 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
         where: eq(users.id, authContext.userId),
       });
 
-      return user ? await loadWorkspaceContext(tx, user.id) : null;
+      return user ? await loadWorkspaceContext(tx, authContext, user) : null;
     }),
   );
 
@@ -228,10 +245,11 @@ async function establishRlsIdentity(tx: WorkspaceTransaction, userId: string) {
 
 async function loadWorkspaceContext(
   tx: WorkspaceTransaction,
-  userId: string,
-): Promise<CurrentWorkspaceContext | null> {
+  authContext: Pick<VerifiedAuthContext, "userId" | "aal">,
+  user: typeof users.$inferSelect,
+): Promise<AuthenticatedRequestContext | null> {
   const member = await tx.query.workspaceMembers.findFirst({
-    where: and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.isActive, true)),
+    where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
   });
 
   if (!member) return null;
@@ -244,11 +262,25 @@ async function loadWorkspaceContext(
     throw new Error("Workspace member exists without a workspace.");
   }
 
+  return createAuthenticatedRequestContext(authContext, user, member, workspace);
+}
+
+function createAuthenticatedRequestContext(
+  authContext: Pick<VerifiedAuthContext, "userId" | "aal">,
+  appUser: typeof users.$inferSelect,
+  membership: typeof workspaceMembers.$inferSelect,
+  workspace: typeof workspaces.$inferSelect,
+): AuthenticatedRequestContext {
   return {
-    userId,
+    verifiedSubject: authContext.userId,
+    aal: authContext.aal,
+    appUser,
+    membership,
+    workspace,
+    userId: appUser.id,
     workspaceId: workspace.id,
     workspaceName: workspace.name,
-    memberId: member.id,
+    memberId: membership.id,
     baseCurrency: workspace.baseCurrency,
   };
 }
