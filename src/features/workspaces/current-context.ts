@@ -197,15 +197,7 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
   }
 
   const db = getDb();
-  const email = authContext.email ?? `${authContext.userId}@supabase.local`;
-  const displayName =
-    typeof authContext.userMetadata?.name === "string"
-      ? authContext.userMetadata.name
-      : typeof authContext.userMetadata?.full_name === "string"
-        ? authContext.userMetadata.full_name
-        : email.split("@")[0] || "Finance user";
-
-  const fastPath = await runWithDatabaseUser(authContext.userId, () =>
+  const context = await runWithDatabaseUser(authContext.userId, () =>
     db.transaction(async (tx) => {
       await establishRlsIdentity(tx, authContext.userId);
 
@@ -213,56 +205,14 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
         where: eq(users.id, authContext.userId),
       });
 
-      if (!user) return { needsBootstrap: true, context: null };
-
-      return {
-        needsBootstrap: false,
-        context: await loadWorkspaceContext(tx, user.id),
-      };
-    }),
-  );
-
-  if (!fastPath.needsBootstrap) {
-    if (!fastPath.context) redirect("/onboarding");
-    return fastPath.context;
-  }
-
-  const context = await runWithDatabaseUser(authContext.userId, () =>
-    db.transaction(async (tx) => {
-      // Only the missing-user bootstrap is serialized. The fast path above
-      // handles every established user and onboarding user without a lock.
-      await establishRlsIdentity(tx, authContext.userId);
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authContext.userId}))`);
-
-      let user = await tx.query.users.findFirst({
-        where: eq(users.id, authContext.userId),
-      });
-
-      if (!user) {
-        const [insertedUser] = await tx
-          .insert(users)
-          .values({
-            id: authContext.userId,
-            email,
-            displayName,
-          })
-          .onConflictDoNothing({ target: users.id })
-          .returning();
-
-        user = insertedUser ?? await tx.query.users.findFirst({
-          where: eq(users.id, authContext.userId),
-        });
-      }
-
-      if (!user) {
-        throw new Error("Could not create or load the authenticated app user.");
-      }
-
-      return loadWorkspaceContext(tx, user.id);
+      return user ? await loadWorkspaceContext(tx, user.id) : null;
     }),
   );
 
   if (!context) {
+    // Bootstrap is an onboarding command, never a side effect of an ordinary
+    // page or API read. This also makes partial legacy state visible and
+    // recoverable instead of repairing it on every request.
     redirect("/onboarding");
   }
 
