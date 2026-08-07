@@ -1,10 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 import { getSupabasePublicConfig } from "@/lib/supabase/config";
 import { noRealtimeOptions } from "@/lib/supabase/noop-websocket";
 
-export async function createSupabaseServerClient() {
+export const createSupabaseServerClient = cache(async function createSupabaseServerClient() {
   const { publishableKey, supabaseUrl } = getSupabasePublicConfig();
   const cookieStore = await cookies();
 
@@ -26,4 +27,4 @@ export async function createSupabaseServerClient() {
       },
     },
   });
-}
+});

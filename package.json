@@ -27,8 +27,8 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
-    "@supabase/ssr": "0.10.3",
-    "@supabase/supabase-js": "2.105.4",
+    "@supabase/ssr": "0.12.4",
+    "@supabase/supabase-js": "2.112.2",
     "big.js": "7.0.1",
     "csv-parse": "6.2.0",
     "drizzle-orm": "0.44.7",

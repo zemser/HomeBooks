@@ -4,10 +4,16 @@ import { detectInvestmentTemplate } from "@/features/investments/detect";
 import { parseInvestmentWorkbookToPreview } from "@/features/investments/parse-investment-workbook";
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
+import { getFinappAuthMode } from "@/lib/supabase/config";
+import { requireAal2Context } from "@/features/auth/supabase-user";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  if (getFinappAuthMode() === "supabase") {
+    await requireAal2Context();
+  }
+
   const formData = await request.formData();
   const file = formData.get("file");
 
