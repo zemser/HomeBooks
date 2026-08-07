@@ -267,7 +267,9 @@ test.describe("transaction review workflow", () => {
     let undoBatchId: string | undefined;
     try {
       await page.goto(`/imports/review?transactionId=${transaction!.id}`);
-      await page.getByRole("radio", { name: /Household/ }).check();
+      const householdRadio = page.getByRole("radio", { name: /Household/ });
+      await householdRadio.check();
+      await expect(householdRadio).toBeChecked();
       const categoryInput = page.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
       await page.getByRole("option", { name: category!.name, exact: true }).click();
@@ -323,14 +325,18 @@ test.describe("transaction review workflow", () => {
       const categoryInput = page.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
       await page.getByRole("option", { name: category!.name, exact: true }).click();
-      await page.getByRole("checkbox", { name: /Also apply to/ }).check();
+      const applyToSimilar = page.getByRole("checkbox", { name: /Also apply to/ });
+      await applyToSimilar.check();
+      await expect(applyToSimilar).toBeChecked();
 
       const saveResponsePromise = page.waitForResponse(
         (response) =>
           response.url().endsWith("/api/transaction-classifications")
           && response.request().method() === "POST",
       );
-      await page.getByRole("button", { name: /Save and next|Save classification/ }).click();
+      const saveButton = page.getByRole("button", { name: /Save and next|Save classification/ });
+      await expect(saveButton).toBeEnabled();
+      await saveButton.click();
       const saveResponse = await saveResponsePromise;
       expect(saveResponse.ok()).toBeTruthy();
       const payload = (await saveResponse.json()) as { undoBatchId?: string; updatedCount?: number };
