@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
-import { getDb } from "@/db";
+import { withDbTransaction, type DbExecutor } from "@/db";
 import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import {
@@ -14,7 +14,6 @@ import {
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 import { getFinappAuthMode } from "@/lib/supabase/config";
 import {
-  recordRlsSetup,
   recordWorkspaceLookup,
   withTelemetryOperation,
   withTelemetrySpan,
@@ -86,9 +85,7 @@ export async function withCurrentWorkspace<T>(
 }
 
 async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestContext> {
-  const db = getDb();
-
-  const existingContext = await db.transaction(async (tx) => {
+  const existingContext = await withDbTransaction("dev-user", async (tx) => {
     const user = await tx.query.users.findFirst({
       where: eq(users.email, DEFAULT_USER_EMAIL),
     });
@@ -119,7 +116,7 @@ async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestC
 
   if (existingContext) return existingContext;
 
-  return db.transaction(async (tx) => {
+  return withDbTransaction("dev-user", async (tx) => {
     // Only the first-user bootstrap needs serialization. Established seeded
     // requests return from the read-only fast path above.
     await tx.execute(sql`select pg_advisory_xact_lock(424242)`);
@@ -213,18 +210,13 @@ async function resolveSupabaseRequestContext(): Promise<AuthenticatedRequestCont
     throw error;
   }
 
-  const db = getDb();
-  const context = await runWithDatabaseUser(authContext.userId, () =>
-    db.transaction(async (tx) => {
-      await establishRlsIdentity(tx, authContext.userId);
+  const context = await withDbTransaction(authContext.userId, async (tx) => {
+    const user = await tx.query.users.findFirst({
+      where: eq(users.id, authContext.userId),
+    });
 
-      const user = await tx.query.users.findFirst({
-        where: eq(users.id, authContext.userId),
-      });
-
-      return user ? await loadWorkspaceContext(tx, authContext, user) : null;
-    }),
-  );
+    return user ? await loadWorkspaceContext(tx, authContext, user) : null;
+  });
 
   if (!context) {
     // Bootstrap is an onboarding command, never a side effect of an ordinary
@@ -236,15 +228,8 @@ async function resolveSupabaseRequestContext(): Promise<AuthenticatedRequestCont
   return context;
 }
 
-type WorkspaceTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
-
-async function establishRlsIdentity(tx: WorkspaceTransaction, userId: string) {
-  recordRlsSetup();
-  await tx.execute(sql`select set_config('app.current_user_id', ${userId}, false)`);
-}
-
 async function loadWorkspaceContext(
-  tx: WorkspaceTransaction,
+  tx: DbExecutor,
   authContext: Pick<VerifiedAuthContext, "userId" | "aal">,
   user: typeof users.$inferSelect,
 ): Promise<AuthenticatedRequestContext | null> {

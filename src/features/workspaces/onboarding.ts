@@ -5,8 +5,7 @@ import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
-import { getDb } from "@/db";
-import { runWithDatabaseUser } from "@/db/request-context";
+import { withDbTransaction } from "@/db";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import { requireAal2Context } from "@/features/auth/supabase-user";
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
@@ -31,16 +30,7 @@ export async function createFirstWorkspaceAction(formData: FormData) {
     redirect("/onboarding?error=Base%20currency%20must%20be%20a%203-letter%20code.");
   }
 
-  const db = getDb();
-
-  await runWithDatabaseUser(authUser.userId, () =>
-    db.transaction(async (tx) => {
-      // Establish the RLS identity on this transaction before the first
-      // protected read or insert. This is the first database request for a
-      // hosted user, so it must not depend on a later query hook.
-      await tx.execute(
-        sql`select set_config('app.current_user_id', ${authUser.userId}, false)`,
-      );
+  await withDbTransaction(authUser.userId, async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authUser.userId}))`);
 
       let user = await tx.query.users.findFirst({
@@ -107,8 +97,7 @@ export async function createFirstWorkspaceAction(formData: FormData) {
         .onConflictDoNothing({
           target: [workspaceMembers.workspaceId, workspaceMembers.userId],
         });
-    }),
-  );
+  });
 
   redirect("/");
 }

@@ -22,6 +22,7 @@ const globalForDb = globalThis as typeof globalThis & {
 };
 
 const wrappedClient = Symbol("finappWrappedClient");
+const transactionScopedClient = Symbol("finappTransactionScopedClient");
 const BYPASS_DATABASE_USERS = new Set([
   "postgres",
   "service_role",
@@ -32,7 +33,17 @@ const BYPASS_DATABASE_USERS = new Set([
 
 type WrappedPoolClient = PoolClient & {
   [wrappedClient]?: boolean;
+  [transactionScopedClient]?: boolean;
 };
+
+/**
+ * The only executor type repositories and services should need to know about.
+ * A transaction executor has the same Drizzle query surface as the root DB,
+ * while making its connection and RLS lifetime explicit at the unit boundary.
+ */
+type RootDb = NodePgDatabase<typeof schema>;
+export type DbTransaction = Parameters<Parameters<RootDb["transaction"]>[0]>[0];
+export type DbExecutor = RootDb | DbTransaction;
 
 function getQueryText(query: unknown) {
   if (typeof query === "string") {
@@ -84,7 +95,7 @@ function wrapClientForCurrentUser(client: PoolClient) {
       // A transaction may establish its identity explicitly at its boundary
       // (for example during first-user bootstrap). Do not erase that identity
       // merely because a framework callback crossed an async-context boundary.
-      if (currentUserId) {
+      if (currentUserId && !scopedClient[transactionScopedClient]) {
         recordRlsSetup();
         await originalQuery("select set_config('app.current_user_id', $1, false)", [
           currentUserId,
@@ -245,4 +256,49 @@ export function getDb() {
   }
 
   return database;
+}
+
+/**
+ * Run one short database unit with one connection and one transaction-local
+ * RLS identity. The callback must contain database work only; Auth, Storage,
+ * parsing, and other network work belong before or after this boundary.
+ */
+export async function withDbTransaction<T>(
+  currentUserId: string,
+  callback: (executor: DbExecutor) => Promise<T>,
+) {
+  const client = (await getPool().connect()) as WrappedPoolClient;
+  client[transactionScopedClient] = true;
+
+  return withTelemetrySpan("db.transaction", async () => {
+    try {
+      await client.query("begin");
+      recordRlsSetup();
+      await client.query(
+        "select set_config('app.current_user_id', $1, true)",
+        [currentUserId],
+      );
+
+      const executor = drizzle(client, { schema });
+      const result = await callback(executor);
+      await client.query("commit");
+      return result;
+    } catch (error) {
+      await client.query("rollback").catch(() => undefined);
+      throw error;
+    } finally {
+      client[transactionScopedClient] = false;
+      client.release();
+    }
+  });
+}
+
+function getPool() {
+  // getDb() owns validation and lazy initialization; the executor shares the
+  // same pool without exposing it to repositories or services.
+  getDb();
+  if (!pool) {
+    throw new Error("Database pool was not initialized.");
+  }
+  return pool;
 }
