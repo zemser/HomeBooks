@@ -5,7 +5,10 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db";
 import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
-import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
+import {
+  AuthContextError,
+  requireAal2Context,
+} from "@/features/auth/supabase-user";
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 import { getFinappAuthMode } from "@/lib/supabase/config";
 import {
@@ -151,22 +154,26 @@ async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceConte
 }
 
 async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContext> {
-  const authUser = await getSupabaseAuthenticatedUser();
-
-  if (!authUser) {
-    redirect("/sign-in");
+  let authContext;
+  try {
+    authContext = await requireAal2Context();
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      redirect(error.status === 401 ? "/sign-in" : "/mfa");
+    }
+    throw error;
   }
 
   const db = getDb();
-  const email = authUser.email ?? `${authUser.id}@supabase.local`;
+  const email = authContext.email ?? `${authContext.userId}@supabase.local`;
   const displayName =
-    typeof authUser.user_metadata?.name === "string"
-      ? authUser.user_metadata.name
-      : typeof authUser.user_metadata?.full_name === "string"
-        ? authUser.user_metadata.full_name
+    typeof authContext.userMetadata?.name === "string"
+      ? authContext.userMetadata.name
+      : typeof authContext.userMetadata?.full_name === "string"
+        ? authContext.userMetadata.full_name
         : email.split("@")[0] || "Finance user";
 
-  const context = await runWithDatabaseUser(authUser.id, () =>
+  const context = await runWithDatabaseUser(authContext.userId, () =>
     db.transaction(async (tx) => {
       // Set the RLS identity on this exact transaction connection before the
       // first protected query. The request context wrapper normally keeps this
@@ -174,19 +181,19 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
       // query hook or on async-context propagation through the framework.
       recordRlsSetup();
       await tx.execute(
-        sql`select set_config('app.current_user_id', ${authUser.id}, false)`,
+        sql`select set_config('app.current_user_id', ${authContext.userId}, false)`,
       );
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authUser.id}))`);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authContext.userId}))`);
 
       let user = await tx.query.users.findFirst({
-        where: eq(users.id, authUser.id),
+        where: eq(users.id, authContext.userId),
       });
 
       if (!user) {
         const [insertedUser] = await tx
           .insert(users)
           .values({
-            id: authUser.id,
+            id: authContext.userId,
             email,
             displayName,
           })
@@ -198,7 +205,7 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
         user =
           insertedUser
           ?? await tx.query.users.findFirst({
-            where: eq(users.id, authUser.id),
+        where: eq(users.id, authContext.userId),
           });
       }
 

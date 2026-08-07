@@ -45,9 +45,8 @@ export async function proxy(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { data: claims } = await supabase.auth.getClaims();
+  const user = claims?.claims;
 
   const { pathname } = request.nextUrl;
 
@@ -70,9 +69,7 @@ export async function proxy(request: NextRequest) {
   }
 
   if (user && !isMfaPath(pathname)) {
-    const { data } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-
-    if (data?.currentLevel !== "aal2") {
+    if (user.aal !== "aal2") {
       if (isApiPath(pathname)) {
         return NextResponse.json({ error: "Multi-factor authentication required." }, { status: 403 });
       }

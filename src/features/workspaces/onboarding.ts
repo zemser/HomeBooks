@@ -8,7 +8,7 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db";
 import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
-import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
+import { requireAal2Context } from "@/features/auth/supabase-user";
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 
 function getString(formData: FormData, key: string) {
@@ -17,16 +17,12 @@ function getString(formData: FormData, key: string) {
 }
 
 export async function createFirstWorkspaceAction(formData: FormData) {
-  const authUser = await getSupabaseAuthenticatedUser();
-
-  if (!authUser) {
-    redirect("/sign-in");
-  }
+  const authUser = await requireAal2Context();
 
   const workspaceName = getString(formData, "workspaceName") || "Household Workspace";
   const displayName =
     getString(formData, "displayName")
-    || (typeof authUser.user_metadata?.name === "string" ? authUser.user_metadata.name : "")
+    || (typeof authUser.userMetadata?.name === "string" ? authUser.userMetadata.name : "")
     || authUser.email?.split("@")[0]
     || "Finance user";
   const baseCurrency = (getString(formData, "baseCurrency") || "ILS").toUpperCase();
@@ -37,26 +33,26 @@ export async function createFirstWorkspaceAction(formData: FormData) {
 
   const db = getDb();
 
-  await runWithDatabaseUser(authUser.id, () =>
+  await runWithDatabaseUser(authUser.userId, () =>
     db.transaction(async (tx) => {
       // Establish the RLS identity on this transaction before the first
       // protected read or insert. This is the first database request for a
       // hosted user, so it must not depend on a later query hook.
       await tx.execute(
-        sql`select set_config('app.current_user_id', ${authUser.id}, false)`,
+        sql`select set_config('app.current_user_id', ${authUser.userId}, false)`,
       );
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authUser.id}))`);
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authUser.userId}))`);
 
       let user = await tx.query.users.findFirst({
-        where: eq(users.id, authUser.id),
+        where: eq(users.id, authUser.userId),
       });
 
       if (!user) {
         const [insertedUser] = await tx
           .insert(users)
           .values({
-            id: authUser.id,
-            email: authUser.email ?? `${authUser.id}@supabase.local`,
+            id: authUser.userId,
+            email: authUser.email ?? `${authUser.userId}@supabase.local`,
             displayName,
           })
           .onConflictDoNothing({
@@ -67,7 +63,7 @@ export async function createFirstWorkspaceAction(formData: FormData) {
         user =
           insertedUser
           ?? await tx.query.users.findFirst({
-            where: eq(users.id, authUser.id),
+        where: eq(users.id, authUser.userId),
           });
       }
 

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 
 import { MfaEnrollmentClient } from "@/components/auth/mfa-enrollment-client";
 import { verifyExistingTotpAction } from "@/features/auth/mfa-actions";
-import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
+import { getSupabaseAuthContext } from "@/features/auth/supabase-user";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { recordMfaCall, withTelemetryOperation, withTelemetrySpan } from "@/lib/telemetry/server";
 
@@ -26,7 +26,7 @@ function getSafeNext(next: string | undefined) {
 export default async function MfaPage({ searchParams }: MfaPageProps) {
   const params = await searchParams;
   const next = getSafeNext(params?.next);
-  const user = await getSupabaseAuthenticatedUser();
+  const user = await getSupabaseAuthContext();
 
   if (!user) {
     redirect("/sign-in");

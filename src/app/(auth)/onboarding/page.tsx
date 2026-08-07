@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/db";
 import { runWithDatabaseUser } from "@/db/request-context";
 import { workspaceMembers } from "@/db/schema";
-import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
+import {
+  AuthContextError,
+  requireAal2Context,
+} from "@/features/auth/supabase-user";
 import { createFirstWorkspaceAction } from "@/features/workspaces/onboarding";
 import { getFinappAuthMode } from "@/lib/supabase/config";
 import { and, eq } from "drizzle-orm";
@@ -21,15 +24,19 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
     redirect("/");
   }
 
-  const user = await getSupabaseAuthenticatedUser();
-
-  if (!user) {
-    redirect("/sign-in");
+  let user;
+  try {
+    user = await requireAal2Context();
+  } catch (error) {
+    if (error instanceof AuthContextError) {
+      redirect(error.status === 401 ? "/sign-in" : "/mfa?next=/onboarding");
+    }
+    throw error;
   }
 
-  const existingMember = await runWithDatabaseUser(user.id, () =>
+  const existingMember = await runWithDatabaseUser(user.userId, () =>
     getDb().query.workspaceMembers.findFirst({
-      where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
+    where: and(eq(workspaceMembers.userId, user.userId), eq(workspaceMembers.isActive, true)),
     }),
   );
 
@@ -39,7 +46,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
 
   const params = await searchParams;
   const defaultDisplayName =
-    (typeof user.user_metadata?.name === "string" ? user.user_metadata.name : "")
+    (typeof user.userMetadata?.name === "string" ? user.userMetadata.name : "")
     || user.email?.split("@")[0]
     || "";
 

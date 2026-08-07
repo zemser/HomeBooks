@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 
-import { getSupabaseAuthenticatedUser } from "@/features/auth/supabase-user";
+import { getSupabaseAuthContext } from "@/features/auth/supabase-user";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type MfaEnrollmentState =
@@ -60,7 +60,7 @@ export async function beginTotpEnrollmentAction(
 ): Promise<MfaEnrollmentState> {
   void _previousState;
 
-  const user = await getSupabaseAuthenticatedUser();
+  const user = await getSupabaseAuthContext();
 
   if (!user) {
     redirect("/sign-in");
