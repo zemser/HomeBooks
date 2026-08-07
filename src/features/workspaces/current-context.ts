@@ -68,9 +68,41 @@ export async function withCurrentWorkspace<T>(
 async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceContext> {
   const db = getDb();
 
+  const existingContext = await db.transaction(async (tx) => {
+    const user = await tx.query.users.findFirst({
+      where: eq(users.email, DEFAULT_USER_EMAIL),
+    });
+
+    if (!user) return null;
+
+    const existingMember = await tx.query.workspaceMembers.findFirst({
+      where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
+    });
+
+    if (!existingMember) return null;
+
+    const workspace = await tx.query.workspaces.findFirst({
+      where: eq(workspaces.id, existingMember.workspaceId),
+    });
+
+    if (!workspace) {
+      throw new Error("Seeded workspace member exists without a workspace");
+    }
+
+    return {
+      userId: user.id,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      memberId: existingMember.id,
+      baseCurrency: workspace.baseCurrency,
+    };
+  });
+
+  if (existingContext) return existingContext;
+
   return db.transaction(async (tx) => {
-    // Serialize the dev bootstrap path so concurrent first-load requests do not race
-    // into duplicate inserts for the seeded user/workspace/member records.
+    // Only the first-user bootstrap needs serialization. Established seeded
+    // requests return from the read-only fast path above.
     await tx.execute(sql`select pg_advisory_xact_lock(424242)`);
 
     let user = await tx.query.users.findFirst({
@@ -88,7 +120,7 @@ async function resolveSeededDevWorkspaceContext(): Promise<CurrentWorkspaceConte
     }
 
     const existingMember = await tx.query.workspaceMembers.findFirst({
-      where: eq(workspaceMembers.userId, user.id),
+      where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
     });
 
     if (existingMember) {
@@ -173,16 +205,33 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
         ? authContext.userMetadata.full_name
         : email.split("@")[0] || "Finance user";
 
+  const fastPath = await runWithDatabaseUser(authContext.userId, () =>
+    db.transaction(async (tx) => {
+      await establishRlsIdentity(tx, authContext.userId);
+
+      const user = await tx.query.users.findFirst({
+        where: eq(users.id, authContext.userId),
+      });
+
+      if (!user) return { needsBootstrap: true, context: null };
+
+      return {
+        needsBootstrap: false,
+        context: await loadWorkspaceContext(tx, user.id),
+      };
+    }),
+  );
+
+  if (!fastPath.needsBootstrap) {
+    if (!fastPath.context) redirect("/onboarding");
+    return fastPath.context;
+  }
+
   const context = await runWithDatabaseUser(authContext.userId, () =>
     db.transaction(async (tx) => {
-      // Set the RLS identity on this exact transaction connection before the
-      // first protected query. The request context wrapper normally keeps this
-      // setting in sync, but the bootstrap insert must not depend on a later
-      // query hook or on async-context propagation through the framework.
-      recordRlsSetup();
-      await tx.execute(
-        sql`select set_config('app.current_user_id', ${authContext.userId}, false)`,
-      );
+      // Only the missing-user bootstrap is serialized. The fast path above
+      // handles every established user and onboarding user without a lock.
+      await establishRlsIdentity(tx, authContext.userId);
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authContext.userId}))`);
 
       let user = await tx.query.users.findFirst({
@@ -197,45 +246,19 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
             email,
             displayName,
           })
-          .onConflictDoNothing({
-            target: users.id,
-          })
+          .onConflictDoNothing({ target: users.id })
           .returning();
 
-        user =
-          insertedUser
-          ?? await tx.query.users.findFirst({
-        where: eq(users.id, authContext.userId),
-          });
+        user = insertedUser ?? await tx.query.users.findFirst({
+          where: eq(users.id, authContext.userId),
+        });
       }
 
       if (!user) {
         throw new Error("Could not create or load the authenticated app user.");
       }
 
-      const member = await tx.query.workspaceMembers.findFirst({
-        where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
-      });
-
-      if (!member) {
-        return null;
-      }
-
-      const workspace = await tx.query.workspaces.findFirst({
-        where: eq(workspaces.id, member.workspaceId),
-      });
-
-      if (!workspace) {
-        throw new Error("Workspace member exists without a workspace.");
-      }
-
-      return {
-        userId: user.id,
-        workspaceId: workspace.id,
-        workspaceName: workspace.name,
-        memberId: member.id,
-        baseCurrency: workspace.baseCurrency,
-      };
+      return loadWorkspaceContext(tx, user.id);
     }),
   );
 
@@ -244,4 +267,38 @@ async function resolveSupabaseWorkspaceContext(): Promise<CurrentWorkspaceContex
   }
 
   return context;
+}
+
+type WorkspaceTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
+async function establishRlsIdentity(tx: WorkspaceTransaction, userId: string) {
+  recordRlsSetup();
+  await tx.execute(sql`select set_config('app.current_user_id', ${userId}, false)`);
+}
+
+async function loadWorkspaceContext(
+  tx: WorkspaceTransaction,
+  userId: string,
+): Promise<CurrentWorkspaceContext | null> {
+  const member = await tx.query.workspaceMembers.findFirst({
+    where: and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.isActive, true)),
+  });
+
+  if (!member) return null;
+
+  const workspace = await tx.query.workspaces.findFirst({
+    where: eq(workspaces.id, member.workspaceId),
+  });
+
+  if (!workspace) {
+    throw new Error("Workspace member exists without a workspace.");
+  }
+
+  return {
+    userId,
+    workspaceId: workspace.id,
+    workspaceName: workspace.name,
+    memberId: member.id,
+    baseCurrency: workspace.baseCurrency,
+  };
 }
