@@ -24,6 +24,9 @@ test("transaction executor establishes RLS once and instruments its unit", async
   const source = await readFile(dbPath, "utf8");
 
   assert.match(source, /export type DbExecutor/);
+  assert.match(source, /const activeExecutor = new AsyncLocalStorage<DbExecutor>\(\)/);
+  assert.match(source, /const executor = activeExecutor\.getStore\(\);/);
+  assert.match(source, /activeExecutor\.run\(executor, \(\) => callback\(executor\)\)/);
   assert.match(source, /export async function withDbTransaction/);
   assert.match(source, /withTelemetrySpan\("db\.transaction"/);
   assert.match(

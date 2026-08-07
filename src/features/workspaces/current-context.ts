@@ -3,7 +3,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 
-import { withDbTransaction, type DbExecutor } from "@/db";
+import { getDb, withDbTransaction, type DbExecutor } from "@/db";
 import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import {
@@ -80,7 +80,7 @@ export async function withCurrentWorkspace<T>(
       return resolveAuthenticatedRequestContext();
     });
 
-    return runWithWorkspaceDatabaseUser(context, () => callback(context));
+    return withDbTransaction(context.userId, () => callback(context));
   });
 }
 
@@ -91,9 +91,7 @@ export async function withCurrentWorkspaceDb<T>(
     db: DbExecutor,
   ) => Promise<T>,
 ) {
-  return withCurrentWorkspace((context) =>
-    withDbTransaction(context.userId, (db) => callback(context, db)),
-  );
+  return withCurrentWorkspace((context) => callback(context, getDb()));
 }
 
 async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestContext> {
