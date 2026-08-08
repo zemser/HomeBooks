@@ -23,6 +23,7 @@
     "backup:verify": "node scripts/verify-encrypted-backup.mjs",
     "hosted:check": "node scripts/hosted-readiness-check.mjs",
     "smoke:rls": "node scripts/smoke-rls-isolation.mjs",
+    "test:db-003": "node scripts/test-db-003-rls.mjs",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push"
   },
