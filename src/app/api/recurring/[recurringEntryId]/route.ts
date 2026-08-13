@@ -7,7 +7,7 @@ import {
   deleteRecurringEntry,
   updateRecurringEntry,
 } from "@/features/recurring/service";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { WorkspaceCategoryInputError } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -44,8 +44,8 @@ export async function PATCH(request: Request, { params }: RouteProps) {
     }
 
     const { recurringEntryId } = await params;
-    const result = await withCurrentWorkspace((context) =>
-      updateRecurringEntry(context, recurringEntryId, parsed.data),
+    const result = await withCurrentWorkspaceDb((context, db) =>
+      updateRecurringEntry(context, recurringEntryId, parsed.data, db),
     );
 
     return NextResponse.json(result);
@@ -64,8 +64,8 @@ export async function PATCH(request: Request, { params }: RouteProps) {
 export async function DELETE(request: Request, { params }: RouteProps) {
   try {
     const { recurringEntryId } = await params;
-    const result = await withCurrentWorkspace((context) =>
-      deleteRecurringEntry(context, recurringEntryId),
+    const result = await withCurrentWorkspaceDb((context, db) =>
+      deleteRecurringEntry(context, recurringEntryId, db),
     );
 
     return NextResponse.json(result);

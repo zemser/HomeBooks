@@ -161,7 +161,7 @@ export async function getWorkspaceHomeSnapshot(
       const dashboard = await getDashboardSnapshot(context, {
         month: selectedMonth,
         mode: "allocated_period",
-      });
+      }, db);
 
       const reportableItemCount =
         dashboard.rollingTwelveSummary.importedTransactionCount +

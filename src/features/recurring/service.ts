@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import {
   manualEntries,
   manualEntryOverrides,
@@ -74,9 +74,7 @@ type GenerateEntriesInput = {
   endMonth: string;
 };
 
-type DbClient = ReturnType<typeof getDb>;
-type DbTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
-type DbExecutor = DbClient | DbTransaction;
+type DbTransaction = Parameters<Parameters<DbExecutor["transaction"]>[0]>[0];
 
 type MaterializeRecurringEntriesInput = GenerateEntriesInput & {
   recurringEntryIds?: string[];
@@ -114,8 +112,8 @@ function normalizeOptionalText(value?: string | null) {
 async function assertWorkspaceRecurringEntry(
   context: CurrentWorkspaceContext,
   recurringEntryId: string,
+  db: DbExecutor,
 ) {
-  const db = getDb();
   const recurringEntry = await db.query.manualRecurringExpenses.findFirst({
     where: and(
       eq(manualRecurringExpenses.id, recurringEntryId),
@@ -133,12 +131,13 @@ async function assertWorkspaceRecurringEntry(
 async function assertWorkspaceMember(
   context: CurrentWorkspaceContext,
   memberId: string | null,
+  db: DbExecutor,
 ) {
   if (!memberId) {
     return;
   }
 
-  const members = await listWorkspaceMembers(context);
+  const members = await listWorkspaceMembers(context, db);
   const exists = members.some((member) => member.id === memberId);
 
   if (!exists) {
@@ -256,10 +255,9 @@ function clampMaterializationRangeToCurrentMonth(
 
 async function withRecurringMaterializationLock<T>(
   context: CurrentWorkspaceContext,
+  db: DbExecutor,
   run: (tx: DbTransaction) => Promise<T>,
 ) {
-  const db = getDb();
-
   return db.transaction(async (tx) => {
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtext('recurring_generated'), hashtext(${context.workspaceId}))`,
@@ -352,6 +350,7 @@ async function getRecurringGeneratedEntryBounds(
 export async function materializeRecurringEntriesForRange(
   context: CurrentWorkspaceContext,
   input: MaterializeRecurringEntriesInput,
+  db: DbExecutor = getDb(),
 ) {
   const range = clampMaterializationRangeToCurrentMonth(input);
 
@@ -363,7 +362,7 @@ export async function materializeRecurringEntriesForRange(
     };
   }
 
-  const recurringEntries = await listRecurringEntries(context);
+  const recurringEntries = await listRecurringEntries(context, db);
   const activeEntries = recurringEntries.filter(
     (entry) =>
       entry.active &&
@@ -421,7 +420,7 @@ export async function materializeRecurringEntriesForRange(
     }
   }
 
-  return withRecurringMaterializationLock(context, async (tx) => {
+  return withRecurringMaterializationLock(context, db, async (tx) => {
     const existingRows = await tx
       .select({
         id: manualEntries.id,
@@ -542,10 +541,11 @@ async function deleteRecurringGeneratedEntriesFromMonth(
   context: CurrentWorkspaceContext,
   recurringEntryId: string,
   startMonth: string,
+  db: DbExecutor,
 ) {
   const normalizedStartMonth = normalizeMonthString(startMonth);
 
-  return withRecurringMaterializationLock(context, async (tx) => {
+  return withRecurringMaterializationLock(context, db, async (tx) => {
     const rows = await tx
       .select({
         id: manualEntries.id,
@@ -577,8 +577,10 @@ async function deleteRecurringGeneratedEntriesFromMonth(
   });
 }
 
-export async function listRecurringEntries(context: CurrentWorkspaceContext) {
-  const db = getDb();
+export async function listRecurringEntries(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
+) {
   const [entries, versions, members] = await Promise.all([
     db
       .select({
@@ -616,7 +618,7 @@ export async function listRecurringEntries(context: CurrentWorkspaceContext) {
         desc(recurringEntryVersions.effectiveStartMonth),
         desc(recurringEntryVersions.createdAt),
       ),
-    listWorkspaceMembers(context),
+    listWorkspaceMembers(context, db),
   ]);
 
   const memberNames = new Map(members.map((member) => [member.id, member.displayName]));
@@ -661,12 +663,12 @@ export async function listRecurringEntries(context: CurrentWorkspaceContext) {
 export async function listGeneratedManualEntries(
   context: CurrentWorkspaceContext,
   input: GenerateEntriesInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const startMonth = normalizeMonthString(input.startMonth);
   const endMonth = normalizeMonthString(input.endMonth);
   assertMonthRange(startMonth, endMonth);
-  const members = await listWorkspaceMembers(context);
+  const members = await listWorkspaceMembers(context, db);
   const memberNames = new Map(members.map((member) => [member.id, member.displayName]));
 
   const entries = await db
@@ -717,8 +719,8 @@ export async function listGeneratedManualEntries(
 export async function createRecurringEntry(
   context: CurrentWorkspaceContext,
   input: CreateRecurringEntryInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const notes = normalizeOptionalText(input.notes);
@@ -729,7 +731,7 @@ export async function createRecurringEntry(
     classificationType: input.classificationType,
     payerMemberId,
   });
-  await assertWorkspaceMember(context, payerMemberId);
+  await assertWorkspaceMember(context, payerMemberId, db);
   const savedCategory = await resolveWorkspaceCategory(context, {
     categoryId: input.categoryId,
     categoryName: category,
@@ -771,7 +773,7 @@ export async function createRecurringEntry(
       startMonth: effectiveStartMonth,
       endMonth: currentMonthString(),
       recurringEntryIds: [entry.id],
-    });
+    }, db);
   }
 
   return entry;
@@ -780,10 +782,11 @@ export async function createRecurringEntry(
 export async function deleteRecurringEntry(
   context: CurrentWorkspaceContext,
   recurringEntryId: string,
+  db: DbExecutor = getDb(),
 ) {
-  await assertWorkspaceRecurringEntry(context, recurringEntryId);
+  await assertWorkspaceRecurringEntry(context, recurringEntryId, db);
 
-  await withRecurringMaterializationLock(context, async (tx) => {
+  await withRecurringMaterializationLock(context, db, async (tx) => {
     const generatedRows = await tx
       .select({
         id: manualEntries.id,
@@ -822,17 +825,17 @@ export async function updateRecurringEntry(
   context: CurrentWorkspaceContext,
   recurringEntryId: string,
   input: UpdateRecurringEntryInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
 
-  await assertWorkspaceRecurringEntry(context, recurringEntryId);
+  await assertWorkspaceRecurringEntry(context, recurringEntryId, db);
   validateRecurringClassification({
     classificationType: input.classificationType,
     payerMemberId,
   });
-  await assertWorkspaceMember(context, payerMemberId);
+  await assertWorkspaceMember(context, payerMemberId, db);
   const savedCategory = await resolveWorkspaceCategory(context, {
     categoryId: input.categoryId,
     categoryName: category,
@@ -867,13 +870,14 @@ export async function updateRecurringEntry(
         endMonth,
         recurringEntryIds: [recurringEntryId],
         allowFutureMonths: true,
-      });
+      }, db);
     }
   } else {
     await deleteRecurringGeneratedEntriesFromMonth(
       context,
       recurringEntryId,
       currentMonthString(),
+      db,
     );
   }
 
@@ -885,9 +889,9 @@ export async function updateRecurringEntry(
 export async function createRecurringEntryVersion(
   context: CurrentWorkspaceContext,
   input: CreateRecurringVersionInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
-  const recurringEntry = await assertWorkspaceRecurringEntry(context, input.recurringEntryId);
+  const recurringEntry = await assertWorkspaceRecurringEntry(context, input.recurringEntryId, db);
   const effectiveStartMonth = normalizeMonthString(input.effectiveStartMonth);
   const notes = normalizeOptionalText(input.notes);
   const currency = normalizeCurrencyCode(input.currency);
@@ -952,7 +956,7 @@ export async function createRecurringEntryVersion(
       endMonth: bounds.latestGeneratedMonth,
       recurringEntryIds: [recurringEntry.id],
       allowFutureMonths: true,
-    });
+    }, db);
   }
 
   return {
@@ -963,11 +967,12 @@ export async function createRecurringEntryVersion(
 export async function generateRecurringEntriesForPeriod(
   context: CurrentWorkspaceContext,
   input: GenerateEntriesInput,
+  db: DbExecutor = getDb(),
 ) {
   const result = await materializeRecurringEntriesForRange(context, {
     ...input,
     allowFutureMonths: true,
-  });
+  }, db);
 
   return {
     createdCount: result.createdCount,
@@ -977,6 +982,7 @@ export async function generateRecurringEntriesForPeriod(
 export async function getRecurringPageData(
   context: CurrentWorkspaceContext,
   input?: Partial<GenerateEntriesInput>,
+  db: DbExecutor = getDb(),
 ) {
   const startMonth = input?.startMonth ? normalizeMonthString(input.startMonth) : currentMonthString();
   const endMonth = input?.endMonth ? normalizeMonthString(input.endMonth) : currentMonthString();
@@ -985,16 +991,16 @@ export async function getRecurringPageData(
   await materializeRecurringEntriesForRange(context, {
     startMonth,
     endMonth,
-  });
+  }, db);
 
   const [members, categoryCatalog, recurringEntries, generatedEntries] = await Promise.all([
-    listWorkspaceMembers(context),
-    listWorkspaceCategories(context),
-    listRecurringEntries(context),
+    listWorkspaceMembers(context, db),
+    listWorkspaceCategories(context, db),
+    listRecurringEntries(context, db),
     listGeneratedManualEntries(context, {
       startMonth,
       endMonth,
-    }),
+    }, db),
   ]);
 
   return {

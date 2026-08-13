@@ -21,7 +21,7 @@ import {
   buildRollingTwelveWindow,
   buildYearToDateWindow,
 } from "@/features/reporting/periods";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
 export const dynamic = "force-dynamic";
 
@@ -126,25 +126,25 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
     yearToDateWindow.periodStart < rollingWindow.periodStart
       ? yearToDateWindow.periodStart
       : rollingWindow.periodStart;
-  const [report, yearToDate, rollingTwelve] = await withCurrentWorkspace(
-    async (context) => {
+  const [report, yearToDate, rollingTwelve] = await withCurrentWorkspaceDb(
+    async (context, db) => {
       if (reportingMode === "allocated_period") {
         await syncExpenseEventsForRange(context, {
           startMonth: syncStartMonth,
           endMonth: selectedMonth,
-        });
+        }, db);
       }
 
       return Promise.all([
-        getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }),
+        getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }, db),
         getYearToDateReport(context, {
           throughMonth: selectedMonth,
           mode: reportingMode,
-        }),
+        }, db),
         getRollingTwelveReport(context, {
           throughMonth: selectedMonth,
           mode: reportingMode,
-        }),
+        }, db),
       ]);
     },
   );

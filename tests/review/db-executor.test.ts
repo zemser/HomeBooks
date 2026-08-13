@@ -36,6 +36,14 @@ const importsRoutePath = new URL(
   "../../src/app/api/imports/route.ts",
   import.meta.url,
 );
+const recurringServicePath = new URL(
+  "../../src/features/recurring/service.ts",
+  import.meta.url,
+);
+const reportingPath = new URL(
+  "../../src/features/reporting/monthly-report.ts",
+  import.meta.url,
+);
 
 test("transaction executor establishes RLS once and instruments its unit", async () => {
   const source = await readFile(dbPath, "utf8");
@@ -146,4 +154,43 @@ test("import persistence keeps parsing and Storage work outside DB transactions"
   assert.match(routeSource, /resolveCurrentWorkspaceContext\(\)/);
   assert.match(routeSource, /persistBankImport\(/);
   assert.doesNotMatch(routeSource, /withCurrentWorkspace\(/);
+});
+
+test("recurring services and API callers use the explicit transaction executor", async () => {
+  const [serviceSource, routeSource, generateRouteSource, detailRouteSource, versionRouteSource] =
+    await Promise.all([
+      readFile(recurringServicePath, "utf8"),
+      readFile(new URL("../../src/app/api/recurring/route.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/api/recurring/generate/route.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/api/recurring/[recurringEntryId]/route.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/api/recurring/[recurringEntryId]/versions/route.ts", import.meta.url), "utf8"),
+    ]);
+
+  assert.match(serviceSource, /listRecurringEntries\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /listGeneratedManualEntries\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /materializeRecurringEntriesForRange\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /createRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /updateRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /deleteRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(routeSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(generateRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(detailRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(versionRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+});
+
+test("reporting reads and callers use the explicit transaction executor", async () => {
+  const [reportingSource, reportsPageSource, homeSource] = await Promise.all([
+    readFile(reportingPath, "utf8"),
+    readFile(new URL("../../src/app/(app)/reports/page.tsx", import.meta.url), "utf8"),
+    readFile(homePath, "utf8"),
+  ]);
+
+  assert.match(reportingSource, /getMonthlyReport\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(reportingSource, /getYearToDateReport\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(reportingSource, /getRollingTwelveReport\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(reportingSource, /getDashboardSnapshot\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(reportingSource, /materializeRecurringEntriesForRange\([\s\S]*, db\)/);
+  assert.match(reportsPageSource, /withCurrentWorkspaceDb\(\s*async \(context, db\)/);
+  assert.match(reportsPageSource, /syncExpenseEventsForRange\([\s\S]*, db\)/);
+  assert.match(homeSource, /getDashboardSnapshot\([\s\S]*\}, db\)/);
 });
