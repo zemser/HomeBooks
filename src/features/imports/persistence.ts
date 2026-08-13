@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import {
   classificationRules,
   financialAccounts,
@@ -122,8 +122,9 @@ function buildTransactionDedupeHash(input: {
 export async function analyzeParsedBankImport(input: {
   context: CurrentImportContext;
   parsed: ParsedBankStatement;
+  db?: DbExecutor;
 }) {
-  const db = getDb();
+  const db = input.db ?? getDb();
   const importCatalog = await getSupportedBankImportCatalog();
   const templateRecord = importCatalog.get(input.parsed.templateId);
 
@@ -298,8 +299,8 @@ async function findOrCreateFinancialAccount(input: {
 export async function listSavedImports(
   context: CurrentImportContext,
   input?: { type?: "bank" | "investment" },
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const savedImports = await db
     .select({
       id: imports.id,

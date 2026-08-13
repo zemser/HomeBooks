@@ -1,9 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
-import {
-  withCurrentWorkspace,
-} from "@/features/workspaces/current-context";
+import { withCurrentWorkspace, withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { listSavedImports, persistBankImport } from "@/features/imports/persistence";
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
@@ -13,10 +11,10 @@ export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   try {
-    const { workspaceCurrency, savedImports } = await withCurrentWorkspace(
-      async (context) => ({
+    const { workspaceCurrency, savedImports } = await withCurrentWorkspaceDb(
+      async (context, db) => ({
         workspaceCurrency: context.baseCurrency,
-        savedImports: await listSavedImports(context, { type: "bank" }),
+        savedImports: await listSavedImports(context, { type: "bank" }, db),
       }),
     );
 

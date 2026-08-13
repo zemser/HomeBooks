@@ -4,7 +4,7 @@ import { z } from "zod";
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
 import { analyzeParsedBankImport } from "@/features/imports/persistence";
 import { detectBankTemplate } from "@/features/imports/templates/detect";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
@@ -80,8 +80,8 @@ export async function POST(request: Request) {
       workbook,
       workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),
     });
-    const importPlan = await withCurrentWorkspace((context) =>
-      analyzeParsedBankImport({ context, parsed: result.parsed }),
+    const importPlan = await withCurrentWorkspaceDb((context, db) =>
+      analyzeParsedBankImport({ context, parsed: result.parsed, db }),
     );
 
     return NextResponse.json({

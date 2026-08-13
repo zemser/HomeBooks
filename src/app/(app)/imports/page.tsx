@@ -1,13 +1,13 @@
 import { ImportPreviewClient } from "@/components/imports/import-preview-client";
 import { listSavedImports } from "@/features/imports/persistence";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
 export const dynamic = "force-dynamic";
 
 export default async function ImportsPage() {
-  const { savedImports, workspaceCurrency } = await withCurrentWorkspace(
-    async (context) => ({
-      savedImports: await listSavedImports(context, { type: "bank" }),
+  const { savedImports, workspaceCurrency } = await withCurrentWorkspaceDb(
+    async (context, db) => ({
+      savedImports: await listSavedImports(context, { type: "bank" }, db),
       workspaceCurrency: context.baseCurrency,
     }),
   );
