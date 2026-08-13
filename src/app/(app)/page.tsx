@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import {
   getWorkspaceHomeActivitySnapshot,
   getWorkspaceHomePrimarySnapshot,
@@ -13,7 +14,6 @@ import {
 } from "@/features/reporting/presentation";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
-export const dynamic = "force-dynamic";
 
 function buildReportTarget(month: string) {
   const normalizedMonth = month.slice(0, 7);
@@ -166,36 +166,44 @@ function formatActivityTimestamp(value: string) {
   }).format(new Date(value));
 }
 
-export default async function HomePage() {
+async function HomePrimary() {
   const snapshot = await withCurrentWorkspaceDb((context, db) =>
     getWorkspaceHomePrimarySnapshot(context, db),
   );
   const nextAction = getNextAction(snapshot);
 
   return (
+    <section className="home-next card" data-testid="home-content">
+          <div>
+            <span className="badge badge-warning">Next up</span>
+            <h2>{nextAction.label}</h2>
+            <p>{snapshot.workspaceName}: {nextAction.description}</p>
+          </div>
+          <Link className="button" href={nextAction.href}>
+            Open
+          </Link>
+    </section>
+  );
+}
+
+export default function HomePage() {
+  return (
     <main>
       <div className="page-shell stack">
-        <section className="page-header">
+        <section className="page-header" data-testid="home-shell">
           <div>
             <span className="eyebrow">Home</span>
             <h1>Good to see you.</h1>
-            <p>{snapshot.workspaceName} at a glance.</p>
+            <p>Your household workspace at a glance.</p>
           </div>
           <Link className="button button-secondary" href="/settings">
             Settings
           </Link>
         </section>
 
-        <section className="home-next card">
-          <div>
-            <span className="badge badge-warning">Next up</span>
-            <h2>{nextAction.label}</h2>
-            <p>{nextAction.description}</p>
-          </div>
-          <Link className="button" href={nextAction.href}>
-            Open
-          </Link>
-        </section>
+        <Suspense fallback={<RouteDataFallback label="Next action" />}>
+          <HomePrimary />
+        </Suspense>
 
         <section className="two-up">
           <Suspense fallback={<HomeCardFallback label="This month" />}>

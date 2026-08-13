@@ -5,7 +5,6 @@ import { generateRecurringEntriesForPeriod } from "@/features/recurring/service"
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
 
 const requestSchema = z.object({
   startMonth: z.string().trim().min(1),

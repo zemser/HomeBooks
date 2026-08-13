@@ -18,7 +18,6 @@ import {
 } from "@/features/reporting/presentation";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
-export const dynamic = "force-dynamic";
 
 type ReportsPageProps = {
   searchParams: Promise<{
@@ -108,7 +107,7 @@ function PeriodSummarySection({
   );
 }
 
-export default async function ReportsPage({ searchParams }: ReportsPageProps) {
+async function ReportsData({ searchParams }: ReportsPageProps) {
   const params = await searchParams;
   const month = typeof params.month === "string" ? params.month : undefined;
   const mode = typeof params.mode === "string" ? params.mode : undefined;
@@ -151,16 +150,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const showFxColumn = fxLineItemCount > 0;
 
   return (
-    <main>
-      <div className="page-shell stack">
-        <section className="page-header">
-          <div>
-            <span className="eyebrow">Reports</span>
-            <h1>Understand your household money</h1>
-            <p>See this month clearly, then compare it with the longer-term trend.</p>
-          </div>
-        </section>
-
+    <div className="stack" data-testid="reports-content">
         <section className="card">
           <div className="report-controls-header">
             <div>
@@ -419,7 +409,28 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
             </div>
           )}
         </section>
+    </div>
+  );
+}
+
+export default function ReportsPage({ searchParams }: ReportsPageProps) {
+  return (
+    <main>
+      <div className="page-shell stack">
+        <section className="page-header" data-testid="reports-shell">
+          <div>
+            <span className="eyebrow">Reports</span>
+            <h1>Understand your household money</h1>
+            <p>See this month clearly, then compare it with the longer-term trend.</p>
+          </div>
+        </section>
+        <Suspense fallback={<RouteDataFallback label="Household report" />}>
+          <ReportsData searchParams={searchParams} />
+        </Suspense>
       </div>
     </main>
   );
 }
+import { Suspense } from "react";
+
+import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";

@@ -5,7 +5,6 @@ import { updateExpenseAllocation } from "@/features/expenses/allocation";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
 
 const manualAllocationRowSchema = z.object({
   reportMonth: z.string().trim().min(1),

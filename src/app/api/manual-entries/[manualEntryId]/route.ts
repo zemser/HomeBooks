@@ -13,7 +13,6 @@ import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { WorkspaceCategoryInputError } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
 
 const requestSchema = z.object({
   title: z.string().trim().min(1),

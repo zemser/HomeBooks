@@ -6,7 +6,6 @@ import { createRecurringEntryVersion } from "@/features/recurring/service";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
 
 const createVersionSchema = z.object({
   effectiveStartMonth: z.string().trim().min(1),

@@ -7,7 +7,6 @@ import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 import { getFinappAuthMode } from "@/lib/supabase/config";
 import { requireAal2Context } from "@/features/auth/supabase-user";
 
-export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   if (getFinappAuthMode() === "supabase") {

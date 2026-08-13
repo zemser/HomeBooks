@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 
 import { formatMoneyDisplay } from "@/features/expenses/presentation";
 import { formatSourceKind } from "@/features/reporting/presentation";
@@ -305,13 +305,19 @@ function SettlementEditor({
   );
 }
 
-export function SharedSettlementsPageClient() {
-  const [data, setData] = useState<SharedSettlementsPageData | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, SettlementDraft>>({});
+export function SharedSettlementsPageClient({
+  initialData,
+}: {
+  initialData: SharedSettlementsPageData;
+}) {
+  const [data, setData] = useState<SharedSettlementsPageData | null>(initialData);
+  const [drafts, setDrafts] = useState<Record<string, SettlementDraft>>(() =>
+    buildDrafts(initialData),
+  );
   const [statusFilter, setStatusFilter] = useState<"all" | "open" | "settled" | "ignored">("all");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [isSaving, startSaving] = useTransition();
 
@@ -340,10 +346,6 @@ export function SharedSettlementsPageClient() {
       setIsLoading(false);
     }
   }
-
-  useEffect(() => {
-    void loadSettlements();
-  }, []);
 
   const filteredTrackedExpenses = useMemo(() => {
     if (!data) {

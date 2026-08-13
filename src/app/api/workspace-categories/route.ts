@@ -8,8 +8,6 @@ import {
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 const createSchema = z.object({
   name: z.string().trim().min(1),

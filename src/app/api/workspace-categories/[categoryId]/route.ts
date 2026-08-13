@@ -5,8 +5,6 @@ import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { updateWorkspaceCategory } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 const updateSchema = z.object({
   name: z.string().trim().min(1),

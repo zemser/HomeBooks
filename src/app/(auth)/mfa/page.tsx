@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { MfaEnrollmentClient } from "@/components/auth/mfa-enrollment-client";
 import { verifyExistingTotpAction } from "@/features/auth/mfa-actions";
@@ -13,7 +14,6 @@ type MfaPageProps = {
   }>;
 };
 
-export const dynamic = "force-dynamic";
 
 function getSafeNext(next: string | undefined) {
   if (!next || !next.startsWith("/") || next.startsWith("//")) {
@@ -23,7 +23,7 @@ function getSafeNext(next: string | undefined) {
   return next;
 }
 
-export default async function MfaPage({ searchParams }: MfaPageProps) {
+async function MfaContent({ searchParams }: MfaPageProps) {
   const params = await searchParams;
   const next = getSafeNext(params?.next);
   const user = await getSupabaseAuthContext();
@@ -52,17 +52,7 @@ export default async function MfaPage({ searchParams }: MfaPageProps) {
   const verifiedTotpFactor = factorData?.totp.find((factor) => factor.status === "verified");
 
   return (
-    <main>
-      <div className="page-shell stack">
-        <section className="hero">
-          <span className="eyebrow">Second factor</span>
-          <h1>Verify your authenticator.</h1>
-          <p>
-            The hosted two-user version requires a verified TOTP code before opening the household
-            finance workspace.
-          </p>
-        </section>
-
+    <>
         {params?.error ? <p className="status error">{params.error}</p> : null}
         {factorError ? <p className="status error">{factorError.message}</p> : null}
 
@@ -97,6 +87,25 @@ export default async function MfaPage({ searchParams }: MfaPageProps) {
         ) : (
           <MfaEnrollmentClient next={next} />
         )}
+    </>
+  );
+}
+
+export default function MfaPage({ searchParams }: MfaPageProps) {
+  return (
+    <main>
+      <div className="page-shell stack">
+        <section className="hero" data-testid="mfa-shell">
+          <span className="eyebrow">Second factor</span>
+          <h1>Verify your authenticator.</h1>
+          <p>
+            The hosted two-user version requires a verified TOTP code before opening the household
+            finance workspace.
+          </p>
+        </section>
+        <Suspense fallback={<section className="card" aria-busy="true">Loading authenticator…</section>}>
+          <MfaContent searchParams={searchParams} />
+        </Suspense>
       </div>
     </main>
   );

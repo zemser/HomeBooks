@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
+import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { ExpensesPageClient } from "@/components/expenses/expenses-page-client";
 import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expenses/queries";
 import { formatReportMonthLabel } from "@/features/reporting/presentation";
@@ -13,9 +15,8 @@ type ExpensesPageProps = {
   }>;
 };
 
-export const dynamic = "force-dynamic";
 
-export default async function ExpensesPage({ searchParams }: ExpensesPageProps) {
+async function ExpenseLedger({ searchParams }: ExpensesPageProps) {
   const params = await searchParams;
   const transactionId =
     typeof params.transactionId === "string" ? params.transactionId : null;
@@ -38,16 +39,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
     : "Open reports";
 
   return (
-    <main>
-      <div className="page-shell stack">
-        <section className="page-header">
-          <div>
-            <span className="eyebrow">Expenses</span>
-            <h1>Household ledger</h1>
-            <p>Browse, search, and inspect transactions across all months.</p>
-          </div>
-        </section>
-
+    <div className="stack" data-testid="expenses-content">
         <section className="card">
           <div className="ledger-action-header">
             <div>
@@ -79,6 +71,24 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
           }}
           initialTransactionId={transactionId}
         />
+    </div>
+  );
+}
+
+export default function ExpensesPage({ searchParams }: ExpensesPageProps) {
+  return (
+    <main>
+      <div className="page-shell stack">
+        <section className="page-header" data-testid="expenses-shell">
+          <div>
+            <span className="eyebrow">Expenses</span>
+            <h1>Household ledger</h1>
+            <p>Browse, search, and inspect transactions across all months.</p>
+          </div>
+        </section>
+        <Suspense fallback={<RouteDataFallback label="Household ledger" />}>
+          <ExpenseLedger searchParams={searchParams} />
+        </Suspense>
       </div>
     </main>
   );

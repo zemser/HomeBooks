@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
 import { getInvestmentAssetTypeLabel } from "@/features/investments/classification";
@@ -82,6 +83,7 @@ type InvestmentPreviewClientProps = {
   initialMembers: WorkspaceMemberSettingsItem[];
   initialCurrentMemberId: string;
   workspaceCurrency: string;
+  mode?: "all" | "upload" | "saved";
 };
 
 function formatDisplayValue(value: string | number | null | undefined) {
@@ -253,7 +255,9 @@ export function InvestmentPreviewClient({
   initialMembers,
   initialCurrentMemberId,
   workspaceCurrency,
+  mode = "all",
 }: InvestmentPreviewClientProps) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [uploadFormVersion, setUploadFormVersion] = useState(0);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -373,6 +377,7 @@ export function InvestmentPreviewClient({
           }
           resetPreviewFlow();
           setMessage("This workbook was already saved for the current workspace.");
+          router.refresh();
           return;
         }
 
@@ -402,6 +407,7 @@ export function InvestmentPreviewClient({
           ? "Investment activity import saved to the workspace. Preview another file when you are ready."
           : "Investment import saved to the workspace. Preview another file when you are ready.",
       );
+      router.refresh();
     } catch {
       setSaveState("error");
       setError("Could not save this investment snapshot right now.");
@@ -410,7 +416,7 @@ export function InvestmentPreviewClient({
 
   return (
     <section className="stack">
-      {investmentAccountHoldings.length > 0 ? (
+      {mode !== "upload" && investmentAccountHoldings.length > 0 ? (
         <>
           <article className="card stack compact">
             <div>
@@ -874,7 +880,7 @@ export function InvestmentPreviewClient({
         </>
       ) : null}
 
-      {investmentAccountHoldings.length > 0 ? <article className="card stack compact">
+      {mode !== "upload" && investmentAccountHoldings.length > 0 ? <article className="card stack compact">
         <div>
           <h2>Latest saved holdings</h2>
           <p className="muted-text">
@@ -967,7 +973,7 @@ export function InvestmentPreviewClient({
           </div>
       </article> : null}
 
-      {investmentActivities.length > 0 ? <article className="card stack compact">
+      {mode !== "upload" && investmentActivities.length > 0 ? <article className="card stack compact">
         <div>
           <h2>Recent saved activity rows</h2>
           <p className="muted-text">
@@ -1022,7 +1028,7 @@ export function InvestmentPreviewClient({
           </div>
       </article> : null}
 
-      <article className="card stack compact">
+      {mode !== "saved" ? <article className="card stack compact">
         <div className="page-actions">
           <div>
             <h2>Preview a workbook</h2>
@@ -1066,9 +1072,9 @@ export function InvestmentPreviewClient({
             {message}
           </p>
         ) : null}
-      </article>
+      </article> : null}
 
-      {preview ? (
+      {mode !== "saved" && preview ? (
         <>
           <article className="card">
             <div className="summary-strip">
@@ -1324,7 +1330,7 @@ export function InvestmentPreviewClient({
         </>
       ) : null}
 
-      {investmentImports.length > 0 ? <article className="card stack compact">
+      {mode !== "upload" && investmentImports.length > 0 ? <article className="card stack compact">
         <div>
           <h2>Investment import history</h2>
           <p className="muted-text">

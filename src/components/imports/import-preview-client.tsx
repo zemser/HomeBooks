@@ -58,6 +58,7 @@ type SavedImportSummary = {
 type ImportPreviewClientProps = {
   savedImports?: SavedImportSummary[];
   workspaceCurrency: string;
+  mode?: "all" | "upload" | "history";
 };
 
 type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
@@ -122,6 +123,7 @@ function formatTemplateName(value: string | null | undefined) {
 export function ImportPreviewClient({
   savedImports = [],
   workspaceCurrency: initialWorkspaceCurrency,
+  mode = "all",
 }: ImportPreviewClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -149,6 +151,8 @@ export function ImportPreviewClient({
   }, [initialWorkspaceCurrency]);
 
   useEffect(() => {
+    if (mode === "upload") return;
+
     let isMounted = true;
 
     async function refreshSavedImports() {
@@ -179,7 +183,7 @@ export function ImportPreviewClient({
       window.removeEventListener("pageshow", refreshSavedImports);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [mode]);
 
   async function handleSubmit(formData: FormData) {
     setError(null);
@@ -335,6 +339,8 @@ export function ImportPreviewClient({
 
   return (
     <section className="stack">
+      {mode !== "history" ? (
+        <>
       <article className="card">
         <h2>Import bank statement</h2>
         <p>
@@ -574,8 +580,10 @@ export function ImportPreviewClient({
           </details>
         </section>
       ) : null}
+        </>
+      ) : null}
 
-      {savedImportList.length > 0 ? (
+      {mode !== "upload" && savedImportList.length > 0 ? (
         <article className="card">
           <div className="page-actions">
             <div>

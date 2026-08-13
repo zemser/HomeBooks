@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "test:review": "tsx --test tests/review/*.test.ts",
     "test:e2e": "playwright test",
+    "test:instant": "node scripts/run-instant-nav.mjs",
     "perf:benchmark": "tsx scripts/perf-benchmark.ts",
     "perf:check": "tsx scripts/check-performance-budgets.ts",
     "imports:cleanup-failed": "node scripts/cleanup-failed-import-files.mjs",
@@ -41,6 +42,7 @@
     "zod": "3.25.76"
   },
   "devDependencies": {
+    "@next/playwright": "16.3.0",
     "@playwright/test": "1.54.1",
     "@types/big.js": "6.2.2",
     "@types/node": "22.15.21",

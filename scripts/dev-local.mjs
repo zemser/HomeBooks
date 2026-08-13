@@ -5,6 +5,8 @@ import { spawn, spawnSync } from "node:child_process";
 import pg from "pg";
 
 const projectRoot = process.cwd();
+const productionMode = process.argv.includes("--production");
+const forwardedArgs = process.argv.slice(2).filter((arg) => arg !== "--production");
 const localDatabaseUrl = "postgres://postgres:postgres@127.0.0.1:54322/postgres";
 const localEnv = {
   ...process.env,
@@ -15,14 +17,35 @@ const localEnv = {
 };
 
 function run(command, args) {
+  const commandEnv = { ...localEnv };
+  delete commandEnv.FORCE_COLOR;
+  delete commandEnv.NO_COLOR;
+
   const result = spawnSync(command, args, {
     cwd: projectRoot,
-    env: localEnv,
+    env: commandEnv,
     stdio: "inherit",
   });
 
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
+}
+
+async function databaseIsReady() {
+  const client = new pg.Client({
+    connectionString: localDatabaseUrl,
+    connectionTimeoutMillis: 2_000,
+  });
+
+  try {
+    await client.connect();
+    await client.query("select 1");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await client.end().catch(() => undefined);
+  }
 }
 
 async function waitForDatabase() {
@@ -66,16 +89,22 @@ async function ensureSchemaAndSeeds() {
   }
 }
 
-run("supabase", ["start", "--exclude", "logflare,vector"]);
+if (!(await databaseIsReady())) {
+  run("supabase", ["start", "--exclude", "logflare,vector"]);
+}
 await waitForDatabase();
 await ensureSchemaAndSeeds();
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
-const child = spawn(npmCommand, ["run", "dev", "--", ...process.argv.slice(2)], {
-  cwd: projectRoot,
-  env: localEnv,
-  stdio: "inherit",
-});
+const child = spawn(
+  npmCommand,
+  ["run", productionMode ? "start" : "dev", "--", ...forwardedArgs],
+  {
+    cwd: projectRoot,
+    env: localEnv,
+    stdio: "inherit",
+  },
+);
 
 const forwardSignal = (signal) => child.kill(signal);
 process.on("SIGINT", () => forwardSignal("SIGINT"));

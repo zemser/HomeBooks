@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Suspense } from "react";
 
 import { withDbTransaction } from "@/db";
 import { workspaceMembers } from "@/db/schema";
@@ -16,9 +17,8 @@ type OnboardingPageProps = {
   }>;
 };
 
-export const dynamic = "force-dynamic";
 
-export default async function OnboardingPage({ searchParams }: OnboardingPageProps) {
+async function OnboardingForm({ searchParams }: OnboardingPageProps) {
   if (getFinappAuthMode() !== "supabase") {
     redirect("/");
   }
@@ -53,16 +53,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
     || "";
 
   return (
-    <main>
-      <div className="page-shell stack">
-        <section className="page-header">
-          <div>
-            <span className="eyebrow">First setup</span>
-            <h1>Create your household workspace</h1>
-            <p>Choose a name, your display name, and the currency your household uses.</p>
-          </div>
-        </section>
-
+    <>
         {params?.error ? <p className="status error">{params.error}</p> : null}
 
         <form action={createFirstWorkspaceAction} className="card stack">
@@ -102,6 +93,24 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
             Create workspace
           </button>
         </form>
+    </>
+  );
+}
+
+export default function OnboardingPage({ searchParams }: OnboardingPageProps) {
+  return (
+    <main>
+      <div className="page-shell stack">
+        <section className="page-header" data-testid="onboarding-shell">
+          <div>
+            <span className="eyebrow">First setup</span>
+            <h1>Create your household workspace</h1>
+            <p>Choose a name, your display name, and the currency your household uses.</p>
+          </div>
+        </section>
+        <Suspense fallback={<section className="card" aria-busy="true">Loading workspace setup…</section>}>
+          <OnboardingForm searchParams={searchParams} />
+        </Suspense>
       </div>
     </main>
   );

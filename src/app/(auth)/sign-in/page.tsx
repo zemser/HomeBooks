@@ -10,24 +10,16 @@ type SignInPageProps = {
   }>;
 };
 
-export const dynamic = "force-dynamic";
 
-export default async function SignInPage({ searchParams }: SignInPageProps) {
+async function SignInForm({ searchParams }: SignInPageProps) {
   const params = await searchParams;
   const next = params?.next ?? "/";
 
   return (
-    <main>
-      <div className="page-shell auth-shell">
-        <section className="auth-hero">
-          <span className="eyebrow">Private access</span>
-          <h1>Welcome back to your household workspace.</h1>
-          <p>Sign in to manage shared household money.</p>
-        </section>
+    <>
+      {params?.error ? <p className="status error">{params.error}</p> : null}
 
-        {params?.error ? <p className="status error">{params.error}</p> : null}
-
-        <section className="auth-layout auth-layout-single">
+      <section className="auth-layout auth-layout-single">
           <div className="card auth-card stack">
             <form action={signInWithPasswordAction} className="stack">
               <div className="auth-card-header">
@@ -65,8 +57,26 @@ export default async function SignInPage({ searchParams }: SignInPageProps) {
               Need first-time access? <a href="/sign-up">Create the first account</a>
             </p>
           </div>
+      </section>
+    </>
+  );
+}
+
+export default function SignInPage({ searchParams }: SignInPageProps) {
+  return (
+    <main>
+      <div className="page-shell auth-shell">
+        <section className="auth-hero" data-testid="sign-in-shell">
+          <span className="eyebrow">Private access</span>
+          <h1>Welcome back to your household workspace.</h1>
+          <p>Sign in to manage shared household money.</p>
         </section>
+
+        <Suspense fallback={<div className="card auth-card" aria-busy="true">Loading sign-in…</div>}>
+          <SignInForm searchParams={searchParams} />
+        </Suspense>
       </div>
     </main>
   );
 }
+import { Suspense } from "react";

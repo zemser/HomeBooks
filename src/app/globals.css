@@ -2283,7 +2283,15 @@ kbd {
     display: block;
   }
 
+  .app-main {
+    position: relative;
+    isolation: isolate;
+    overflow-x: clip;
+  }
+
   .app-main-scroll {
+    position: relative;
+    z-index: 0;
     padding-bottom: 8rem;
   }
 
@@ -2366,7 +2374,8 @@ kbd {
     right: 0.5rem;
     bottom: max(0.5rem, env(safe-area-inset-bottom));
     left: 0.5rem;
-    z-index: 30;
+    z-index: 100;
+    max-width: calc(100vw - 1rem);
     padding: 0.55rem;
     padding-bottom: max(0.55rem, env(safe-area-inset-bottom));
     border: 1px solid rgba(230, 223, 210, 0.92);

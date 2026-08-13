@@ -1,5 +1,3 @@
-import type { AppShellSnapshot } from "@/features/home/types";
-
 export type AppNavItem = {
   href: string;
   label: string;
@@ -14,7 +12,7 @@ export type AppNavSection = {
   items: AppNavItem[];
 };
 
-export function createAppNavSections(snapshot: AppShellSnapshot): AppNavSection[] {
+export function createAppNavSections(): AppNavSection[] {
   return [
     {
       title: "Money",
@@ -25,8 +23,6 @@ export function createAppNavSections(snapshot: AppShellSnapshot): AppNavSection[
           href: "/imports/review",
           label: "Review",
           matchStrategy: "prefix",
-          badge: snapshot.reviewQueueCount > 0 ? String(snapshot.reviewQueueCount) : null,
-          badgeTone: "warning",
         },
         { href: "/expenses", label: "Expenses", matchStrategy: "prefix" },
         { href: "/recurring", label: "Recurring", matchStrategy: "prefix" },
