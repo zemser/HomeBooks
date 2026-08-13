@@ -18,6 +18,7 @@ import {
   buildEqualMonthlyAllocations,
   buildManualMonthlyAllocations,
   buildSingleMonthAllocation,
+  expenseAllocationsEqual,
   normalizeDateInput,
 } from "@/features/expenses/allocation-core";
 import {
@@ -324,6 +325,33 @@ export async function updateExpenseAllocation(
         amount: source.normalizedAmount,
         sourceDate: source.sourceDate,
       });
+    }
+
+    const currentState = (
+      await listAllocationStatesBySourceType(
+        context,
+        source.sourceType,
+        [source.sourceId],
+        tx,
+      )
+    ).get(source.sourceId);
+    const currentAllocations = currentState?.allocations.map((allocation) => ({
+      ...allocation,
+      coverageStartDate: currentState.coverageStartDate,
+      coverageEndDate: currentState.coverageEndDate,
+    })) ?? [];
+
+    if (
+      currentState?.reportingMode === input.reportingMode &&
+      expenseAllocationsEqual(currentAllocations, allocations)
+    ) {
+      return {
+        sourceType: source.sourceType,
+        sourceId: source.sourceId,
+        reportingMode: input.reportingMode,
+        allocationCount: allocations.length,
+        allocationMethod: allocations[0]?.allocationMethod ?? "single_month",
+      };
     }
 
     await tx

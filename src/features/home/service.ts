@@ -3,23 +3,19 @@ import { and, eq, isNull, sql } from "drizzle-orm";
 import { getDb, type DbExecutor } from "@/db";
 import {
   imports,
-  manualEntries,
-  manualRecurringExpenses,
   transactionClassifications,
   transactions,
 } from "@/db/schema";
-import { syncExpenseEventsForRange } from "@/features/reporting/expense-events";
 import {
-  getDashboardSnapshot,
+  getMonthlyReport,
   normalizeMonthInput,
 } from "@/features/reporting/monthly-report";
-import { buildRollingTwelveWindow } from "@/features/reporting/periods";
-import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import type {
   AppShellSnapshot,
+  WorkspaceHomeActivitySnapshot,
   WorkspaceHomeImportActivity,
-  WorkspaceHomeNotableState,
-  WorkspaceHomeSnapshot,
+  WorkspaceHomePrimarySnapshot,
+  WorkspaceHomeReportingSnapshot,
 } from "@/features/home/types";
 import { listSavedImports } from "@/features/imports/persistence";
 import {
@@ -27,7 +23,6 @@ import {
   type CurrentWorkspaceContext,
 } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
-import { getWorkspaceSettingsSnapshot } from "@/features/workspaces/settings";
 
 async function getWorkspaceName(context: CurrentWorkspaceContext) {
   return context.workspaceName ?? "Workspace";
@@ -65,10 +60,6 @@ async function listLatestBankImports(
   return recentImports.slice(0, limit);
 }
 
-function buildPaymentDateReportHref(month: string) {
-  return `/reports?month=${month}&mode=payment_date`;
-}
-
 export async function getAppShellSnapshot(
   context: CurrentWorkspaceContext,
   db: DbExecutor = getDb(),
@@ -92,27 +83,14 @@ export async function getAppShellSnapshot(
   });
 }
 
-export async function getWorkspaceHomeSnapshot(
+export async function getWorkspaceHomePrimarySnapshot(
   context: CurrentWorkspaceContext,
   db: DbExecutor = getDb(),
-): Promise<WorkspaceHomeSnapshot> {
+): Promise<WorkspaceHomePrimarySnapshot> {
   return runWithWorkspaceDatabaseUser(context, async () => {
-    const selectedMonth = normalizeMonthInput();
-    const [
-      workspaceName,
-      settings,
-      members,
-      importCount,
-      transactionCount,
-      latestTransactionRow,
-      reviewQueueCount,
-      manualEntryCount,
-      recurringRuleCount,
-      latestImports,
-    ] =
+    const [workspaceName, members, importCount, latestTransactionRow, reviewQueueCount] =
       await Promise.all([
       getWorkspaceName(context),
-      getWorkspaceSettingsSnapshot(context, db),
       listWorkspaceMembersForSettings(context, db),
       db.$count(
         imports,
@@ -121,7 +99,6 @@ export async function getWorkspaceHomeSnapshot(
           eq(imports.type, "bank"),
         ),
       ),
-      db.$count(transactions, eq(transactions.workspaceId, context.workspaceId)),
       db
         .select({
           latestTransactionDate: sql<string | null>`max(${transactions.transactionDate})::text`,
@@ -130,126 +107,52 @@ export async function getWorkspaceHomeSnapshot(
         .where(eq(transactions.workspaceId, context.workspaceId))
         .then((rows) => rows[0] ?? null),
       getReviewQueueCount(context, db),
-      db.$count(manualEntries, eq(manualEntries.workspaceId, context.workspaceId)),
-      db.$count(
-        manualRecurringExpenses,
-        eq(manualRecurringExpenses.workspaceId, context.workspaceId),
-      ),
-      listLatestBankImports(context, 3, db),
     ]);
     const activeMembers = members.filter((member) => member.isActive);
-    const activeOwners = activeMembers.filter((member) => member.role === "owner");
-    const pairwiseSettlementReady = activeMembers.length === 2;
-    const hasPotentialReportingInputs = transactionCount > 0 || manualEntryCount > 0;
     const latestTransactionMonth =
       latestTransactionRow?.latestTransactionDate?.slice(0, 7) ?? null;
-
-    let monthSummary: WorkspaceHomeSnapshot["reporting"]["monthSummary"] = null;
-    let rollingTwelveSummary: WorkspaceHomeSnapshot["reporting"]["rollingTwelveSummary"] = null;
-    let reportingAvailable = false;
-
-    if (hasPotentialReportingInputs) {
-      const rollingWindow = buildRollingTwelveWindow(
-        new Date(`${selectedMonth}T00:00:00.000Z`),
-      );
-
-      await syncExpenseEventsForRange(context, {
-        startMonth: rollingWindow.periodStart,
-        endMonth: selectedMonth,
-      });
-
-      const dashboard = await getDashboardSnapshot(context, {
-        month: selectedMonth,
-        mode: "allocated_period",
-      }, db);
-
-      const reportableItemCount =
-        dashboard.rollingTwelveSummary.importedTransactionCount +
-        dashboard.rollingTwelveSummary.manualEntryCount;
-
-      monthSummary = dashboard.monthSummary;
-      rollingTwelveSummary = dashboard.rollingTwelveSummary;
-      reportingAvailable = reportableItemCount > 0;
-    }
-
-    const notableStates: WorkspaceHomeNotableState[] = [];
-
-    if (reviewQueueCount > 0) {
-      notableStates.push({
-        title: "Review queue",
-        description: `${reviewQueueCount} transaction${reviewQueueCount === 1 ? "" : "s"} still need a human decision before the reports tell the right story.`,
-        href: "/imports/review",
-        actionLabel: "Open review queue",
-        tone: "warning",
-      });
-    } else if (importCount > 0) {
-      const latestReviewedMonthLabel = latestTransactionMonth
-        ? formatReportMonthLabel(`${latestTransactionMonth}-01`)
-        : null;
-
-      notableStates.push({
-        title: "Review queue",
-        description: latestReviewedMonthLabel
-          ? `Imported transactions are no longer waiting in the queue, so the next useful check is the ${latestReviewedMonthLabel} payment-date report.`
-          : "Imported transactions are no longer waiting in the queue, so you can move on to the ledger and reports.",
-        href: latestTransactionMonth ? buildPaymentDateReportHref(latestTransactionMonth) : "/expenses",
-        actionLabel: latestTransactionMonth
-          ? `Open ${latestReviewedMonthLabel} payment-date report`
-          : "Open ledger",
-        tone: "neutral",
-      });
-    }
-
-    notableStates.push({
-      title: "Shared settlements",
-      description: pairwiseSettlementReady
-        ? "Shared settlements are available if you want to split expenses with someone else."
-        : "Shared settlements are optional and only become relevant after you add another active household member.",
-      href: pairwiseSettlementReady ? "/settlements" : "/settings",
-      actionLabel: pairwiseSettlementReady ? "Open settlements" : "Open settings",
-      tone: "neutral",
-    });
-
-    notableStates.push({
-      title: "Workspace currency",
-      description: settings.canUpdateBaseCurrency
-        ? `Base currency is still editable, so you can change ${settings.baseCurrency} before the workspace locks onto real financial data.`
-        : `Base currency is locked to ${settings.baseCurrency} because financial records already exist in the workspace.`,
-      href: "/settings",
-      actionLabel: "Open settings",
-      tone: settings.canUpdateBaseCurrency ? "neutral" : "warning",
-    });
 
     return {
       workspaceName,
       setup: {
-        baseCurrency: settings.baseCurrency,
-        canUpdateBaseCurrency: settings.canUpdateBaseCurrency,
         activeMemberCount: activeMembers.length,
-        activeOwnerCount: activeOwners.length,
-        pairwiseSettlementReady,
       },
       workflow: {
         importCount,
-        transactionCount,
         latestTransactionMonth,
         reviewQueueCount,
-        manualEntryCount,
-        recurringRuleCount,
-        hasManualEntries: manualEntryCount > 0,
-        hasRecurringRules: recurringRuleCount > 0,
-      },
-      reporting: {
-        selectedMonth,
-        reportingMode: "allocated_period",
-        available: reportingAvailable,
-        monthSummary,
-        rollingTwelveSummary,
-      },
-      recentActivity: {
-        latestImports,
-        notableStates,
       },
     };
   });
+}
+
+export async function getWorkspaceHomeReportingSnapshot(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
+): Promise<WorkspaceHomeReportingSnapshot> {
+  return runWithWorkspaceDatabaseUser(context, async () => {
+    const selectedMonth = normalizeMonthInput();
+    const report = await getMonthlyReport(context, {
+      month: selectedMonth,
+      mode: "allocated_period",
+    }, db);
+    const reportableItemCount =
+      report.summary.importedTransactionCount + report.summary.manualEntryCount;
+
+    return {
+      selectedMonth,
+      reportingMode: "allocated_period",
+      available: reportableItemCount > 0,
+      monthSummary: reportableItemCount > 0 ? report.summary : null,
+    };
+  });
+}
+
+export async function getWorkspaceHomeActivitySnapshot(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
+): Promise<WorkspaceHomeActivitySnapshot> {
+  return runWithWorkspaceDatabaseUser(context, async () => ({
+    latestImports: await listLatestBankImports(context, 3, db),
+  }));
 }

@@ -1,7 +1,12 @@
 import Link from "next/link";
+import { Suspense } from "react";
 
-import { getWorkspaceHomeSnapshot } from "@/features/home/service";
-import type { WorkspaceHomeSnapshot } from "@/features/home/types";
+import {
+  getWorkspaceHomeActivitySnapshot,
+  getWorkspaceHomePrimarySnapshot,
+  getWorkspaceHomeReportingSnapshot,
+} from "@/features/home/service";
+import type { WorkspaceHomePrimarySnapshot } from "@/features/home/types";
 import {
   formatReportMoney,
   formatReportMonthLabel,
@@ -15,7 +20,7 @@ function buildReportTarget(month: string) {
   return `/reports?month=${normalizedMonth}&mode=payment_date`;
 }
 
-function getNextAction(snapshot: WorkspaceHomeSnapshot) {
+function getNextAction(snapshot: WorkspaceHomePrimarySnapshot) {
   if (snapshot.setup.activeMemberCount === 0) {
     return {
       href: "/settings",
@@ -55,6 +60,105 @@ function getNextAction(snapshot: WorkspaceHomeSnapshot) {
   };
 }
 
+async function HomeReporting() {
+  const reporting = await withCurrentWorkspaceDb((context, db) =>
+    getWorkspaceHomeReportingSnapshot(context, db),
+  );
+  const reportTarget = reporting.available
+    ? buildReportTarget(reporting.selectedMonth)
+    : "/reports";
+
+  return (
+    <article className="card stack compact">
+      <div className="home-card-header">
+        <div>
+          <h2>This month</h2>
+          <p className="muted-text">A quick view of the latest reporting period.</p>
+        </div>
+        <Link className="link-button" href={reportTarget}>Open reports</Link>
+      </div>
+      {reporting.available && reporting.monthSummary ? (
+        <div className="summary-strip">
+          <div>
+            <strong>
+              {formatReportMoney(
+                reporting.monthSummary.incomeTotal,
+                reporting.monthSummary.workspaceCurrency,
+              )}
+            </strong>
+            <span>Income</span>
+          </div>
+          <div>
+            <strong>
+              {formatReportMoney(
+                reporting.monthSummary.expenseTotal,
+                reporting.monthSummary.workspaceCurrency,
+              )}
+            </strong>
+            <span>Expenses</span>
+          </div>
+        </div>
+      ) : (
+        <p className="empty-state">Reports will appear after transactions are added.</p>
+      )}
+    </article>
+  );
+}
+
+async function HomeRecentActivity() {
+  const activity = await withCurrentWorkspaceDb((context, db) =>
+    getWorkspaceHomeActivitySnapshot(context, db),
+  );
+
+  return (
+    <article className="card stack compact">
+      <div className="home-card-header">
+        <div>
+          <h2>Recent activity</h2>
+          <p className="muted-text">Your latest saved bank imports.</p>
+        </div>
+        <Link className="link-button" href="/imports">Open imports</Link>
+      </div>
+      {activity.latestImports.length === 0 ? (
+        <p className="empty-state">No imports yet.</p>
+      ) : (
+        activity.latestImports.map((item) => (
+          <div className="activity-row" key={item.id}>
+            <div>
+              <strong>{item.originalFilename}</strong>
+              <p>
+                {item.reviewPendingCount > 0
+                  ? `${item.reviewPendingCount} need review`
+                  : `${item.transactionCount} transaction${item.transactionCount === 1 ? "" : "s"} ready`}
+              </p>
+            </div>
+            <span className="table-note">{formatActivityTimestamp(item.createdAt)}</span>
+          </div>
+        ))
+      )}
+    </article>
+  );
+}
+
+function HomeCardFallback({ label }: { label: string }) {
+  return (
+    <article className="card stack compact" aria-busy="true">
+      <h2>{label}</h2>
+      <p className="muted-text">Loading…</p>
+      <div className="summary-strip" aria-hidden="true">
+        <div>
+          <strong>—</strong>
+          <span>Pending</span>
+        </div>
+        <div>
+          <strong>—</strong>
+          <span>Pending</span>
+        </div>
+      </div>
+    </article>
+  );
+}
+
 function formatActivityTimestamp(value: string) {
   return new Intl.DateTimeFormat("en", {
     dateStyle: "medium",
@@ -64,12 +168,9 @@ function formatActivityTimestamp(value: string) {
 
 export default async function HomePage() {
   const snapshot = await withCurrentWorkspaceDb((context, db) =>
-    getWorkspaceHomeSnapshot(context, db),
+    getWorkspaceHomePrimarySnapshot(context, db),
   );
   const nextAction = getNextAction(snapshot);
-  const reportTarget = snapshot.reporting.available
-    ? buildReportTarget(snapshot.reporting.selectedMonth)
-    : "/reports";
 
   return (
     <main>
@@ -96,79 +197,13 @@ export default async function HomePage() {
           </Link>
         </section>
 
-        <section className="summary-strip card" aria-label="Household summary">
-          <div>
-            <strong>{snapshot.workflow.reviewQueueCount}</strong>
-            <span>Transactions to review</span>
-          </div>
-          <div>
-            <strong>
-              {snapshot.reporting.available && snapshot.reporting.monthSummary
-                ? formatReportMoney(
-                    snapshot.reporting.monthSummary.savingsTotal,
-                    snapshot.setup.baseCurrency,
-                  )
-                : "—"}
-            </strong>
-            <span>
-              {snapshot.reporting.available
-                ? `${formatReportMonthLabel(snapshot.reporting.selectedMonth)} savings`
-                : "Current-month savings"}
-            </span>
-          </div>
-        </section>
-
         <section className="two-up">
-          <article className="card stack compact">
-            <div className="home-card-header">
-              <div>
-                <h2>This month</h2>
-                <p className="muted-text">A quick view of the latest reporting period.</p>
-              </div>
-              <Link className="link-button" href={reportTarget}>Open reports</Link>
-            </div>
-            {snapshot.reporting.available && snapshot.reporting.monthSummary ? (
-              <div className="summary-strip">
-                <div>
-                  <strong>{formatReportMoney(snapshot.reporting.monthSummary.incomeTotal, snapshot.setup.baseCurrency)}</strong>
-                  <span>Income</span>
-                </div>
-                <div>
-                  <strong>{formatReportMoney(snapshot.reporting.monthSummary.expenseTotal, snapshot.setup.baseCurrency)}</strong>
-                  <span>Expenses</span>
-                </div>
-              </div>
-            ) : (
-              <p className="empty-state">Reports will appear after transactions are added.</p>
-            )}
-          </article>
-
-          <article className="card stack compact">
-            <div className="home-card-header">
-              <div>
-                <h2>Recent activity</h2>
-                <p className="muted-text">Your latest saved bank imports.</p>
-              </div>
-              <Link className="link-button" href="/imports">Open imports</Link>
-            </div>
-            {snapshot.recentActivity.latestImports.length === 0 ? (
-              <p className="empty-state">No imports yet.</p>
-            ) : (
-              snapshot.recentActivity.latestImports.slice(0, 3).map((item) => (
-                <div className="activity-row" key={item.id}>
-                  <div>
-                    <strong>{item.originalFilename}</strong>
-                    <p>
-                      {item.reviewPendingCount > 0
-                        ? `${item.reviewPendingCount} need review`
-                        : `${item.transactionCount} transaction${item.transactionCount === 1 ? "" : "s"} ready`}
-                    </p>
-                  </div>
-                  <span className="table-note">{formatActivityTimestamp(item.createdAt)}</span>
-                </div>
-              ))
-            )}
-          </article>
+          <Suspense fallback={<HomeCardFallback label="This month" />}>
+            <HomeReporting />
+          </Suspense>
+          <Suspense fallback={<HomeCardFallback label="Recent activity" />}>
+            <HomeRecentActivity />
+          </Suspense>
         </section>
       </div>
     </main>

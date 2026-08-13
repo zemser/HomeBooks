@@ -1,6 +1,5 @@
 import type {
   MonthlyReportSummary,
-  ReportingPeriodSummary,
   ReportingViewMode,
 } from "@/features/reporting/monthly-report";
 
@@ -18,44 +17,27 @@ export type WorkspaceHomeImportActivity = {
   latestTransactionDate: string | null;
 };
 
-export type WorkspaceHomeNotableState = {
-  title: string;
-  description: string;
-  href: string;
-  actionLabel: string;
-  tone: "neutral" | "warning";
-};
-
-export type WorkspaceHomeSnapshot = {
+export type WorkspaceHomePrimarySnapshot = {
   workspaceName: string;
   setup: {
-    baseCurrency: string;
-    canUpdateBaseCurrency: boolean;
     activeMemberCount: number;
-    activeOwnerCount: number;
-    pairwiseSettlementReady: boolean;
   };
   workflow: {
     importCount: number;
-    transactionCount: number;
     latestTransactionMonth: string | null;
     reviewQueueCount: number;
-    manualEntryCount: number;
-    recurringRuleCount: number;
-    hasManualEntries: boolean;
-    hasRecurringRules: boolean;
   };
-  reporting: {
-    selectedMonth: string;
-    reportingMode: ReportingViewMode;
-    available: boolean;
-    monthSummary: MonthlyReportSummary | null;
-    rollingTwelveSummary: ReportingPeriodSummary | null;
-  };
-  recentActivity: {
-    latestImports: WorkspaceHomeImportActivity[];
-    notableStates: WorkspaceHomeNotableState[];
-  };
+};
+
+export type WorkspaceHomeReportingSnapshot = {
+  selectedMonth: string;
+  reportingMode: ReportingViewMode;
+  available: boolean;
+  monthSummary: MonthlyReportSummary | null;
+};
+
+export type WorkspaceHomeActivitySnapshot = {
+  latestImports: WorkspaceHomeImportActivity[];
 };
 
 export type AppShellSnapshot = {

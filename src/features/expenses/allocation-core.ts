@@ -43,7 +43,7 @@ type ManualAllocationInput = {
   }>;
 };
 
-type StoredAllocationRow = {
+export type StoredAllocationRow = {
   allocationMethod: AllocationMethod;
   coverageStartDate: string | null;
   coverageEndDate: string | null;
@@ -106,6 +106,28 @@ export function microsToAmountString(value: bigint) {
   const fractionText = fraction.toString().padStart(6, "0");
 
   return `${negative ? "-" : ""}${whole.toString()}.${fractionText}`;
+}
+
+export function expenseAllocationsEqual(
+  left: readonly StoredAllocationRow[],
+  right: readonly StoredAllocationRow[],
+) {
+  return (
+    left.length === right.length &&
+    left.every((row, index) => {
+      const other = right[index];
+
+      return (
+        other !== undefined &&
+        row.allocationMethod === other.allocationMethod &&
+        row.coverageStartDate === other.coverageStartDate &&
+        row.coverageEndDate === other.coverageEndDate &&
+        row.reportMonth === other.reportMonth &&
+        amountStringToMicros(row.allocatedAmount) ===
+          amountStringToMicros(other.allocatedAmount)
+      );
+    })
+  );
 }
 
 function actualDateToReportMonth(value: string) {

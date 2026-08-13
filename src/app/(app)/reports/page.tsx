@@ -1,5 +1,4 @@
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
-import { syncExpenseEventsForRange } from "@/features/reporting/expense-events";
 import {
   getMonthlyReport,
   getRollingTwelveReport,
@@ -17,10 +16,6 @@ import {
   formatReportingModeLabel,
   formatSourceKind,
 } from "@/features/reporting/presentation";
-import {
-  buildRollingTwelveWindow,
-  buildYearToDateWindow,
-} from "@/features/reporting/periods";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
 export const dynamic = "force-dynamic";
@@ -119,23 +114,9 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
   const mode = typeof params.mode === "string" ? params.mode : undefined;
   const selectedMonth = normalizeMonthInput(month);
   const reportingMode = normalizeReportingModeInput(mode);
-  const selectedMonthDate = new Date(`${selectedMonth}T00:00:00.000Z`);
-  const yearToDateWindow = buildYearToDateWindow(selectedMonthDate);
-  const rollingWindow = buildRollingTwelveWindow(selectedMonthDate);
-  const syncStartMonth =
-    yearToDateWindow.periodStart < rollingWindow.periodStart
-      ? yearToDateWindow.periodStart
-      : rollingWindow.periodStart;
   const [report, yearToDate, rollingTwelve] = await withCurrentWorkspaceDb(
-    async (context, db) => {
-      if (reportingMode === "allocated_period") {
-        await syncExpenseEventsForRange(context, {
-          startMonth: syncStartMonth,
-          endMonth: selectedMonth,
-        }, db);
-      }
-
-      return Promise.all([
+    (context, db) =>
+      Promise.all([
         getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }, db),
         getYearToDateReport(context, {
           throughMonth: selectedMonth,
@@ -145,8 +126,7 @@ export default async function ReportsPage({ searchParams }: ReportsPageProps) {
           throughMonth: selectedMonth,
           mode: reportingMode,
         }, db),
-      ]);
-    },
+      ]),
   );
   const fxLineItemCount = report.lineItems.filter((item) => {
     if (!item.fxDetails) {
