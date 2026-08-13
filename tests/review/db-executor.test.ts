@@ -44,6 +44,10 @@ const reportingPath = new URL(
   "../../src/features/reporting/monthly-report.ts",
   import.meta.url,
 );
+const settlementsPath = new URL(
+  "../../src/features/shared-settlements/service.ts",
+  import.meta.url,
+);
 
 test("transaction executor establishes RLS once and instruments its unit", async () => {
   const source = await readFile(dbPath, "utf8");
@@ -193,4 +197,18 @@ test("reporting reads and callers use the explicit transaction executor", async 
   assert.match(reportsPageSource, /withCurrentWorkspaceDb\(\s*async \(context, db\)/);
   assert.match(reportsPageSource, /syncExpenseEventsForRange\([\s\S]*, db\)/);
   assert.match(homeSource, /getDashboardSnapshot\([\s\S]*\}, db\)/);
+});
+
+test("shared settlement reads and commands use the explicit transaction executor", async () => {
+  const [serviceSource, routeSource] = await Promise.all([
+    readFile(settlementsPath, "utf8"),
+    readFile(new URL("../../src/app/api/shared-settlements/route.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(serviceSource, /getSharedSettlementsPageData\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /upsertSharedSettlement\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /listEligibleSettlementRows\([\s\S]*db: DbExecutor/);
+  assert.match(serviceSource, /listSourceDates\([\s\S]*db: DbExecutor/);
+  assert.match(routeSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.doesNotMatch(routeSource, /withCurrentWorkspace\(/);
 });
