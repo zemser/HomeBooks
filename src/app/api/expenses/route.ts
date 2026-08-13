@@ -15,7 +15,7 @@ export async function GET(request: Request) {
       await withCurrentWorkspaceDb(async (context, db) => {
         const [transactions, oneTimeManualEntries, members, categoryCatalog] = await Promise.all([
           listExpenseTransactions(context, db),
-          listOneTimeManualEntries(context),
+          listOneTimeManualEntries(context, db),
           listWorkspaceMembers(context, db),
           listWorkspaceCategories(context, db),
         ]);

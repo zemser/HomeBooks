@@ -185,8 +185,8 @@ export async function resolveWorkspaceCategory(
 export async function createWorkspaceCategory(
   context: CurrentWorkspaceContext,
   input: { name: string },
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const name = normalizeWorkspaceCategoryName(input.name);
   const canonicalName = normalizeCategoryKey(name);
   const now = new Date();
@@ -237,8 +237,8 @@ export async function updateWorkspaceCategory(
   context: CurrentWorkspaceContext,
   categoryId: string,
   input: { name: string },
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const name = normalizeWorkspaceCategoryName(input.name);
   const canonicalName = normalizeCategoryKey(name);
   const now = new Date();

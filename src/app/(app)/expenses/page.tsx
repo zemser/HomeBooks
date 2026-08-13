@@ -23,7 +23,7 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
     await withCurrentWorkspaceDb((context, db) =>
       Promise.all([
         listExpenseTransactions(context, db),
-        listOneTimeManualEntries(context),
+        listOneTimeManualEntries(context, db),
         listWorkspaceMembers(context, db),
         listWorkspaceCategories(context, db),
       ]),

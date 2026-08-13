@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import { manualEntries, manualEntryOverrides, workspaceMembers } from "@/db/schema";
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
 import { listManualEntryAllocationStates } from "@/features/expenses/allocation";
@@ -31,10 +31,6 @@ type CreateOneTimeManualEntryInput = {
 
 type UpdateOneTimeManualEntryInput = CreateOneTimeManualEntryInput;
 
-type DbClient = ReturnType<typeof getDb>;
-type DbTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
-type DbExecutor = DbClient | DbTransaction;
-
 function normalizeOptionalText(value?: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -54,7 +50,7 @@ function normalizeDateInput(value: string) {
 async function assertWorkspaceMember(
   context: CurrentWorkspaceContext,
   memberId: string | null,
-  db: DbExecutor = getDb(),
+  db: DbExecutor,
 ) {
   if (!memberId) {
     return;
@@ -76,7 +72,7 @@ async function assertWorkspaceMember(
 async function assertWorkspaceOneTimeManualEntry(
   context: CurrentWorkspaceContext,
   manualEntryId: string,
-  db: DbExecutor = getDb(),
+  db: DbExecutor,
 ) {
   const entry = await db.query.manualEntries.findFirst({
     where: and(
@@ -113,8 +109,8 @@ function validateOneTimeManualEntry(input: {
 
 export async function listOneTimeManualEntries(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<OneTimeManualEntryItem[]> {
-  const db = getDb();
   const entries = await db
     .select({
       id: manualEntries.id,
@@ -143,10 +139,11 @@ export async function listOneTimeManualEntries(
     )
     .orderBy(desc(manualEntries.eventDate), desc(manualEntries.createdAt));
   const [members, allocationStatesByManualEntryId] = await Promise.all([
-    listWorkspaceMembers(context),
+    listWorkspaceMembers(context, db),
     listManualEntryAllocationStates(
       context,
       entries.map((entry) => entry.id),
+      db,
     ),
   ]);
 
@@ -173,8 +170,8 @@ export async function listOneTimeManualEntries(
 export async function createOneTimeManualEntry(
   context: CurrentWorkspaceContext,
   input: CreateOneTimeManualEntryInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const eventDate = normalizeDateInput(input.eventDate);
@@ -235,8 +232,8 @@ export async function updateOneTimeManualEntry(
   context: CurrentWorkspaceContext,
   manualEntryId: string,
   input: UpdateOneTimeManualEntryInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const eventDate = normalizeDateInput(input.eventDate);
@@ -293,8 +290,8 @@ export async function updateOneTimeManualEntry(
 export async function deleteOneTimeManualEntry(
   context: CurrentWorkspaceContext,
   manualEntryId: string,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
 
   await assertWorkspaceOneTimeManualEntry(context, manualEntryId, db);
 

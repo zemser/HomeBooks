@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import { importSources } from "@/db/schema";
 
 export type SupportedInvestmentSourceRecord = {
@@ -13,8 +13,9 @@ export const EXCELLENCE_INVESTMENT_SOURCE = {
   countryCode: "IL",
 } as const;
 
-export async function getExcellenceInvestmentImportSource(): Promise<SupportedInvestmentSourceRecord> {
-  const db = getDb();
+export async function getExcellenceInvestmentImportSource(
+  db: DbExecutor = getDb(),
+): Promise<SupportedInvestmentSourceRecord> {
 
   const source = await db.query.importSources.findFirst({
     where: and(

@@ -278,8 +278,8 @@ async function loadAllocationSource(
 export async function updateExpenseAllocation(
   context: CurrentWorkspaceContext,
   input: UpdateExpenseAllocationInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const coverageStartDate = normalizeDateInput(input.coverageStartDate);
   const coverageEndDate = normalizeDateInput(input.coverageEndDate);
 
@@ -362,6 +362,7 @@ export async function updateExpenseAllocation(
 export async function updateTransactionAllocation(
   context: CurrentWorkspaceContext,
   input: UpdateTransactionAllocationInput,
+  db: DbExecutor = getDb(),
 ) {
   const result = await updateExpenseAllocation(context, {
     sourceType: "transaction",
@@ -371,7 +372,7 @@ export async function updateTransactionAllocation(
     coverageStartDate: input.coverageStartDate,
     coverageEndDate: input.coverageEndDate,
     allocations: input.allocations,
-  });
+  }, db);
 
   return {
     transactionId: result.sourceId,

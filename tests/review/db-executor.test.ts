@@ -48,6 +48,22 @@ const settlementsPath = new URL(
   "../../src/features/shared-settlements/service.ts",
   import.meta.url,
 );
+const manualEntriesPath = new URL(
+  "../../src/features/manual-entries/service.ts",
+  import.meta.url,
+);
+const investmentsPath = new URL(
+  "../../src/features/investments/persistence.ts",
+  import.meta.url,
+);
+const allocationPath = new URL(
+  "../../src/features/expenses/allocation.ts",
+  import.meta.url,
+);
+const categoriesPath = new URL(
+  "../../src/features/workspaces/categories.ts",
+  import.meta.url,
+);
 
 test("transaction executor establishes RLS once and instruments its unit", async () => {
   const source = await readFile(dbPath, "utf8");
@@ -65,6 +81,8 @@ test("transaction executor establishes RLS once and instruments its unit", async
   assert.match(source, /await client\.query\("commit"\);/);
   assert.match(source, /await client\.query\("rollback"\)\.catch\(\(\) => undefined\)/);
   assert.match(source, /client\.release\(\);/);
+  assert.doesNotMatch(source, /getCurrentDatabaseUserId/);
+  assert.doesNotMatch(source, /transactionScopedClient/);
 });
 
 test("workspace context and onboarding use the explicit transaction boundary", async () => {
@@ -211,4 +229,52 @@ test("shared settlement reads and commands use the explicit transaction executor
   assert.match(serviceSource, /listSourceDates\([\s\S]*db: DbExecutor/);
   assert.match(routeSource, /withCurrentWorkspaceDb\(\(context, db\)/);
   assert.doesNotMatch(routeSource, /withCurrentWorkspace\(/);
+});
+
+test("manual-entry reads and commands use the explicit transaction executor", async () => {
+  const [serviceSource, routeSource, detailRouteSource] = await Promise.all([
+    readFile(manualEntriesPath, "utf8"),
+    readFile(new URL("../../src/app/api/manual-entries/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../src/app/api/manual-entries/[manualEntryId]/route.ts", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(serviceSource, /listOneTimeManualEntries\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /createOneTimeManualEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /updateOneTimeManualEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /deleteOneTimeManualEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(routeSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(detailRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+});
+
+test("investment reads and persistence preserve the DB/Storage boundary", async () => {
+  const [persistenceSource, routeSource, pageSource] = await Promise.all([
+    readFile(investmentsPath, "utf8"),
+    readFile(new URL("../../src/app/api/investments/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../../src/app/(app)/investments/page.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(persistenceSource, /listInvestmentImports\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(persistenceSource, /listInvestmentActivities\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(persistenceSource, /listInvestmentAccountHoldings\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(persistenceSource, /withDbTransaction\(input\.context\.userId/);
+  assert.match(persistenceSource, /await writeImportFile\([\s\S]*\n\s*\}\);[\s\S]*withDbTransaction/);
+  assert.match(routeSource, /resolveCurrentWorkspaceContext\(\)/);
+  assert.match(routeSource, /withCurrentWorkspaceDb\(async \(currentContext, db\)/);
+  assert.match(pageSource, /withCurrentWorkspaceDb\(async \(context, db\)/);
+});
+
+test("allocation and category commands use the explicit transaction executor", async () => {
+  const [allocationSource, categoriesSource, allocationRouteSource, categoriesRouteSource] =
+    await Promise.all([
+      readFile(allocationPath, "utf8"),
+      readFile(categoriesPath, "utf8"),
+      readFile(new URL("../../src/app/api/transaction-allocations/route.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/api/workspace-categories/route.ts", import.meta.url), "utf8"),
+    ]);
+
+  assert.match(allocationSource, /updateExpenseAllocation\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(categoriesSource, /createWorkspaceCategory\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(categoriesSource, /updateWorkspaceCategory\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(allocationRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(categoriesRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
 });

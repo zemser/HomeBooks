@@ -9,7 +9,7 @@ import {
   deleteOneTimeManualEntry,
   updateOneTimeManualEntry,
 } from "@/features/manual-entries/service";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { WorkspaceCategoryInputError } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -47,8 +47,8 @@ export async function PATCH(request: Request, { params }: RouteProps) {
     }
 
     const { manualEntryId } = await params;
-    const result = await withCurrentWorkspace((context) =>
-      updateOneTimeManualEntry(context, manualEntryId, parsed.data),
+    const result = await withCurrentWorkspaceDb((context, db) =>
+      updateOneTimeManualEntry(context, manualEntryId, parsed.data, db),
     );
 
     return NextResponse.json(result);
@@ -67,8 +67,8 @@ export async function PATCH(request: Request, { params }: RouteProps) {
 export async function DELETE(request: Request, { params }: RouteProps) {
   try {
     const { manualEntryId } = await params;
-    const result = await withCurrentWorkspace((context) =>
-      deleteOneTimeManualEntry(context, manualEntryId),
+    const result = await withCurrentWorkspaceDb((context, db) =>
+      deleteOneTimeManualEntry(context, manualEntryId, db),
     );
 
     return NextResponse.json(result);
