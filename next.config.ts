@@ -7,6 +7,7 @@ const exposeTestingApi =
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   cacheComponents: true,
+  partialPrefetching: true,
   experimental: {
     exposeTestingApiInProductionBuild: exposeTestingApi,
   },
