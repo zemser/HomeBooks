@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, withDbTransaction, type DbExecutor } from "@/db";
 import {
   investmentActivities,
   holdingSnapshots,
@@ -42,8 +42,6 @@ import {
 const ACCOUNT_RESOLUTION_LOCK_NAMESPACE = 824301;
 const SNAPSHOT_REPLACEMENT_LOCK_NAMESPACE = 824302;
 const CHECKSUM_LOCK_NAMESPACE = 824303;
-type DbTransaction = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
-
 export class InvestmentImportValidationError extends Error {}
 
 function hashBuffer(fileBuffer: Buffer) {
@@ -61,7 +59,7 @@ function normalizeAccountLabelForDisplay(value: string) {
 }
 
 async function acquireAdvisoryLock(
-  tx: DbTransaction,
+  tx: DbExecutor,
   namespace: number,
   key: string,
 ) {
@@ -171,7 +169,7 @@ function getActivityRange(input: {
 }
 
 async function findWorkspaceMemberOrThrow(input: {
-  tx: DbTransaction,
+  tx: DbExecutor,
   workspaceId: string;
   ownerMemberId: string;
 }) {
@@ -195,7 +193,7 @@ async function findWorkspaceMemberOrThrow(input: {
 }
 
 async function resolveInvestmentAccount(input: {
-  tx: DbTransaction,
+  tx: DbExecutor,
   workspaceId: string;
   ownerMemberId: string;
   sourceId: string;
@@ -292,10 +290,9 @@ async function upsertFailedInvestmentImport(input: {
   storagePath: string;
   checksum: string;
   message: string;
+  db: DbExecutor;
 }) {
-  const db = getDb();
-
-  await db
+  await input.db
     .insert(imports)
     .values({
       id: input.importId,
@@ -333,8 +330,8 @@ async function upsertFailedInvestmentImport(input: {
 
 export async function listInvestmentImports(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<InvestmentImportSummary[]> {
-  const db = getDb();
   const investmentImports = await db
     .select({
       id: imports.id,
@@ -416,8 +413,8 @@ export async function listInvestmentImports(
 
 export async function listInvestmentActivities(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<PersistedInvestmentActivity[]> {
-  const db = getDb();
   const rows = await db
     .select({
       id: investmentActivities.id,
@@ -478,8 +475,8 @@ export async function listInvestmentActivities(
 
 export async function listInvestmentAccountHoldings(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<InvestmentAccountHoldingsSnapshot[]> {
-  const db = getDb();
   const latestSnapshotDates = db
     .select({
       investmentAccountId: holdingSnapshots.investmentAccountId,
@@ -607,8 +604,9 @@ export async function persistInvestmentImport(input: {
     );
   }
 
-  const db = getDb();
-  const source = await getExcellenceInvestmentImportSource();
+  const source = await withDbTransaction(input.context.userId, (db) =>
+    getExcellenceInvestmentImportSource(db),
+  );
   const checksum = hashBuffer(input.fileBuffer);
   let parsed: ReturnType<typeof parseInvestmentWorkbookToPreview>;
 
@@ -656,7 +654,7 @@ export async function persistInvestmentImport(input: {
   });
 
   try {
-    const result = await db.transaction(async (tx) => {
+    const preflight = await withDbTransaction(input.context.userId, async (tx) => {
       await acquireAdvisoryLock(
         tx,
         CHECKSUM_LOCK_NAMESPACE,
@@ -738,11 +736,25 @@ export async function persistInvestmentImport(input: {
         });
       }
 
-      await writeImportFile({
-        storagePath,
-        fileBuffer: input.fileBuffer,
-        fileKind: input.workbook.fileKind,
-      });
+      return null;
+    });
+
+    if (preflight?.status === "duplicate") {
+      return preflight;
+    }
+
+    await writeImportFile({
+      storagePath,
+      fileBuffer: input.fileBuffer,
+      fileKind: input.workbook.fileKind,
+    });
+
+    const result = await withDbTransaction(input.context.userId, async (tx) => {
+      await acquireAdvisoryLock(
+        tx,
+        CHECKSUM_LOCK_NAMESPACE,
+        [input.context.workspaceId, checksum, "investment"].join(":"),
+      );
 
       const account = await resolveInvestmentAccount({
         tx,
@@ -843,10 +855,6 @@ export async function persistInvestmentImport(input: {
       };
     });
 
-    if (result.status === "duplicate") {
-      return result;
-    }
-
     try {
       await deleteImportFileAfterSuccessfulPersistence(storagePath);
     } catch (cleanupError) {
@@ -855,17 +863,20 @@ export async function persistInvestmentImport(input: {
           ? cleanupError.message
           : "Investment import source file cleanup failed";
 
-      await upsertFailedInvestmentImport({
-        importId,
-        workspaceId: input.context.workspaceId,
-        userId: input.context.userId,
-        sourceId: source.sourceId,
-        fileKind: input.workbook.fileKind,
-        originalFilename: input.originalFilename,
-        storagePath,
-        checksum,
-        message: cleanupMessage,
-      });
+      await withDbTransaction(input.context.userId, (db) =>
+        upsertFailedInvestmentImport({
+          importId,
+          workspaceId: input.context.workspaceId,
+          userId: input.context.userId,
+          sourceId: source.sourceId,
+          fileKind: input.workbook.fileKind,
+          originalFilename: input.originalFilename,
+          storagePath,
+          checksum,
+          message: cleanupMessage,
+          db,
+        }),
+      );
 
       throw cleanupError;
     }
@@ -881,17 +892,20 @@ export async function persistInvestmentImport(input: {
     const message =
       error instanceof Error ? error.message : "Investment import persistence failed";
 
-    await upsertFailedInvestmentImport({
-      importId,
-      workspaceId: input.context.workspaceId,
-      userId: input.context.userId,
-      sourceId: source.sourceId,
-      fileKind: input.workbook.fileKind,
-      originalFilename: input.originalFilename,
-      storagePath,
-      checksum,
-      message,
-    });
+    await withDbTransaction(input.context.userId, (db) =>
+      upsertFailedInvestmentImport({
+        importId,
+        workspaceId: input.context.workspaceId,
+        userId: input.context.userId,
+        sourceId: source.sourceId,
+        fileKind: input.workbook.fileKind,
+        originalFilename: input.originalFilename,
+        storagePath,
+        checksum,
+        message,
+        db,
+      }),
+    );
 
     throw error;
   }

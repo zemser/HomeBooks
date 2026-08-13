@@ -1,6 +1,6 @@
 import { and, asc, eq, inArray, isNull } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import {
   classificationDecisionBatches,
   classificationRules,
@@ -52,12 +52,12 @@ function normalizeOptionalText(value?: string | null) {
 async function assertWorkspaceMember(
   workspaceId: string,
   memberOwnerId: string | null,
+  db: DbExecutor,
 ) {
   if (!memberOwnerId) {
     return;
   }
 
-  const db = getDb();
   const member = await db.query.workspaceMembers.findFirst({
     where: and(
       eq(workspaceMembers.id, memberOwnerId),
@@ -95,8 +95,8 @@ export function validateClassificationInput(input: {
 export async function upsertTransactionClassification(
   context: CurrentWorkspaceContext,
   input: SingleClassificationInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const memberOwnerId = normalizeOptionalText(input.memberOwnerId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
 
@@ -106,7 +106,7 @@ export async function upsertTransactionClassification(
     category,
     categoryId: input.categoryId,
   });
-  await assertWorkspaceMember(context.workspaceId, memberOwnerId);
+  await assertWorkspaceMember(context.workspaceId, memberOwnerId, db);
   const savedCategory = await resolveWorkspaceCategory(
     context,
     { categoryId: input.categoryId, categoryName: category },
@@ -316,8 +316,8 @@ export async function upsertTransactionClassification(
 export async function bulkClassifyTransactions(
   context: CurrentWorkspaceContext,
   input: BulkClassificationInput,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const transactionIds = Array.from(new Set(input.transactionIds));
   const memberOwnerId = normalizeOptionalText(input.memberOwnerId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
@@ -332,7 +332,7 @@ export async function bulkClassifyTransactions(
     category,
     categoryId: input.categoryId,
   });
-  await assertWorkspaceMember(context.workspaceId, memberOwnerId);
+  await assertWorkspaceMember(context.workspaceId, memberOwnerId, db);
   const savedCategory = await resolveWorkspaceCategory(
     context,
     { categoryId: input.categoryId, categoryName: category },
@@ -437,8 +437,8 @@ export async function bulkClassifyTransactions(
 export async function undoClassificationDecision(
   context: CurrentWorkspaceContext,
   batchId: string,
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
   const now = new Date();
 
   return db.transaction(async (tx) => {

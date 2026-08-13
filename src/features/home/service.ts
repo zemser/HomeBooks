@@ -1,6 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import {
   imports,
   manualEntries,
@@ -33,8 +33,10 @@ async function getWorkspaceName(context: CurrentWorkspaceContext) {
   return context.workspaceName ?? "Workspace";
 }
 
-async function getReviewQueueCount(context: CurrentWorkspaceContext) {
-  const db = getDb();
+async function getReviewQueueCount(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
+) {
   const [row] = await db
     .select({
       count: sql<number>`count(*)::int`,
@@ -57,8 +59,9 @@ async function getReviewQueueCount(context: CurrentWorkspaceContext) {
 async function listLatestBankImports(
   context: CurrentWorkspaceContext,
   limit = 3,
+  db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeImportActivity[]> {
-  const recentImports = await listSavedImports(context, { type: "bank" });
+  const recentImports = await listSavedImports(context, { type: "bank" }, db);
   return recentImports.slice(0, limit);
 }
 
@@ -68,12 +71,13 @@ function buildPaymentDateReportHref(month: string) {
 
 export async function getAppShellSnapshot(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<AppShellSnapshot> {
   return runWithWorkspaceDatabaseUser(context, async () => {
     const [workspaceName, members, reviewQueueCount] = await Promise.all([
       getWorkspaceName(context),
-      listWorkspaceMembersForSettings(context),
-      getReviewQueueCount(context),
+      listWorkspaceMembersForSettings(context, db),
+      getReviewQueueCount(context, db),
     ]);
     const activeMembers = members.filter((member) => member.isActive);
     const pairwiseSettlementReady = activeMembers.length === 2;
@@ -90,9 +94,9 @@ export async function getAppShellSnapshot(
 
 export async function getWorkspaceHomeSnapshot(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeSnapshot> {
   return runWithWorkspaceDatabaseUser(context, async () => {
-    const db = getDb();
     const selectedMonth = normalizeMonthInput();
     const [
       workspaceName,
@@ -108,8 +112,8 @@ export async function getWorkspaceHomeSnapshot(
     ] =
       await Promise.all([
       getWorkspaceName(context),
-      getWorkspaceSettingsSnapshot(context),
-      listWorkspaceMembersForSettings(context),
+      getWorkspaceSettingsSnapshot(context, db),
+      listWorkspaceMembersForSettings(context, db),
       db.$count(
         imports,
         and(
@@ -125,13 +129,13 @@ export async function getWorkspaceHomeSnapshot(
         .from(transactions)
         .where(eq(transactions.workspaceId, context.workspaceId))
         .then((rows) => rows[0] ?? null),
-      getReviewQueueCount(context),
+      getReviewQueueCount(context, db),
       db.$count(manualEntries, eq(manualEntries.workspaceId, context.workspaceId)),
       db.$count(
         manualRecurringExpenses,
         eq(manualRecurringExpenses.workspaceId, context.workspaceId),
       ),
-      listLatestBankImports(context),
+      listLatestBankImports(context, 3, db),
     ]);
     const activeMembers = members.filter((member) => member.isActive);
     const activeOwners = activeMembers.filter((member) => member.role === "owner");
@@ -157,7 +161,7 @@ export async function getWorkspaceHomeSnapshot(
       const dashboard = await getDashboardSnapshot(context, {
         month: selectedMonth,
         mode: "allocated_period",
-      });
+      }, db);
 
       const reportableItemCount =
         dashboard.rollingTwelveSummary.importedTransactionCount +

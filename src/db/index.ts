@@ -4,7 +4,6 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool, type PoolClient } from "pg";
 
 import * as schema from "@/db/schema";
-import { getCurrentDatabaseUserId } from "@/db/request-context";
 import { getFinappAuthMode } from "@/lib/supabase/config";
 import {
   recordDatabaseUnit,
@@ -26,7 +25,6 @@ const globalForDb = globalThis as typeof globalThis & {
 const activeExecutor = new AsyncLocalStorage<DbExecutor>();
 
 const wrappedClient = Symbol("finappWrappedClient");
-const transactionScopedClient = Symbol("finappTransactionScopedClient");
 const BYPASS_DATABASE_USERS = new Set([
   "postgres",
   "service_role",
@@ -37,7 +35,6 @@ const BYPASS_DATABASE_USERS = new Set([
 
 type WrappedPoolClient = PoolClient & {
   [wrappedClient]?: boolean;
-  [transactionScopedClient]?: boolean;
 };
 
 /**
@@ -93,20 +90,6 @@ function wrapClientForCurrentUser(client: PoolClient) {
 
   scopedClient.query = (async (...args: unknown[]) => {
     recordSqlStatement();
-    if (!isTransactionControlQuery(args[0])) {
-      const currentUserId = getCurrentDatabaseUserId();
-
-      // A transaction may establish its identity explicitly at its boundary
-      // (for example during first-user bootstrap). Do not erase that identity
-      // merely because a framework callback crossed an async-context boundary.
-      if (currentUserId && !scopedClient[transactionScopedClient]) {
-        recordRlsSetup();
-        await originalQuery("select set_config('app.current_user_id', $1, false)", [
-          currentUserId,
-        ]);
-      }
-    }
-
     return (originalQuery as (...queryArgs: unknown[]) => unknown)(...args);
   }) as PoolClient["query"];
 
@@ -277,7 +260,6 @@ export async function withDbTransaction<T>(
   callback: (executor: DbExecutor) => Promise<T>,
 ) {
   const client = (await getPool().connect()) as WrappedPoolClient;
-  client[transactionScopedClient] = true;
 
   return withTelemetrySpan("db.transaction", async () => {
     try {
@@ -296,7 +278,6 @@ export async function withDbTransaction<T>(
       await client.query("rollback").catch(() => undefined);
       throw error;
     } finally {
-      client[transactionScopedClient] = false;
       client.release();
     }
   });

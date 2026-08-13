@@ -12,6 +12,23 @@ Shared finance app for couples and families.
 - Next.js app shell under `src/app`
 - Drizzle schema and migrations under `src/db`
 
+## Dependency installation and upgrades
+
+This repository uses npm with the committed `package-lock.json`. Use `npm ci` for
+local, CI, and Vercel installs; do not use Yarn, pnpm, or `npm install` to install
+the project from a clean checkout.
+
+Direct dependencies are exact-pinned so a manifest change cannot silently widen the
+dependency graph. To perform an intentional upgrade, choose and review the target
+version, run `npm install <package>@<version> --save-exact` (and the equivalent
+`--save-dev` form for tooling), then commit both `package.json` and
+`package-lock.json`. Do not use `npm update` for routine installs.
+
+Apply security updates as soon as they are reviewed. Review Next.js and React
+monthly, Supabase and `pg` monthly for security or compatibility releases, and
+Drizzle quarterly or when schema tooling requires it. Each upgrade must run the
+repository lint, type-check, focused tests, and production build before merging.
+
 ## Current focus
 
 The current product loop is:
@@ -61,7 +78,7 @@ Use this checkpoint when you want to run the app against a real PostgreSQL datab
 2. Export `DATABASE_URL`, for example:
    `export DATABASE_URL=postgres://postgres:postgres@localhost:5432/finapp`
 3. Install dependencies if needed:
-   `npm install`
+   `npm ci`
 4. Push the current schema into the database:
    `npm run db:push`
 5. Start the app:
@@ -73,6 +90,8 @@ Notes:
 - the app auto-creates a seeded dev user, workspace, and workspace member the first time it resolves the current workspace
 - no separate seed command is required for the first smoke test
 - the shared shell and `/` home route are DB-backed, so PostgreSQL must be running before the app can render normally
+
+The project runtime is Node 22. Use the version in `.nvmrc` (22.14.0) for local development, CI, and Vercel; `npm ci` is the supported dependency installation command.
 
 Suggested smoke-test flow:
 
@@ -94,7 +113,7 @@ Before hosted validation, run:
 
 `npm run hosted:check`
 
-The preflight checks required hosted environment variables, local backup/restore tools, Node 20, and whether `DATABASE_URL` appears to use a non-bypass runtime database role.
+The preflight checks required hosted environment variables, local backup/restore tools, the configured Node runtime, and whether `DATABASE_URL` appears to use a non-bypass runtime database role.
 
 After applying migrations to a Supabase/Postgres database, run:
 

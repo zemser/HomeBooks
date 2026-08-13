@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { undoClassificationDecision } from "@/features/expenses/classifications";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -21,8 +21,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await withCurrentWorkspace((context) =>
-      undoClassificationDecision(context, parsed.data.batchId),
+    const result = await withCurrentWorkspaceDb((context, db) =>
+      undoClassificationDecision(context, parsed.data.batchId, db),
     );
     return NextResponse.json(result);
   } catch (error) {

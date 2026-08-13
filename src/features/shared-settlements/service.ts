@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import {
   expenseEvents,
   manualEntries,
@@ -505,8 +505,8 @@ function buildBalanceSummary(input: {
 
 async function listEligibleSettlementRows(
   context: CurrentWorkspaceContext,
+  db: DbExecutor,
 ) {
-  const db = getDb();
   const rows = await db
     .select({
       expenseEventId: expenseEvents.id,
@@ -536,8 +536,7 @@ async function listEligibleSettlementRows(
   return rows as SharedSettlementSourceRow[];
 }
 
-async function listSourceDates(rows: SharedSettlementSourceRow[]) {
-  const db = getDb();
+async function listSourceDates(rows: SharedSettlementSourceRow[], db: DbExecutor) {
   const transactionIds = rows
     .filter((row) => row.sourceType === "transaction")
     .map((row) => row.sourceId);
@@ -570,8 +569,8 @@ async function listSourceDates(rows: SharedSettlementSourceRow[]) {
   );
 }
 
-async function getPairwiseMembers(context: CurrentWorkspaceContext) {
-  const members = normalizeActiveMembers(await listWorkspaceMembers(context));
+async function getPairwiseMembers(context: CurrentWorkspaceContext, db: DbExecutor) {
+  const members = normalizeActiveMembers(await listWorkspaceMembers(context, db));
   const blockingReason =
     members.length === 2
       ? null
@@ -585,8 +584,9 @@ async function getPairwiseMembers(context: CurrentWorkspaceContext) {
 
 export async function getSharedSettlementsPageData(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<SharedSettlementsPageData> {
-  const { activeMembers, blockingReason } = await getPairwiseMembers(context);
+  const { activeMembers, blockingReason } = await getPairwiseMembers(context, db);
 
   if (blockingReason) {
     return {
@@ -601,8 +601,8 @@ export async function getSharedSettlementsPageData(
   }
 
   const pair = assertPairwiseMembers(activeMembers);
-  const rows = await listEligibleSettlementRows(context);
-  const sourceDates = await listSourceDates(rows);
+  const rows = await listEligibleSettlementRows(context, db);
+  const sourceDates = await listSourceDates(rows, db);
   const items = rows
     .map((row) =>
       buildSettlementItem({
@@ -646,9 +646,9 @@ export async function upsertSharedSettlement(
     splitDefinition: unknown;
     settlementStatus: SettlementStatus;
   },
+  db: DbExecutor = getDb(),
 ) {
-  const db = getDb();
-  const { activeMembers } = await getPairwiseMembers(context);
+  const { activeMembers } = await getPairwiseMembers(context, db);
   const pair = assertPairwiseMembers(activeMembers);
   const pairMemberIds = new Set(pair.map((member) => member.id));
 

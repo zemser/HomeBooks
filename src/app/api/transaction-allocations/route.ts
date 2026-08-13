@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { updateExpenseAllocation } from "@/features/expenses/allocation";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await withCurrentWorkspace((context) =>
+    const result = await withCurrentWorkspaceDb((context, db) =>
       updateExpenseAllocation(context, {
         sourceType,
         sourceId,
@@ -118,7 +118,7 @@ export async function POST(request: Request) {
         coverageStartDate: parsed.data.coverageStartDate,
         coverageEndDate: parsed.data.coverageEndDate,
         allocations: parsed.data.allocations,
-      }),
+      }, db),
     );
 
     return NextResponse.json(result);

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expenses/queries";
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
 import { listWorkspaceCategories } from "@/features/workspaces/categories";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -12,12 +12,12 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   try {
     const { transactions, oneTimeManualEntries, members, categoryCatalog } =
-      await withCurrentWorkspace(async (context) => {
+      await withCurrentWorkspaceDb(async (context, db) => {
         const [transactions, oneTimeManualEntries, members, categoryCatalog] = await Promise.all([
-          listExpenseTransactions(context),
-          listOneTimeManualEntries(context),
-          listWorkspaceMembers(context),
-          listWorkspaceCategories(context),
+          listExpenseTransactions(context, db),
+          listOneTimeManualEntries(context, db),
+          listWorkspaceMembers(context, db),
+          listWorkspaceCategories(context, db),
         ]);
 
         return { transactions, oneTimeManualEntries, members, categoryCatalog };

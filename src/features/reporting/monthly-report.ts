@@ -1,6 +1,6 @@
 import { and, eq, gte, lt, ne } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import {
   expenseAllocations,
   expenseEvents,
@@ -351,8 +351,11 @@ function summarizeBuckets(
   };
 }
 
-async function getMemberNames(context: CurrentWorkspaceContext) {
-  const members = await listWorkspaceMembers(context);
+async function getMemberNames(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor,
+) {
+  const members = await listWorkspaceMembers(context, db);
   return new Map(members.map((member) => [member.id, member.displayName]));
 }
 
@@ -360,8 +363,8 @@ async function listPaymentDateReportRecordsForRange(
   context: CurrentWorkspaceContext,
   startMonth: string,
   endMonth: string,
+  db: DbExecutor,
 ) {
-  const db = getDb();
   const rangeStart = monthKey(startOfMonth(new Date(`${startMonth}T00:00:00.000Z`)));
   const { nextMonthStart } = buildMonthWindow(endMonth);
 
@@ -470,8 +473,8 @@ async function listAllocatedPeriodReportRecordsForRange(
   context: CurrentWorkspaceContext,
   startMonth: string,
   endMonth: string,
+  db: DbExecutor,
 ) {
-  const db = getDb();
   const rangeStart = monthKey(startOfMonth(new Date(`${startMonth}T00:00:00.000Z`)));
   const { nextMonthStart } = buildMonthWindow(endMonth);
   const allocatedRows = await db
@@ -550,17 +553,19 @@ async function listReportRecordsForRange(
   startMonth: string,
   endMonth: string,
   reportingMode: ReportingViewMode,
+  db: DbExecutor,
 ) {
   if (reportingMode === "allocated_period") {
-    return listAllocatedPeriodReportRecordsForRange(context, startMonth, endMonth);
+    return listAllocatedPeriodReportRecordsForRange(context, startMonth, endMonth, db);
   }
 
-  return listPaymentDateReportRecordsForRange(context, startMonth, endMonth);
+  return listPaymentDateReportRecordsForRange(context, startMonth, endMonth, db);
 }
 
 export async function getMonthlyReport(
   context: CurrentWorkspaceContext,
   input?: { month?: string; mode?: ReportingViewMode | string },
+  db: DbExecutor = getDb(),
 ): Promise<MonthlyReportData> {
   const selectedMonth = normalizeMonthInput(input?.month);
   const reportingMode = normalizeReportingModeInput(input?.mode);
@@ -568,11 +573,11 @@ export async function getMonthlyReport(
   await materializeRecurringEntriesForRange(context, {
     startMonth: selectedMonth,
     endMonth: selectedMonth,
-  });
+  }, db);
 
   const [memberNames, allRecords] = await Promise.all([
-    getMemberNames(context),
-    listReportRecordsForRange(context, selectedMonth, selectedMonth, reportingMode),
+    getMemberNames(context, db),
+    listReportRecordsForRange(context, selectedMonth, selectedMonth, reportingMode, db),
   ]);
 
   const incomeTotal = allRecords
@@ -621,6 +626,7 @@ export async function getMonthlyReport(
 export async function getYearToDateReport(
   context: CurrentWorkspaceContext,
   input?: { throughMonth?: string; mode?: ReportingViewMode | string },
+  db: DbExecutor = getDb(),
 ): Promise<YearToDateReportData> {
   const selectedMonth = normalizeMonthInput(input?.throughMonth);
   const reportingMode = normalizeReportingModeInput(input?.mode);
@@ -630,13 +636,14 @@ export async function getYearToDateReport(
   await materializeRecurringEntriesForRange(context, {
     startMonth: window.periodStart,
     endMonth: window.periodEnd,
-  });
+  }, db);
 
   const records = await listReportRecordsForRange(
     context,
     window.periodStart,
     window.periodEnd,
     reportingMode,
+    db,
   );
   const months = buildMonthBuckets(records, window.includedMonths);
 
@@ -649,6 +656,7 @@ export async function getYearToDateReport(
 export async function getRollingTwelveReport(
   context: CurrentWorkspaceContext,
   input?: { throughMonth?: string; mode?: ReportingViewMode | string },
+  db: DbExecutor = getDb(),
 ): Promise<RollingTwelveReportData> {
   const selectedMonth = normalizeMonthInput(input?.throughMonth);
   const reportingMode = normalizeReportingModeInput(input?.mode);
@@ -658,13 +666,14 @@ export async function getRollingTwelveReport(
   await materializeRecurringEntriesForRange(context, {
     startMonth: window.periodStart,
     endMonth: window.periodEnd,
-  });
+  }, db);
 
   const records = await listReportRecordsForRange(
     context,
     window.periodStart,
     window.periodEnd,
     reportingMode,
+    db,
   );
   const months = buildMonthBuckets(records, window.includedMonths);
 
@@ -677,15 +686,16 @@ export async function getRollingTwelveReport(
 export async function getDashboardSnapshot(
   context: CurrentWorkspaceContext,
   input?: { month?: string; mode?: ReportingViewMode | string },
+  db: DbExecutor = getDb(),
 ): Promise<DashboardSnapshot> {
   const selectedMonth = normalizeMonthInput(input?.month);
   const reportingMode = normalizeReportingModeInput(input?.mode, "allocated_period");
   const [monthReport, rollingTwelveReport] = await Promise.all([
-    getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }),
+    getMonthlyReport(context, { month: selectedMonth, mode: reportingMode }, db),
     getRollingTwelveReport(context, {
       throughMonth: selectedMonth,
       mode: reportingMode,
-    }),
+    }, db),
   ]);
 
   return {

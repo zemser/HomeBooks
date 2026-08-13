@@ -44,7 +44,7 @@ This is the source-of-truth guard against accidental direct pushes to `master`.
 
 1. start local PostgreSQL and create an empty DB
 2. export `DATABASE_URL`
-3. run `npm install`
+3. run `npm ci`
 4. run `npm run db:push`
 5. run `npm run dev`
 6. open [http://localhost:3000](http://localhost:3000)
@@ -56,3 +56,7 @@ This is the source-of-truth guard against accidental direct pushes to `master`.
 - implementation sequencing and progress: `docs/implementation-plan.md`
 - implemented schema reference: `docs/schema-reference.md`
 - agent operational notes: `AGENT.md`
+
+## Runtime and installation
+
+The supported runtime is Node 22. Use `.nvmrc` (22.14.0) with a Node version manager and run `npm ci` for a reproducible install. Vercel reads the same `engines.node` requirement from `package.json`.

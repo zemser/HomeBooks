@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import { fileKindEnum, importSources, importTemplates } from "@/db/schema";
 import type { DetectedTemplateId } from "@/features/imports/types";
 
@@ -40,8 +40,7 @@ export type SupportedImportTemplateRecord = {
   templateName: SupportedBankTemplateId;
 };
 
-export async function getSupportedBankImportCatalog() {
-  const db = getDb();
+export async function getSupportedBankImportCatalog(db: DbExecutor = getDb()) {
   const templateMap = new Map<SupportedBankTemplateId, SupportedImportTemplateRecord>();
 
   for (const definition of SUPPORTED_BANK_TEMPLATES) {

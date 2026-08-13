@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 
-import { getDb } from "@/db";
+import { getDb, type DbExecutor } from "@/db";
 import {
   financialAccounts,
   classificationRules,
@@ -63,12 +63,11 @@ type RawTransactionRow = {
   reviewedAt: Date | null;
 };
 
-async function listMemberNamesById(memberIds: string[]) {
+async function listMemberNamesById(memberIds: string[], db: DbExecutor) {
   if (memberIds.length === 0) {
     return new Map<string, string>();
   }
 
-  const db = getDb();
   const members = await db
     .select({
       id: workspaceMembers.id,
@@ -90,6 +89,7 @@ async function listMemberNamesById(memberIds: string[]) {
 async function mapTransactionRows(
   context: CurrentWorkspaceContext,
   rows: RawTransactionRow[],
+  db: DbExecutor,
 ) {
   const memberIds = Array.from(
     new Set(
@@ -98,10 +98,11 @@ async function mapTransactionRows(
         .filter((value): value is string => Boolean(value)),
     ),
   );
-  const memberNamesById = await listMemberNamesById(memberIds);
+  const memberNamesById = await listMemberNamesById(memberIds, db);
   const allocationStatesByTransactionId = await listTransactionAllocationStates(
     context,
     rows.map((row) => row.id),
+    db,
   );
 
   return rows.map<ExpenseTransactionItem>((row) => ({
@@ -148,8 +149,8 @@ async function listTransactionsByWorkspace(input: {
   workspaceId: string;
   onlyUnclassified?: boolean;
   transactionId?: string;
+  db: DbExecutor;
 }) {
-  const db = getDb();
   const filters = [eq(transactions.workspaceId, input.workspaceId)];
 
   if (input.onlyUnclassified) {
@@ -160,7 +161,7 @@ async function listTransactionsByWorkspace(input: {
     filters.push(eq(transactions.id, input.transactionId));
   }
 
-  const rows = await db
+  const rows = await input.db
     .select({
       id: transactions.id,
       accountId: transactions.accountId,
@@ -198,20 +199,24 @@ async function listTransactionsByWorkspace(input: {
     .where(and(...filters))
     .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt));
 
-  return mapTransactionRows(input.context, rows);
+  return mapTransactionRows(input.context, rows, input.db);
 }
 
-export async function listExpenseTransactions(context: CurrentWorkspaceContext) {
+export async function listExpenseTransactions(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
+) {
   return listTransactionsByWorkspace({
     context,
     workspaceId: context.workspaceId,
+    db,
   });
 }
 
 export async function listWorkspaceMembers(
   context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
 ): Promise<WorkspaceMemberOption[]> {
-  const db = getDb();
   const members = await db
     .select({
       id: workspaceMembers.id,
@@ -236,24 +241,27 @@ export async function listWorkspaceMembers(
 export async function listReviewQueue(
   context: CurrentWorkspaceContext,
   query: ReviewQuery = defaultReviewQuery(),
+  db: DbExecutor = getDb(),
 ): Promise<ReviewQueueResponse> {
   const [rawQueue, focusTransaction, members, categoryCatalog, recentCategories, summary] = await Promise.all([
     listTransactionsByWorkspace({
       context,
       workspaceId: context.workspaceId,
       onlyUnclassified: true,
+      db,
     }),
     query.transactionId
       ? listTransactionsByWorkspace({
           context,
           workspaceId: context.workspaceId,
           transactionId: query.transactionId,
+          db,
         }).then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
-    listWorkspaceMembers(context),
-    listWorkspaceCategories(context),
-    listRecentReviewCategories(context),
-    getReviewQueueSummary(context, query.importId),
+    listWorkspaceMembers(context, db),
+    listWorkspaceCategories(context, db),
+    listRecentReviewCategories(context, db),
+    getReviewQueueSummary(context, query.importId, db),
   ]);
 
   const merchantValues = [
@@ -261,8 +269,8 @@ export async function listReviewQueue(
     focusTransaction?.merchantRaw ?? null,
   ];
   const [suggestionsByMerchant, existingExactRuleValues] = await Promise.all([
-    listHistoricalClassificationSuggestions(context, merchantValues, query.transactionId),
-    listExistingExactRuleValues(context, merchantValues),
+    listHistoricalClassificationSuggestions(context, merchantValues, db, query.transactionId),
+    listExistingExactRuleValues(context, merchantValues, db),
   ]);
   const queueCountByMerchant = new Map<string, number>();
   rawQueue.forEach((transaction) => {
@@ -340,6 +348,7 @@ export async function listReviewQueue(
 async function listExistingExactRuleValues(
   context: CurrentWorkspaceContext,
   merchantValues: Array<string | null>,
+  db: DbExecutor,
 ) {
   const normalizedMerchants = Array.from(
     new Set(
@@ -351,7 +360,6 @@ async function listExistingExactRuleValues(
   );
   if (normalizedMerchants.length === 0) return new Set<string>();
 
-  const db = getDb();
   const rows = await db
     .select({ matchValue: classificationRules.matchValue })
     .from(classificationRules)
@@ -365,8 +373,10 @@ async function listExistingExactRuleValues(
   return new Set(rows.map((row) => row.matchValue));
 }
 
-async function listRecentReviewCategories(context: CurrentWorkspaceContext) {
-  const db = getDb();
+async function listRecentReviewCategories(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor,
+) {
   const rows = await db
     .select({ category: transactionClassifications.category })
     .from(transactionClassifications)
@@ -396,6 +406,7 @@ async function listRecentReviewCategories(context: CurrentWorkspaceContext) {
 async function listHistoricalClassificationSuggestions(
   context: CurrentWorkspaceContext,
   merchantValues: Array<string | null>,
+  db: DbExecutor,
   excludeTransactionId?: string,
 ) {
   const normalizedMerchants = Array.from(
@@ -408,7 +419,6 @@ async function listHistoricalClassificationSuggestions(
   );
   if (normalizedMerchants.length === 0) return new Map<string, ClassificationSuggestion>();
 
-  const db = getDb();
   const filters = [
     eq(transactions.workspaceId, context.workspaceId),
     isNotNull(transactions.merchantRaw),
@@ -438,15 +448,15 @@ async function listHistoricalClassificationSuggestions(
   const memberIds = Array.from(
     new Set(rows.map((row) => row.memberOwnerId).filter((id): id is string => Boolean(id))),
   );
-  const memberNames = await listMemberNamesById(memberIds);
+  const memberNames = await listMemberNamesById(memberIds, db);
   return buildExactMerchantSuggestions(rows, memberNames);
 }
 
 async function getReviewQueueSummary(
   context: CurrentWorkspaceContext,
   selectedImportId: string = "all",
+  db: DbExecutor = getDb(),
 ): Promise<ReviewQueueSummary> {
-  const db = getDb();
   const [
     totalTransactionCount,
     totalByImportRows,

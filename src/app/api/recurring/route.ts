@@ -7,7 +7,7 @@ import {
   createRecurringEntry,
   getRecurringPageData,
 } from "@/features/recurring/service";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { WorkspaceCategoryInputError } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
@@ -49,8 +49,8 @@ export async function GET(request: Request) {
       );
     }
 
-    const data = await withCurrentWorkspace((context) =>
-      getRecurringPageData(context, parsed.data),
+    const data = await withCurrentWorkspaceDb((context, db) =>
+      getRecurringPageData(context, parsed.data, db),
     );
 
     return NextResponse.json(data);
@@ -79,8 +79,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await withCurrentWorkspace((context) =>
-      createRecurringEntry(context, parsed.data),
+    const result = await withCurrentWorkspaceDb((context, db) =>
+      createRecurringEntry(context, parsed.data, db),
     );
 
     return NextResponse.json(result, { status: 201 });

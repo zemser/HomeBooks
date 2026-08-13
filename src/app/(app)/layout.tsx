@@ -1,7 +1,7 @@
 import { AppShellClient } from "@/components/app-shell/app-shell-client";
 import { createAppNavSections } from "@/components/app-shell/nav";
 import { getAppShellSnapshot } from "@/features/home/service";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +10,8 @@ export default async function AppLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const shellSnapshot = await withCurrentWorkspace((context) =>
-    getAppShellSnapshot(context),
+  const shellSnapshot = await withCurrentWorkspaceDb((context, db) =>
+    getAppShellSnapshot(context, db),
   );
   const navSections = createAppNavSections(shellSnapshot);
 

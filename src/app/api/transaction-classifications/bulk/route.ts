@@ -6,7 +6,7 @@ import {
   bulkClassifyTransactions,
   isClassificationInputError,
 } from "@/features/expenses/classifications";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -33,8 +33,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await withCurrentWorkspace((context) =>
-      bulkClassifyTransactions(context, parsed.data),
+    const result = await withCurrentWorkspaceDb((context, db) =>
+      bulkClassifyTransactions(context, parsed.data, db),
     );
 
     return NextResponse.json(result);

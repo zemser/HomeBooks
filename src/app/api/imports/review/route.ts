@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { listReviewQueue } from "@/features/expenses/queries";
 import { parseReviewQuery } from "@/features/expenses/review-query";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
 export const runtime = "nodejs";
@@ -12,8 +12,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const query = parseReviewQuery(searchParams);
-    const reviewQueue = await withCurrentWorkspace((context) =>
-      listReviewQueue(context, query),
+    const reviewQueue = await withCurrentWorkspaceDb((context, db) =>
+      listReviewQueue(context, query, db),
     );
 
     return NextResponse.json(reviewQueue);
