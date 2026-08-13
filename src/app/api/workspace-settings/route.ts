@@ -8,8 +8,6 @@ import {
 } from "@/features/workspaces/settings";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 const patchSchema = z.object({
   baseCurrency: z.string().trim().length(3),

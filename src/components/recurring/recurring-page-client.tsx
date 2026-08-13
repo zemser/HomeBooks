@@ -85,8 +85,8 @@ const initialVersionState: VersionFormState = {
   notes: "",
 };
 
-export function RecurringPageClient() {
-  const [data, setData] = useState<RecurringPageData | null>(null);
+export function RecurringPageClient({ initialData }: { initialData: RecurringPageData }) {
+  const [data, setData] = useState<RecurringPageData | null>(initialData);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [createState, setCreateState] = useState<CreateRuleState>(initialCreateState);
@@ -94,7 +94,7 @@ export function RecurringPageClient() {
   const [versionState, setVersionState] = useState<VersionFormState>(initialVersionState);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isSavingCreate, startSavingCreate] = useTransition();
   const [isSavingEdit, startSavingEdit] = useTransition();
@@ -148,10 +148,6 @@ export function RecurringPageClient() {
       setIsLoading(false);
     }
   }
-
-  useEffect(() => {
-    void loadPage();
-  }, []);
 
   const selectedEntry = useMemo(
     () => data?.recurringEntries.find((entry) => entry.id === selectedEntryId) ?? null,

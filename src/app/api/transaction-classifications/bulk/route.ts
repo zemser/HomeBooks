@@ -9,7 +9,6 @@ import {
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
 
 const requestSchema = z.object({
   transactionIds: z.array(z.string().uuid()).min(1),

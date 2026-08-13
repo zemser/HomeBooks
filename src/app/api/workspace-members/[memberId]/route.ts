@@ -6,7 +6,6 @@ import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { WORKSPACE_MEMBER_ROLES } from "@/features/workspaces/types";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
 
 const patchSchema = z
   .object({

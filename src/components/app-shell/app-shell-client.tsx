@@ -1,16 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useRef } from "react";
+import { usePathname } from "next/navigation";
 
 import type { AppNavSection, AppNavItem } from "@/components/app-shell/nav";
 
 type AppShellClientProps = {
   navSections: AppNavSection[];
-  workspaceName: string;
-  baseCurrency: string;
-  activeMemberCount: number;
+  workspaceGlance: React.ReactNode;
+  reviewBadge: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -29,11 +27,11 @@ function isActivePath(pathname: string, item: AppNavItem) {
 function MobileNavItem({
   item,
   pathname,
-  onIntent,
+  reviewBadge,
 }: {
   item: AppNavItem;
   pathname: string;
-  onIntent: (href: string) => void;
+  reviewBadge: React.ReactNode;
 }) {
   const active = isActivePath(pathname, item);
 
@@ -42,11 +40,9 @@ function MobileNavItem({
       className={`app-mobile-nav-item ${active ? "app-mobile-nav-item-active" : ""}`}
       href={item.href}
       aria-current={active ? "page" : undefined}
-      prefetch={false}
-      onMouseEnter={() => onIntent(item.href)}
-      onFocus={() => onIntent(item.href)}
     >
       <span>{item.label}</span>
+      {item.href === "/imports/review" ? reviewBadge : null}
       {item.badge ? (
         <span className={`nav-badge ${item.badgeTone === "warning" ? "nav-badge-warning" : ""}`}>
           {item.badge}
@@ -58,35 +54,23 @@ function MobileNavItem({
 
 export function AppShellClient({
   navSections,
-  workspaceName,
-  baseCurrency,
-  activeMemberCount,
+  workspaceGlance,
+  reviewBadge,
   children,
 }: AppShellClientProps) {
   const pathname = usePathname();
-  const router = useRouter();
-  const prefetchedHrefs = useRef(new Set<string>());
   const primaryItems = navSections[0]?.items ?? [];
   const secondaryItems = navSections[1]?.items ?? [];
   const flatItems = navSections.flatMap((section) => section.items);
   const currentItem = flatItems.find((item) => isActivePath(pathname, item));
 
-  function prefetchOnIntent(href: string) {
-    if (prefetchedHrefs.current.has(href)) return;
-    prefetchedHrefs.current.add(href);
-    router.prefetch(href);
-  }
-
   return (
-    <div className="app-shell">
+    <div className="app-shell" data-testid="app-shell">
       <aside className="app-sidebar">
         <div className="app-sidebar-inner">
           <Link
             className="app-brand"
             href="/"
-            prefetch={false}
-            onMouseEnter={() => prefetchOnIntent("/")}
-            onFocus={() => prefetchOnIntent("/")}
           >
             <span className="app-brand-mark">FA</span>
             <span>
@@ -95,14 +79,7 @@ export function AppShellClient({
             </span>
           </Link>
 
-          <section className="workspace-glance">
-            <p className="app-kicker">Current workspace</p>
-            <h2>{workspaceName}</h2>
-            <p>
-              {baseCurrency} base currency · {activeMemberCount} active member
-              {activeMemberCount === 1 ? "" : "s"}
-            </p>
-          </section>
+          {workspaceGlance}
 
           <nav className="app-nav" aria-label="Primary application">
             {navSections.map((section) => (
@@ -117,14 +94,12 @@ export function AppShellClient({
                         className={`app-nav-link ${active ? "app-nav-link-active" : ""}`}
                         href={item.href}
                         aria-current={active ? "page" : undefined}
-                        prefetch={false}
-                        onMouseEnter={() => prefetchOnIntent(item.href)}
-                        onFocus={() => prefetchOnIntent(item.href)}
                         key={item.href}
                       >
                         <span>{item.label}</span>
                         <span className="app-nav-meta">
                           {item.betaLabel ? <span className="nav-chip">{item.betaLabel}</span> : null}
+                          {item.href === "/imports/review" ? reviewBadge : null}
                           {item.badge ? (
                             <span
                               className={`nav-badge ${item.badgeTone === "warning" ? "nav-badge-warning" : ""}`}
@@ -154,9 +129,6 @@ export function AppShellClient({
               <Link
                 className="mobile-pill-link"
                 href={item.href}
-                prefetch={false}
-                onMouseEnter={() => prefetchOnIntent(item.href)}
-                onFocus={() => prefetchOnIntent(item.href)}
                 key={item.href}
               >
                 {item.label}
@@ -172,8 +144,8 @@ export function AppShellClient({
             <MobileNavItem
               item={item}
               key={item.href}
-              onIntent={prefetchOnIntent}
               pathname={pathname}
+              reviewBadge={reviewBadge}
             />
           ))}
         </nav>

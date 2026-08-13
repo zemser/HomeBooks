@@ -9,7 +9,7 @@ type ReviewPageProps = {
   }>;
 };
 
-export default async function ReviewPage({ searchParams }: ReviewPageProps) {
+async function ReviewQueue({ searchParams }: ReviewPageProps) {
   const params = await searchParams;
   const urlParams = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -22,9 +22,17 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
   );
 
   return (
+    <div data-testid="review-content">
+      <ReviewQueueClient initialData={initialData} initialTransactionId={transactionId} />
+    </div>
+  );
+}
+
+export default function ReviewPage({ searchParams }: ReviewPageProps) {
+  return (
     <main>
       <div className="page-shell stack">
-        <section className="page-header review-page-header">
+        <section className="page-header review-page-header" data-testid="review-shell">
           <div>
             <span className="eyebrow">Review queue</span>
             <h1>Review transactions</h1>
@@ -32,8 +40,13 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
           </div>
         </section>
 
-        <ReviewQueueClient initialData={initialData} initialTransactionId={transactionId} />
+        <Suspense fallback={<RouteDataFallback label="Review queue" />}>
+          <ReviewQueue searchParams={searchParams} />
+        </Suspense>
       </div>
     </main>
   );
 }
+import { Suspense } from "react";
+
+import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";

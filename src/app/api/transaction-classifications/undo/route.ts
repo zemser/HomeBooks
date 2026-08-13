@@ -5,7 +5,6 @@ import { undoClassificationDecision } from "@/features/expenses/classifications"
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
 
 const requestSchema = z.object({
   batchId: z.string().uuid(),

@@ -8,8 +8,6 @@ import {
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 const requestSchema = z.discriminatedUnion("splitMode", [
   z.object({

@@ -15,7 +15,6 @@ import {
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
-export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   const formData = await request.formData();

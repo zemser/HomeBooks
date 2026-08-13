@@ -4,7 +4,6 @@ import { repairExpenseEventProjections } from "@/features/reporting/expense-even
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {

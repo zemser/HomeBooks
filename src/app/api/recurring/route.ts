@@ -11,8 +11,6 @@ import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { WorkspaceCategoryInputError } from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
 
 const getSchema = z.object({
   startMonth: z.string().trim().optional(),
