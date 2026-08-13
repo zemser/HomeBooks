@@ -6,6 +6,8 @@ type CounterName =
   | "mfaCalls"
   | "databaseUnits"
   | "sqlStatements"
+  | "poolAcquisitions"
+  | "poolWaitMs"
   | "rlsSetups"
   | "workspaceLookups"
   | "reportingProjections";
@@ -21,6 +23,8 @@ type TelemetryState = Record<CounterName, number> & {
   requestId: string;
   operationId: string;
   operation: string;
+  functionRegion: string;
+  runtime: string;
   startedAt: number;
   spans: TelemetrySpan[];
 };
@@ -46,6 +50,21 @@ function increment(field: CounterName) {
   if (state) state[field] += 1;
 }
 
+function getRuntimeLabel(value: string | undefined, fallback: string) {
+  return value && /^[a-z0-9-]{2,32}$/i.test(value) ? value : fallback;
+}
+
+export function getFunctionRegion() {
+  return getRuntimeLabel(
+    process.env.VERCEL_REGION,
+    process.env.VERCEL === "1" ? "unknown" : "local",
+  );
+}
+
+function getRuntime() {
+  return getRuntimeLabel(process.env.NEXT_RUNTIME, "nodejs");
+}
+
 export function recordAuthCall() {
   increment("authCalls");
 }
@@ -60,6 +79,17 @@ export function recordDatabaseUnit() {
 
 export function recordSqlStatement() {
   increment("sqlStatements");
+}
+
+export function recordPoolAcquisition() {
+  increment("poolAcquisitions");
+}
+
+export function recordPoolWait(durationMs: number) {
+  const state = currentTelemetry();
+  if (state && Number.isFinite(durationMs) && durationMs >= 0) {
+    state.poolWaitMs = Number((state.poolWaitMs + durationMs).toFixed(2));
+  }
 }
 
 export function recordRlsSetup() {
@@ -95,11 +125,15 @@ function buildState(input: TelemetryOperationInput): TelemetryState {
     requestId: input.requestId ?? crypto.randomUUID(),
     operationId: crypto.randomUUID(),
     operation: input.operation,
+    functionRegion: getFunctionRegion(),
+    runtime: getRuntime(),
     startedAt: performance.now(),
     authCalls: 0,
     mfaCalls: 0,
     databaseUnits: 0,
     sqlStatements: 0,
+    poolAcquisitions: 0,
+    poolWaitMs: 0,
     rlsSetups: 0,
     workspaceLookups: 0,
     reportingProjections: 0,
@@ -116,6 +150,8 @@ function logRecord(state: TelemetryState, status: "ok" | "error", error?: unknow
     requestId: state.requestId,
     operationId: state.operationId,
     operation: state.operation,
+    functionRegion: state.functionRegion,
+    runtime: state.runtime,
     status,
     durationMs: durationSince(state.startedAt),
     counts: {
@@ -123,6 +159,8 @@ function logRecord(state: TelemetryState, status: "ok" | "error", error?: unknow
       mfaCalls: state.mfaCalls,
       databaseUnits: state.databaseUnits,
       sqlStatements: state.sqlStatements,
+      poolAcquisitions: state.poolAcquisitions,
+      poolWaitMs: state.poolWaitMs,
       rlsSetups: state.rlsSetups,
       workspaceLookups: state.workspaceLookups,
       reportingProjections: state.reportingProjections,
@@ -157,12 +195,16 @@ export function getTelemetrySnapshot() {
     requestId: state.requestId,
     operationId: state.operationId,
     operation: state.operation,
+    functionRegion: state.functionRegion,
+    runtime: state.runtime,
     durationMs: durationSince(state.startedAt),
     counts: {
       authCalls: state.authCalls,
       mfaCalls: state.mfaCalls,
       databaseUnits: state.databaseUnits,
       sqlStatements: state.sqlStatements,
+      poolAcquisitions: state.poolAcquisitions,
+      poolWaitMs: state.poolWaitMs,
       rlsSetups: state.rlsSetups,
       workspaceLookups: state.workspaceLookups,
       reportingProjections: state.reportingProjections,
