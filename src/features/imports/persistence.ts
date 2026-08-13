@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import { getDb, type DbExecutor } from "@/db";
+import { getDb, withDbTransaction, type DbExecutor } from "@/db";
 import {
   classificationRules,
   financialAccounts,
@@ -125,7 +125,7 @@ export async function analyzeParsedBankImport(input: {
   db?: DbExecutor;
 }) {
   const db = input.db ?? getDb();
-  const importCatalog = await getSupportedBankImportCatalog();
+  const importCatalog = await getSupportedBankImportCatalog(db);
   const templateRecord = importCatalog.get(input.parsed.templateId);
 
   if (!templateRecord) {
@@ -265,10 +265,10 @@ async function findOrCreateFinancialAccount(input: {
   memberId: string;
   sourceId: string;
   accountLabel: string;
+  db: DbExecutor;
 }) {
-  const db = getDb();
   const displayName = input.accountLabel.trim() || "Imported account";
-  const existing = await db.query.financialAccounts.findFirst({
+  const existing = await input.db.query.financialAccounts.findFirst({
     where: and(
       eq(financialAccounts.workspaceId, input.workspaceId),
       eq(financialAccounts.importSourceId, input.sourceId),
@@ -281,7 +281,7 @@ async function findOrCreateFinancialAccount(input: {
     return existing;
   }
 
-  const [created] = await db
+  const [created] = await input.db
     .insert(financialAccounts)
     .values({
       workspaceId: input.workspaceId,
@@ -435,30 +435,34 @@ export async function persistBankImport(input: {
   fileBuffer: Buffer;
   context: CurrentImportContext;
 }) {
-  const db = getDb();
   const checksum = hashBuffer(input.fileBuffer);
-  let retryImport: RetryableFailedImport | null = null;
-  const existingImport = await db.query.imports.findFirst({
-    where: and(
-      eq(imports.workspaceId, input.context.workspaceId),
-      eq(imports.fileChecksum, checksum),
-      eq(imports.type, "bank"),
-    ),
-  });
+  const duplicateCheck = await withDbTransaction(input.context.userId, async (db) => {
+    const existingImport = await db.query.imports.findFirst({
+      where: and(
+        eq(imports.workspaceId, input.context.workspaceId),
+        eq(imports.fileChecksum, checksum),
+        eq(imports.type, "bank"),
+      ),
+    });
 
-  if (existingImport) {
+    if (!existingImport) return null;
+
     const existingTransactionCount = await db.$count(
       transactions,
       eq(transactions.importId, existingImport.id),
     );
 
     if (existingImport.importStatus === "failed" && existingTransactionCount === 0) {
-      retryImport = {
-        id: existingImport.id,
-        storagePath: existingImport.storagePath,
-      };
-    } else {
       return {
+        retryImport: {
+          id: existingImport.id,
+          storagePath: existingImport.storagePath,
+        } satisfies RetryableFailedImport,
+      };
+    }
+
+    return {
+      duplicate: {
         status: "duplicate" as const,
         importId: existingImport.id,
         duplicateOfImportId: existingImport.id,
@@ -466,25 +470,34 @@ export async function persistBankImport(input: {
         duplicateTransactionCount: existingTransactionCount,
         automaticRuleCount: 0,
         importStatus: existingImport.importStatus,
-      };
-    }
-  }
+      },
+    };
+  });
+
+  if (duplicateCheck?.duplicate) return duplicateCheck.duplicate;
+  const retryImport = duplicateCheck?.retryImport ?? null;
 
   const preview = parseBankWorkbookToPreview({
     workbook: input.workbook,
     workspaceCurrency: input.context.baseCurrency,
   });
-  const importPlan = await analyzeParsedBankImport({
-    context: input.context,
-    parsed: preview.parsed,
-  });
+  const importPlan = await withDbTransaction(input.context.userId, (db) =>
+    analyzeParsedBankImport({
+      context: input.context,
+      parsed: preview.parsed,
+      db,
+    }),
+  );
   const { accountLabel, templateRecord } = importPlan;
-  const account = await findOrCreateFinancialAccount({
-    workspaceId: input.context.workspaceId,
-    memberId: input.context.memberId,
-    sourceId: templateRecord.sourceId,
-    accountLabel,
-  });
+  const account = await withDbTransaction(input.context.userId, (db) =>
+    findOrCreateFinancialAccount({
+      workspaceId: input.context.workspaceId,
+      memberId: input.context.memberId,
+      sourceId: templateRecord.sourceId,
+      accountLabel,
+      db,
+    }),
+  );
 
   const importId = retryImport?.id ?? randomUUID();
   const storagePath =
@@ -496,10 +509,10 @@ export async function persistBankImport(input: {
     });
   const startedAt = new Date();
 
-  if (retryImport) {
-    await db.transaction(async (tx) => {
-      await tx.delete(importRows).where(eq(importRows.importId, importId));
-      await tx
+  await withDbTransaction(input.context.userId, async (db) => {
+    if (retryImport) {
+      await db.delete(importRows).where(eq(importRows.importId, importId));
+      await db
         .update(imports)
         .set({
           uploadedByUserId: input.context.userId,
@@ -516,8 +529,9 @@ export async function persistBankImport(input: {
           updatedAt: new Date(),
         })
         .where(eq(imports.id, importId));
-    });
-  } else {
+      return;
+    }
+
     await db.insert(imports).values({
       id: importId,
       workspaceId: input.context.workspaceId,
@@ -532,7 +546,7 @@ export async function persistBankImport(input: {
       importStatus: "processing",
       startedAt,
     });
-  }
+  });
 
   try {
     await writeImportFile({
@@ -547,7 +561,7 @@ export async function persistBankImport(input: {
       templateId: preview.parsed.templateId,
     });
 
-    await db.transaction(async (tx) => {
+    await withDbTransaction(input.context.userId, async (tx) => {
       if (stagingRows.length > 0) {
         await tx.insert(importRows).values(
           stagingRows.map((row) => ({
@@ -648,14 +662,16 @@ export async function persistBankImport(input: {
           ? cleanupError.message
           : "Import source file cleanup failed";
 
-      await db
-        .update(imports)
-        .set({
-          importStatus: "failed",
-          completedAt: new Date(),
-          errorSummary: cleanupMessage,
-        })
-        .where(eq(imports.id, importId));
+      await withDbTransaction(input.context.userId, (db) =>
+        db
+          .update(imports)
+          .set({
+            importStatus: "failed",
+            completedAt: new Date(),
+            errorSummary: cleanupMessage,
+          })
+          .where(eq(imports.id, importId)),
+      );
 
       throw cleanupError;
     }
@@ -671,14 +687,16 @@ export async function persistBankImport(input: {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Import persistence failed";
 
-    await db
-      .update(imports)
-      .set({
-        importStatus: "failed",
-        completedAt: new Date(),
-        errorSummary: message,
-      })
-      .where(eq(imports.id, importId));
+    await withDbTransaction(input.context.userId, (db) =>
+      db
+        .update(imports)
+        .set({
+          importStatus: "failed",
+          completedAt: new Date(),
+          errorSummary: message,
+        })
+        .where(eq(imports.id, importId)),
+    );
 
     throw error;
   }

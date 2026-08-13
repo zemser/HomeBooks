@@ -1,7 +1,7 @@
 import { ReviewQueueClient } from "@/components/expenses/review-queue-client";
 import { listReviewQueue } from "@/features/expenses/queries";
 import { parseReviewQuery } from "@/features/expenses/review-query";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
 type ReviewPageProps = {
   searchParams: Promise<{
@@ -17,8 +17,8 @@ export default async function ReviewPage({ searchParams }: ReviewPageProps) {
   });
   const query = parseReviewQuery(urlParams);
   const transactionId = query.transactionId ?? null;
-  const initialData = await withCurrentWorkspace((context) =>
-    listReviewQueue(context, query),
+  const initialData = await withCurrentWorkspaceDb((context, db) =>
+    listReviewQueue(context, query, db),
   );
 
   return (

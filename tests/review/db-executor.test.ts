@@ -20,6 +20,22 @@ const settingsPath = new URL(
   import.meta.url,
 );
 const homePath = new URL("../../src/features/home/service.ts", import.meta.url);
+const expensesQueriesPath = new URL(
+  "../../src/features/expenses/queries.ts",
+  import.meta.url,
+);
+const classificationsPath = new URL(
+  "../../src/features/expenses/classifications.ts",
+  import.meta.url,
+);
+const importPersistencePath = new URL(
+  "../../src/features/imports/persistence.ts",
+  import.meta.url,
+);
+const importsRoutePath = new URL(
+  "../../src/app/api/imports/route.ts",
+  import.meta.url,
+);
 
 test("transaction executor establishes RLS once and instruments its unit", async () => {
   const source = await readFile(dbPath, "utf8");
@@ -93,4 +109,41 @@ test("home and app-shell reads use the explicit transaction executor", async () 
     await readFile(new URL("../../src/app/api/imports/preview/route.ts", import.meta.url), "utf8"),
     /withCurrentWorkspaceDb\(\(context, db\)/,
   );
+});
+
+test("expense reads and classification commands use the explicit transaction executor", async () => {
+  const [queriesSource, classificationsSource, expensesPageSource, expensesApiSource, reviewPageSource] =
+    await Promise.all([
+      readFile(expensesQueriesPath, "utf8"),
+      readFile(classificationsPath, "utf8"),
+      readFile(new URL("../../src/app/(app)/expenses/page.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/api/expenses/route.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/(app)/imports/review/page.tsx", import.meta.url), "utf8"),
+    ]);
+
+  assert.match(queriesSource, /listExpenseTransactions\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(queriesSource, /listWorkspaceMembers\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(queriesSource, /listReviewQueue\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(classificationsSource, /upsertTransactionClassification\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(classificationsSource, /bulkClassifyTransactions\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(classificationsSource, /undoClassificationDecision\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(expensesPageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(expensesApiSource, /withCurrentWorkspaceDb\(async \(context, db\)/);
+  assert.match(reviewPageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+});
+
+test("import persistence keeps parsing and Storage work outside DB transactions", async () => {
+  const [persistenceSource, routeSource] = await Promise.all([
+    readFile(importPersistencePath, "utf8"),
+    readFile(importsRoutePath, "utf8"),
+  ]);
+
+  assert.match(persistenceSource, /withDbTransaction\(input\.context\.userId/);
+  assert.match(persistenceSource, /await writeImportFile\(/);
+  assert.match(persistenceSource, /await deleteImportFileAfterSuccessfulPersistence\(/);
+  assert.match(persistenceSource, /withDbTransaction\(input\.context\.userId, async \(tx\)/);
+  assert.match(persistenceSource, /syncTransactionExpenseEvents\([\s\S]*\btx,\s*\n?\s*\)/);
+  assert.match(routeSource, /resolveCurrentWorkspaceContext\(\)/);
+  assert.match(routeSource, /persistBankImport\(/);
+  assert.doesNotMatch(routeSource, /withCurrentWorkspace\(/);
 });

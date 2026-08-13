@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
-import { withCurrentWorkspace, withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb, resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { listSavedImports, persistBankImport } from "@/features/imports/persistence";
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
@@ -47,18 +47,17 @@ export async function POST(request: Request) {
       buffer: arrayBuffer,
       filename: file.name,
     });
-    const { result, savedImport } = await withCurrentWorkspace(async (context) => {
-      const result = await persistBankImport({
-        workbook,
-        originalFilename: file.name,
-        fileBuffer: Buffer.from(arrayBuffer),
-        context,
-      });
-      const savedImports = await listSavedImports(context, { type: "bank" });
-      const savedImport = savedImports.find((item) => item.id === result.importId) ?? null;
-
-      return { result, savedImport };
+    const context = await resolveCurrentWorkspaceContext();
+    const result = await persistBankImport({
+      workbook,
+      originalFilename: file.name,
+      fileBuffer: Buffer.from(arrayBuffer),
+      context,
     });
+    const savedImports = await withCurrentWorkspaceDb((currentContext, db) =>
+      listSavedImports(currentContext, { type: "bank" }, db),
+    );
+    const savedImport = savedImports.find((item) => item.id === result.importId) ?? null;
 
     // The import changes data rendered by the app shell, dashboard, imports
     // page, review queue, and ledger. Invalidate all of those server-rendered

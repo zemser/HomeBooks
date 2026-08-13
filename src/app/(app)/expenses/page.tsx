@@ -5,7 +5,7 @@ import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expens
 import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
 import { listWorkspaceCategories } from "@/features/workspaces/categories";
-import { withCurrentWorkspace } from "@/features/workspaces/current-context";
+import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
 type ExpensesPageProps = {
   searchParams: Promise<{
@@ -20,12 +20,12 @@ export default async function ExpensesPage({ searchParams }: ExpensesPageProps) 
   const transactionId =
     typeof params.transactionId === "string" ? params.transactionId : null;
   const [transactions, oneTimeManualEntries, members, categoryCatalog] =
-    await withCurrentWorkspace((context) =>
+    await withCurrentWorkspaceDb((context, db) =>
       Promise.all([
-        listExpenseTransactions(context),
+        listExpenseTransactions(context, db),
         listOneTimeManualEntries(context),
-        listWorkspaceMembers(context),
-        listWorkspaceCategories(context),
+        listWorkspaceMembers(context, db),
+        listWorkspaceCategories(context, db),
       ]),
     );
   const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
