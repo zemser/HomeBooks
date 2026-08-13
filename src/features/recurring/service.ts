@@ -8,6 +8,7 @@ import {
   recurringEntryVersions,
 } from "@/db/schema";
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
+import { amountStringToMicros } from "@/features/expenses/allocation-core";
 import type { ClassificationType } from "@/features/expenses/constants";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
@@ -85,6 +86,18 @@ type ExistingGeneratedManualEntryRow = {
   id: string;
   sourceId: string | null;
   eventDate: string;
+  eventKind: EventKind;
+  title: string;
+  originalCurrency: string;
+  originalAmount: string;
+  workspaceCurrency: string;
+  normalizedAmount: string;
+  normalizationRate: string | null;
+  normalizationRateSource: string | null;
+  payerMemberId: string | null;
+  classificationType: ClassificationType;
+  category: string | null;
+  categoryId: string | null;
 };
 
 type RecurringGeneratedRowSeed = {
@@ -107,6 +120,28 @@ type RecurringGeneratedRowSeed = {
 function normalizeOptionalText(value?: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function generatedManualEntryMatches(
+  existing: ExistingGeneratedManualEntryRow,
+  desired: RecurringGeneratedRowSeed,
+) {
+  return (
+    existing.sourceId === desired.sourceId &&
+    existing.eventDate === desired.eventDate &&
+    existing.eventKind === desired.eventKind &&
+    existing.title === desired.title &&
+    existing.originalCurrency === desired.originalCurrency &&
+    amountStringToMicros(existing.originalAmount) === amountStringToMicros(desired.originalAmount) &&
+    existing.workspaceCurrency === desired.workspaceCurrency &&
+    amountStringToMicros(existing.normalizedAmount) === amountStringToMicros(desired.normalizedAmount) &&
+    existing.normalizationRate === desired.normalizationRate &&
+    existing.normalizationRateSource === desired.normalizationRateSource &&
+    existing.payerMemberId === desired.payerMemberId &&
+    existing.classificationType === desired.classificationType &&
+    existing.category === desired.category &&
+    existing.categoryId === desired.categoryId
+  );
 }
 
 async function assertWorkspaceRecurringEntry(
@@ -426,6 +461,18 @@ export async function materializeRecurringEntriesForRange(
         id: manualEntries.id,
         sourceId: manualEntries.sourceId,
         eventDate: manualEntries.eventDate,
+        eventKind: manualEntries.eventKind,
+        title: manualEntries.title,
+        originalCurrency: manualEntries.originalCurrency,
+        originalAmount: manualEntries.originalAmount,
+        workspaceCurrency: manualEntries.workspaceCurrency,
+        normalizedAmount: manualEntries.normalizedAmount,
+        normalizationRate: manualEntries.normalizationRate,
+        normalizationRateSource: manualEntries.normalizationRateSource,
+        payerMemberId: manualEntries.payerMemberId,
+        classificationType: manualEntries.classificationType,
+        category: manualEntries.category,
+        categoryId: manualEntries.categoryId,
       })
       .from(manualEntries)
       .where(
@@ -460,6 +507,12 @@ export async function materializeRecurringEntriesForRange(
       const existingRow = existingByKey.get(key);
 
       if (existingRow) {
+        existingByKey.delete(key);
+
+        if (generatedManualEntryMatches(existingRow, row)) {
+          continue;
+        }
+
         await tx
           .update(manualEntries)
           .set({
@@ -479,7 +532,6 @@ export async function materializeRecurringEntriesForRange(
           })
           .where(eq(manualEntries.id, existingRow.id));
 
-        existingByKey.delete(key);
         affectedManualEntryIds.add(existingRow.id);
         updatedCount += 1;
         continue;

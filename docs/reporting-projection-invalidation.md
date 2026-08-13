@@ -40,3 +40,8 @@ transaction.
 Home and reporting page renders are projection consumers. They must not materialize recurring
 entries, synchronize expense events, update timestamps, or recreate allocations. Explicit mutation
 commands maintain projections; the repair command handles historical drift.
+
+An authenticated workspace member can run the idempotent repair with
+`POST /api/reporting/projections/repair`. The response reports the number of transaction and manual-entry
+source IDs examined. The command unions canonical IDs with existing projected IDs, so it creates
+missing projections and removes orphaned ones in the same RLS-scoped database transaction.

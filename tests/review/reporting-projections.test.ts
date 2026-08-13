@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+import { expenseAllocationsEqual } from "../../src/features/expenses/allocation-core";
+
 const repositoryFile = (path: string) => new URL(`../../${path}`, import.meta.url);
 
 test("reporting projection invalidation matrix covers every source mutation owner", async () => {
@@ -52,4 +54,98 @@ test("source mutation services maintain reporting projections with their transac
   assert.match(categories, /syncTransactionExpenseEvents\(context, transactionIds, tx\)/);
   assert.match(categories, /syncManualEntryExpenseEvents\(context, manualEntryIds, tx\)/);
   assert.match(allocations, /return db\.transaction\(async \(tx\) =>/);
+});
+
+test("allocation comparison treats equivalent stored amounts as unchanged", () => {
+  const stored = [
+    {
+      reportMonth: "2026-08-01",
+      allocatedAmount: "42.000000",
+      allocationMethod: "single_month" as const,
+      coverageStartDate: "2026-08-13",
+      coverageEndDate: "2026-08-13",
+    },
+  ];
+
+  assert.equal(
+    expenseAllocationsEqual(stored, [{ ...stored[0], allocatedAmount: "42" }]),
+    true,
+  );
+  assert.equal(
+    expenseAllocationsEqual(stored, [{ ...stored[0], allocatedAmount: "41.999999" }]),
+    false,
+  );
+  assert.equal(
+    expenseAllocationsEqual(stored, [{ ...stored[0], reportMonth: "2026-09-01" }]),
+    false,
+  );
+});
+
+test("projection synchronizers skip unchanged event, allocation, and recurring rows", async () => {
+  const [events, allocations, recurring] = await Promise.all([
+    readFile(repositoryFile("src/features/reporting/expense-events.ts"), "utf8"),
+    readFile(repositoryFile("src/features/expenses/allocation.ts"), "utf8"),
+    readFile(repositoryFile("src/features/recurring/service.ts"), "utf8"),
+  ]);
+
+  assert.match(events, /else if \(!expenseEventMatches\(primaryRow, row, nextReportingMode\)\)/);
+  assert.match(events, /!expenseAllocationsEqual\(primaryRow\.allocations, nextAllocations\)/);
+  assert.match(allocations, /expenseAllocationsEqual\(currentAllocations, allocations\)/);
+  assert.match(recurring, /if \(generatedManualEntryMatches\(existingRow, row\)\) \{\s*continue;/);
+});
+
+test("home and report rendering are read-only projection consumers", async () => {
+  const [home, homePage, reportService, reportsPage] = await Promise.all([
+    readFile(repositoryFile("src/features/home/service.ts"), "utf8"),
+    readFile(repositoryFile("src/app/(app)/page.tsx"), "utf8"),
+    readFile(repositoryFile("src/features/reporting/monthly-report.ts"), "utf8"),
+    readFile(repositoryFile("src/app/(app)/reports/page.tsx"), "utf8"),
+  ]);
+
+  assert.doesNotMatch(home, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
+  assert.doesNotMatch(reportService, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
+  assert.doesNotMatch(reportsPage, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
+  assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="This month" \/>\}>/);
+  assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="Recent activity" \/>\}>/);
+  assert.match(homePage, /getWorkspaceHomePrimarySnapshot/);
+});
+
+test("projection repair reconciles canonical and stale source IDs in the request transaction", async () => {
+  const [events, route] = await Promise.all([
+    readFile(repositoryFile("src/features/reporting/expense-events.ts"), "utf8"),
+    readFile(repositoryFile("src/app/api/reporting/projections/repair/route.ts"), "utf8"),
+  ]);
+
+  assert.match(events, /export async function repairExpenseEventProjections/);
+  assert.match(events, /\.filter\(\(row\) => row\.sourceType === "transaction"\)/);
+  assert.match(events, /row\.sourceType === "manual" \|\| row\.sourceType === "recurring"/);
+  assert.match(route, /withCurrentWorkspaceDb\(\(context, db\) =>/);
+  assert.match(route, /repairExpenseEventProjections\(context, db\)/);
+});
+
+test("import projection persistence preserves duplicate, rollback, and Storage boundaries", async () => {
+  const source = await readFile(
+    repositoryFile("src/features/imports/persistence.ts"),
+    "utf8",
+  );
+  const storageWrite = source.indexOf("await writeImportFile({");
+  const persistenceTransaction = source.indexOf(
+    "await withDbTransaction(input.context.userId, async (tx) =>",
+    storageWrite,
+  );
+  const projectionSync = source.indexOf("await syncTransactionExpenseEvents(", persistenceTransaction);
+  const importCompletion = source.indexOf('importStatus: "completed"', projectionSync);
+  const storageCleanup = source.indexOf(
+    "await deleteImportFileAfterSuccessfulPersistence(storagePath)",
+    importCompletion,
+  );
+
+  assert.ok(storageWrite >= 0);
+  assert.ok(persistenceTransaction > storageWrite);
+  assert.ok(projectionSync > persistenceTransaction);
+  assert.ok(importCompletion > projectionSync);
+  assert.ok(storageCleanup > importCompletion);
+  assert.match(source, /existingImport\.importStatus === "failed" && existingTransactionCount === 0/);
+  assert.match(source, /if \(duplicateCheck\?\.duplicate\) return duplicateCheck\.duplicate/);
+  assert.match(source, /catch \(error\) \{[\s\S]*importStatus: "failed"/);
 });

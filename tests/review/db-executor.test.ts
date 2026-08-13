@@ -121,7 +121,6 @@ test("home and app-shell reads use the explicit transaction executor", async () 
 
   assert.match(homeSource, /db: DbExecutor = getDb\(\)/);
   assert.match(homeSource, /listWorkspaceMembersForSettings\(context, db\)/);
-  assert.match(homeSource, /getWorkspaceSettingsSnapshot\(context, db\)/);
   assert.match(homeSource, /listSavedImports\(context, \{ type: "bank" \}, db\)/);
   assert.match(layoutSource, /withCurrentWorkspaceDb\(\(context, db\)/);
   assert.match(pageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
@@ -211,10 +210,11 @@ test("reporting reads and callers use the explicit transaction executor", async 
   assert.match(reportingSource, /getYearToDateReport\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(reportingSource, /getRollingTwelveReport\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(reportingSource, /getDashboardSnapshot\([\s\S]*db: DbExecutor = getDb\(\)/);
-  assert.match(reportingSource, /materializeRecurringEntriesForRange\([\s\S]*, db\)/);
-  assert.match(reportsPageSource, /withCurrentWorkspaceDb\(\s*async \(context, db\)/);
-  assert.match(reportsPageSource, /syncExpenseEventsForRange\([\s\S]*, db\)/);
-  assert.match(homeSource, /getDashboardSnapshot\([\s\S]*\}, db\)/);
+  assert.match(reportsPageSource, /withCurrentWorkspaceDb\(\s*\(context, db\)/);
+  assert.doesNotMatch(reportingSource, /materializeRecurringEntriesForRange/);
+  assert.doesNotMatch(reportsPageSource, /syncExpenseEventsForRange/);
+  assert.doesNotMatch(homeSource, /syncExpenseEventsForRange/);
+  assert.match(homeSource, /getMonthlyReport\([\s\S]*\}, db\)/);
 });
 
 test("shared settlement reads and commands use the explicit transaction executor", async () => {

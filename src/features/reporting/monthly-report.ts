@@ -10,7 +10,6 @@ import {
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
-import { materializeRecurringEntriesForRange } from "@/features/recurring/service";
 import {
   buildRollingTwelveWindow,
   buildYearToDateWindow,
@@ -570,11 +569,6 @@ export async function getMonthlyReport(
   const selectedMonth = normalizeMonthInput(input?.month);
   const reportingMode = normalizeReportingModeInput(input?.mode);
 
-  await materializeRecurringEntriesForRange(context, {
-    startMonth: selectedMonth,
-    endMonth: selectedMonth,
-  }, db);
-
   const [memberNames, allRecords] = await Promise.all([
     getMemberNames(context, db),
     listReportRecordsForRange(context, selectedMonth, selectedMonth, reportingMode, db),
@@ -633,11 +627,6 @@ export async function getYearToDateReport(
   const selectedMonthDate = new Date(`${selectedMonth}T00:00:00.000Z`);
   const window = buildYearToDateWindow(selectedMonthDate);
 
-  await materializeRecurringEntriesForRange(context, {
-    startMonth: window.periodStart,
-    endMonth: window.periodEnd,
-  }, db);
-
   const records = await listReportRecordsForRange(
     context,
     window.periodStart,
@@ -662,11 +651,6 @@ export async function getRollingTwelveReport(
   const reportingMode = normalizeReportingModeInput(input?.mode);
   const selectedMonthDate = new Date(`${selectedMonth}T00:00:00.000Z`);
   const window = buildRollingTwelveWindow(selectedMonthDate);
-
-  await materializeRecurringEntriesForRange(context, {
-    startMonth: window.periodStart,
-    endMonth: window.periodEnd,
-  }, db);
 
   const records = await listReportRecordsForRange(
     context,

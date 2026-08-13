@@ -11,7 +11,9 @@ import {
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
 import {
+  amountStringToMicros,
   buildSingleMonthAllocation,
+  expenseAllocationsEqual,
   rebuildStoredAllocations,
   type AllocationMethod,
 } from "@/features/expenses/allocation-core";
@@ -47,8 +49,14 @@ type ExistingExpenseEventRow = {
   id: string;
   sourceId: string;
   sourceType: ExpenseEventSourceType;
+  eventKind: ExpenseEventKind;
+  title: string;
   totalAmount: string;
+  workspaceCurrency: string;
+  classificationType: ClassificationType;
   payerMemberId: string | null;
+  category: string | null;
+  categoryId: string | null;
   reportingMode: "payment_date" | "allocated_period";
   splitMode: "equal" | "percentage" | "fixed" | null;
   allocations: ExistingExpenseAllocationRow[];
@@ -69,6 +77,16 @@ type MonthRangeInput = {
 
 function normalizeIds(ids: string[]) {
   return Array.from(new Set(ids));
+}
+
+function chunkIds(ids: string[], size = 500) {
+  const chunks: string[][] = [];
+
+  for (let index = 0; index < ids.length; index += size) {
+    chunks.push(ids.slice(index, index + size));
+  }
+
+  return chunks;
 }
 
 function eventRowKey(input: {
@@ -98,6 +116,28 @@ function classificationToEventKind(classificationType: ClassificationType): Expe
   return classificationType === "income" ? "income" : "expense";
 }
 
+function amountsEqual(left: string, right: string) {
+  return amountStringToMicros(left) === amountStringToMicros(right);
+}
+
+function expenseEventMatches(
+  existing: ExistingExpenseEventRow,
+  active: ActiveSourceRow,
+  reportingMode: ExistingExpenseEventRow["reportingMode"],
+) {
+  return (
+    existing.eventKind === active.eventKind &&
+    existing.title === active.title &&
+    amountsEqual(existing.totalAmount, active.totalAmount) &&
+    existing.workspaceCurrency === active.workspaceCurrency &&
+    existing.classificationType === active.classificationType &&
+    existing.payerMemberId === active.payerMemberId &&
+    existing.category === active.category &&
+    existing.categoryId === active.categoryId &&
+    existing.reportingMode === reportingMode
+  );
+}
+
 function manualEntryToEventSourceType(
   sourceType: "one_time_manual" | "recurring_generated",
 ): ExpenseEventSourceType {
@@ -121,6 +161,7 @@ async function applyExpenseEventSync(
   activeRows: ActiveSourceRow[],
   existingRows: ExistingExpenseEventRow[],
 ) {
+  const inputIdSet = new Set(inputIds);
   const groupedExistingRows = new Map<string, ExistingExpenseEventRow[]>();
 
   for (const row of existingRows) {
@@ -147,7 +188,7 @@ async function applyExpenseEventSync(
         row.eventKind === "expense" &&
         row.classificationType === "shared" &&
         primaryRow.splitMode === "fixed" &&
-        primaryRow.totalAmount !== row.totalAmount,
+        !amountsEqual(primaryRow.totalAmount, row.totalAmount),
     );
 
     if (!eventId) {
@@ -172,7 +213,7 @@ async function applyExpenseEventSync(
         });
 
       eventId = createdEvent.id;
-    } else {
+    } else if (!expenseEventMatches(primaryRow, row, nextReportingMode)) {
       await db
         .update(expenseEvents)
         .set({
@@ -212,21 +253,23 @@ async function applyExpenseEventSync(
           sourceDate: row.coverageStartDate ?? row.reportMonth,
         });
 
-    await db.delete(expenseAllocations).where(eq(expenseAllocations.expenseEventId, eventId));
-    await db.insert(expenseAllocations).values(
-      nextAllocations.map((allocation) => ({
-        expenseEventId: eventId,
-        reportMonth: allocation.reportMonth,
-        allocatedAmount: allocation.allocatedAmount,
-        allocationMethod: allocation.allocationMethod,
-        coverageStartDate: allocation.coverageStartDate,
-        coverageEndDate: allocation.coverageEndDate,
-      })),
-    );
+    if (!primaryRow || !expenseAllocationsEqual(primaryRow.allocations, nextAllocations)) {
+      await db.delete(expenseAllocations).where(eq(expenseAllocations.expenseEventId, eventId));
+      await db.insert(expenseAllocations).values(
+        nextAllocations.map((allocation) => ({
+          expenseEventId: eventId,
+          reportMonth: allocation.reportMonth,
+          allocatedAmount: allocation.allocatedAmount,
+          allocationMethod: allocation.allocationMethod,
+          coverageStartDate: allocation.coverageStartDate,
+          coverageEndDate: allocation.coverageEndDate,
+        })),
+      );
+    }
   }
 
   const staleEventIds = existingRows
-    .filter((row) => !activeKeys.has(eventRowKey(row)) && inputIds.includes(row.sourceId))
+    .filter((row) => !activeKeys.has(eventRowKey(row)) && inputIdSet.has(row.sourceId))
     .map((row) => row.id);
 
   await deleteEventIds(db, staleEventIds);
@@ -249,8 +292,14 @@ async function listExistingExpenseEvents(
       id: expenseEvents.id,
       sourceId: expenseEvents.sourceId,
       sourceType: expenseEvents.sourceType,
+      eventKind: expenseEvents.eventKind,
+      title: expenseEvents.title,
       totalAmount: expenseEvents.totalAmount,
+      workspaceCurrency: expenseEvents.workspaceCurrency,
+      classificationType: expenseEvents.classificationType,
       payerMemberId: expenseEvents.payerMemberId,
+      category: expenseEvents.category,
+      categoryId: expenseEvents.categoryId,
       reportingMode: expenseEvents.reportingMode,
     })
     .from(expenseEvents)
@@ -490,4 +539,52 @@ export async function syncExpenseEventsForRange(
       db,
     );
   });
+}
+
+export async function repairExpenseEventProjections(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
+) {
+  const [transactionRows, manualEntryRows, projectedRows] = await Promise.all([
+    db
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(eq(transactions.workspaceId, context.workspaceId)),
+    db
+      .select({ id: manualEntries.id })
+      .from(manualEntries)
+      .where(eq(manualEntries.workspaceId, context.workspaceId)),
+    db
+      .select({
+        sourceId: expenseEvents.sourceId,
+        sourceType: expenseEvents.sourceType,
+      })
+      .from(expenseEvents)
+      .where(eq(expenseEvents.workspaceId, context.workspaceId)),
+  ]);
+  const transactionIds = normalizeIds([
+    ...transactionRows.map((row) => row.id),
+    ...projectedRows
+      .filter((row) => row.sourceType === "transaction")
+      .map((row) => row.sourceId),
+  ]);
+  const manualEntryIds = normalizeIds([
+    ...manualEntryRows.map((row) => row.id),
+    ...projectedRows
+      .filter((row) => row.sourceType === "manual" || row.sourceType === "recurring")
+      .map((row) => row.sourceId),
+  ]);
+
+  for (const ids of chunkIds(transactionIds)) {
+    await syncTransactionExpenseEvents(context, ids, db);
+  }
+
+  for (const ids of chunkIds(manualEntryIds)) {
+    await syncManualEntryExpenseEvents(context, ids, db);
+  }
+
+  return {
+    transactionSourceCount: transactionIds.length,
+    manualEntrySourceCount: manualEntryIds.length,
+  };
 }
