@@ -7,6 +7,8 @@ import * as schema from "@/db/schema";
 import { getFinappAuthMode } from "@/lib/supabase/config";
 import {
   recordDatabaseUnit,
+  recordPoolAcquisition,
+  recordPoolWait,
   recordRlsSetup,
   recordSqlStatement,
   withTelemetrySpan,
@@ -99,12 +101,13 @@ function wrapClientForCurrentUser(client: PoolClient) {
 
 function createPool(connectionString: string) {
   const transactionPooler = usesTransactionPooler(connectionString);
+  const poolMax = getPoolMax();
   const nextPool = new Pool({
     connectionString,
     // Hosted Supabase session poolers have a small project-wide client limit.
     // Keep this configurable for deployments with a different connection budget,
     // but avoid pg's default of 10 connections per app process.
-    max: getPoolMax(),
+    max: poolMax,
     idleTimeoutMillis: 10_000,
     // A sleeping hosted database or a busy serverless function can take longer
     // than ten seconds to hand out a connection. Failing the whole app shell
@@ -115,10 +118,19 @@ function createPool(connectionString: string) {
   const originalConnect = nextPool.connect.bind(nextPool);
 
   nextPool.connect = (async () => {
+    const acquireStartedAt = performance.now();
     const client = await withTelemetrySpan<PoolClient>(
       "db.pool-acquire",
       () => originalConnect(),
+      {
+        poolMax,
+        poolTotalCount: nextPool.totalCount,
+        poolIdleCount: nextPool.idleCount,
+        poolWaitingCount: nextPool.waitingCount,
+      },
     );
+    recordPoolAcquisition();
+    recordPoolWait(Number((performance.now() - acquireStartedAt).toFixed(2)));
     recordDatabaseUnit();
     // Reset pooled connections before handing them to a request. This keeps
     // the preservation above safe when the previous request belonged to a

@@ -2,8 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  getFunctionRegion,
   recordAuthCall,
   recordDatabaseUnit,
+  recordPoolAcquisition,
+  recordPoolWait,
   recordReportingProjection,
   recordRlsSetup,
   recordSqlStatement,
@@ -21,6 +24,8 @@ test("successful telemetry records duration, counters, and spans without identif
     await withTelemetryOperation({ operation: "test.request", requestId: "request-test" }, async () => {
       recordAuthCall();
       recordDatabaseUnit();
+      recordPoolAcquisition();
+      recordPoolWait(1.25);
       recordSqlStatement();
       recordRlsSetup();
       recordWorkspaceLookup();
@@ -36,11 +41,15 @@ test("successful telemetry records duration, counters, and spans without identif
   assert.equal(log.requestId, "request-test");
   assert.equal(log.counts.authCalls, 1);
   assert.equal(log.counts.databaseUnits, 1);
+  assert.equal(log.counts.poolAcquisitions, 1);
+  assert.equal(log.counts.poolWaitMs, 1.25);
   assert.equal(log.counts.sqlStatements, 1);
   assert.equal(log.counts.rlsSetups, 1);
   assert.equal(log.counts.workspaceLookups, 1);
   assert.equal(log.counts.reportingProjections, 1);
   assert.equal(typeof log.durationMs, "number");
+  assert.equal(log.functionRegion, getFunctionRegion());
+  assert.equal(log.runtime, "nodejs");
   assert.equal(log.spans.some((span: { name: string }) => span.name === "test.stage"), true);
   assert.equal(JSON.stringify(log).includes("user@example.com"), false);
 });

@@ -17,6 +17,7 @@
     "test:e2e": "playwright test",
     "test:instant": "node scripts/run-instant-nav.mjs",
     "perf:benchmark": "tsx scripts/perf-benchmark.ts",
+    "perf:pool-benchmark": "tsx scripts/pool-benchmark.ts",
     "perf:check": "tsx scripts/check-performance-budgets.ts",
     "imports:cleanup-failed": "node scripts/cleanup-failed-import-files.mjs",
     "imports:setup-storage": "node scripts/setup-supabase-import-storage.mjs",
