@@ -1279,6 +1279,7 @@ export function ReviewQueueClient({
             onClose={() => setIsBulkModalOpen(false)}
             title="Classify selected"
             description={`Apply one classification to ${selectedIds.length} selected transactions.`}
+            allowContentOverflow
           >
             <div className="stack">
               <ClassificationTypePicker value={bulkForm.classificationType} onChange={(classificationType) => setBulkForm((current) => ({ ...current, classificationType }))} legend="Apply which treatment?" />

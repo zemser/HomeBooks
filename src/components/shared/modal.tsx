@@ -9,9 +9,18 @@ type ModalProps = {
   onClose: () => void;
   children: React.ReactNode;
   size?: "default" | "wide";
+  allowContentOverflow?: boolean;
 };
 
-export function Modal({ title, description, open, onClose, children, size = "default" }: ModalProps) {
+export function Modal({
+  title,
+  description,
+  open,
+  onClose,
+  children,
+  size = "default",
+  allowContentOverflow = false,
+}: ModalProps) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
@@ -25,7 +34,7 @@ export function Modal({ title, description, open, onClose, children, size = "def
 
   return (
     <dialog
-      className={`modal ${size === "wide" ? "modal-wide" : ""}`}
+      className={`modal ${size === "wide" ? "modal-wide" : ""} ${allowContentOverflow ? "modal-overflow-visible" : ""}`}
       ref={dialogRef}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
