@@ -9,10 +9,12 @@ import {
   emptyAllocationForm,
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
+import { ClassificationTypePicker } from "@/components/expenses/classification-type-picker";
 import { Modal } from "@/components/shared/modal";
 import { ImportSourceCell } from "@/components/shared/import-source-cell";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
+import { type ClassificationType } from "@/features/expenses/constants";
 import {
   formatAllocationSummary,
   formatClassificationSummary,
@@ -53,6 +55,17 @@ type AllocationMutationResponse = {
   error?: string;
 };
 
+type ClassificationFormState = {
+  classificationType: ClassificationType | "";
+  category: string;
+  categoryId: string;
+  memberOwnerId: string;
+};
+
+type ClassificationMutationResponse = {
+  error?: string;
+};
+
 type ManualEntryFormState = {
   title: string;
   eventKind: OneTimeManualEntryEventKind;
@@ -77,6 +90,13 @@ const EXPENSE_CLASSIFICATION_OPTIONS: OneTimeManualEntryClassificationType[] = [
   "personal",
 ];
 const INCOME_CLASSIFICATION_OPTIONS: OneTimeManualEntryClassificationType[] = ["income"];
+
+const emptyClassificationForm: ClassificationFormState = {
+  classificationType: "",
+  category: "",
+  categoryId: "",
+  memberOwnerId: "",
+};
 
 function todayDateInputValue() {
   const now = new Date();
@@ -169,6 +189,9 @@ export function ExpensesPageClient({
   const [isLoading, setIsLoading] = useState(false);
   const [isManualEntryModalOpen, setIsManualEntryModalOpen] = useState(false);
   const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
+  const [isClassificationModalOpen, setIsClassificationModalOpen] = useState(false);
+  const [classificationForm, setClassificationForm] =
+    useState<ClassificationFormState>(emptyClassificationForm);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -365,6 +388,19 @@ export function ExpensesPageClient({
   }, [selectedTransaction]);
 
   useEffect(() => {
+    setClassificationForm(
+      selectedTransaction?.classification
+        ? {
+            classificationType: selectedTransaction.classification.classificationType,
+            category: selectedTransaction.classification.category ?? "",
+            categoryId: selectedTransaction.classification.categoryId ?? "",
+            memberOwnerId: selectedTransaction.classification.memberOwnerId ?? "",
+          }
+        : emptyClassificationForm,
+    );
+  }, [selectedTransaction]);
+
+  useEffect(() => {
     if (
       selectedTransactionId &&
       !visibleTransactions.some((transaction) => transaction.id === selectedTransactionId)
@@ -385,6 +421,23 @@ export function ExpensesPageClient({
   function openAllocationEditor(transactionId: string) {
     setSelectedTransactionId(transactionId);
     setIsAllocationModalOpen(true);
+  }
+
+  function openClassificationEditor(transactionId: string) {
+    setSelectedTransactionId(transactionId);
+    setIsClassificationModalOpen(true);
+  }
+
+  function changeClassificationType(classificationType: ClassificationType) {
+    setClassificationForm((current) => ({
+      ...current,
+      classificationType,
+      category: ["transfer", "ignore"].includes(classificationType) ? "" : current.category,
+      categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
+      memberOwnerId: ["personal", "shared"].includes(classificationType)
+        ? current.memberOwnerId
+        : "",
+    }));
   }
 
   function clearLedgerFilters() {
@@ -537,6 +590,50 @@ export function ExpensesPageClient({
       return true;
     } catch {
       setError("Could not save this allocation.");
+      return false;
+    }
+  }
+
+  async function submitClassificationUpdate(): Promise<boolean> {
+    if (!selectedTransaction || !classificationForm.classificationType) {
+      setError("Choose a classification before saving.");
+      return false;
+    }
+
+    if (classificationForm.classificationType === "personal" && !classificationForm.memberOwnerId) {
+      setError("Choose whose personal expense this is before saving.");
+      return false;
+    }
+
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/transaction-classifications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          transactionId: selectedTransaction.id,
+          classificationType: classificationForm.classificationType,
+          category: classificationForm.category || null,
+          categoryId: classificationForm.categoryId || null,
+          memberOwnerId: classificationForm.memberOwnerId || null,
+          createRule: false,
+          additionalTransactionIds: [],
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as ClassificationMutationResponse;
+
+      if (!response.ok) {
+      setError(payload.error ?? "Could not save this classification.");
+        return false;
+      }
+
+      await loadExpenses({ transactionId: selectedTransaction.id });
+      setMessage("Classification saved.");
+      return true;
+    } catch {
+      setError("Could not save this classification.");
       return false;
     }
   }
@@ -1167,12 +1264,13 @@ export function ExpensesPageClient({
                               ? "Adjusting period"
                               : "Adjust period"}
                           </button>
-                          <Link
+                          <button
                             className="link-button"
-                            href={`/imports/review?transactionId=${transaction.id}`}
+                            type="button"
+                            onClick={() => openClassificationEditor(transaction.id)}
                           >
-                            {transaction.classification ? "Edit decision" : "Classify"}
-                          </Link>
+                            {transaction.classification ? "Edit classification" : "Classify"}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1184,6 +1282,92 @@ export function ExpensesPageClient({
         ) : null}
 
       </article>
+
+      <Modal
+        open={isClassificationModalOpen}
+        onClose={() => setIsClassificationModalOpen(false)}
+        size="wide"
+        title={selectedTransaction?.classification ? "Edit classification" : "Classify transaction"}
+        description="Update how this transaction should be treated in the household ledger."
+      >
+        {selectedTransaction ? (
+          <div className="stack compact">
+            <div className="transaction-modal-summary">
+              <strong>{getTransactionMerchant(selectedTransaction)}</strong>
+              <span className="table-note">
+                {selectedTransaction.transactionDate} · {formatMoneyDisplay(
+                  selectedTransaction.normalizedAmount,
+                  selectedTransaction.workspaceCurrency,
+                  selectedTransaction.direction,
+                )}
+              </span>
+            </div>
+
+            <ClassificationTypePicker
+              value={classificationForm.classificationType}
+              onChange={changeClassificationType}
+            />
+
+            {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(
+              classificationForm.classificationType,
+            ) ? (
+              <label className="field">
+                <span>Category</span>
+                <CategorySelect
+                  categories={categoryCatalog}
+                  categoryId={classificationForm.categoryId}
+                  categoryName={classificationForm.category}
+                  onChange={(categoryId, category) =>
+                    setClassificationForm((current) => ({ ...current, category, categoryId }))
+                  }
+                  blankLabel="Uncategorized"
+                />
+              </label>
+            ) : null}
+
+            {["personal", "shared"].includes(classificationForm.classificationType) ? (
+              <label className="field">
+                <span>
+                  {classificationForm.classificationType === "shared"
+                    ? "Paid by"
+                    : "Whose personal expense?"}
+                </span>
+                <select
+                  className="input"
+                  value={classificationForm.memberOwnerId}
+                  onChange={(event) =>
+                    setClassificationForm((current) => ({
+                      ...current,
+                      memberOwnerId: event.target.value,
+                    }))
+                  }
+                >
+                  <option value="">Unassigned</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+
+            <div className="action-row">
+              <button
+                className="button"
+                type="button"
+                onClick={() =>
+                  void submitClassificationUpdate().then((saved) => {
+                    if (saved) setIsClassificationModalOpen(false);
+                  })
+                }
+              >
+                Save classification
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
 
       <Modal
         open={isAllocationModalOpen}
