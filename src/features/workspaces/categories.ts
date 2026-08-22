@@ -137,6 +137,7 @@ export async function assertWorkspaceCategory(
       and(
         eq(workspaceCategories.workspaceId, context.workspaceId),
         eq(workspaceCategories.canonicalName, canonicalName),
+        eq(workspaceCategories.active, true),
       ),
     )
     .then((rows) => rows[0] ?? null);
@@ -164,6 +165,7 @@ export async function resolveWorkspaceCategory(
     .where(
       and(
         eq(workspaceCategories.workspaceId, context.workspaceId),
+        eq(workspaceCategories.active, true),
         categoryId
           ? eq(workspaceCategories.id, categoryId)
           : eq(workspaceCategories.canonicalName, canonicalName!),
