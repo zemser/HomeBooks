@@ -5,6 +5,8 @@ dist
 .env
 .env.local
 .env.supbase
+.env.supbase*
+.env.supabase*
 .env.*.local
 coverage
 output/playwright/
@@ -15,3 +17,8 @@ data/
 .idea/
 .vscode/
 examples/
+output/
+
+# Local Codex skills
+.agents/skills/
+skills-lock.json
