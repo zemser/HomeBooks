@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
-import { updateWorkspaceCategory } from "@/features/workspaces/categories";
+import {
+  deleteWorkspaceCategory,
+  updateWorkspaceCategory,
+} from "@/features/workspaces/categories";
 import { errorResponse } from "@/lib/logging/server";
 
 
@@ -44,6 +47,26 @@ export async function PATCH(request: Request, { params }: RouteProps) {
       message: "Failed to update workspace category",
       clientMessage:
         error instanceof Error ? error.message : "Failed to update workspace category.",
+    });
+  }
+}
+
+export async function DELETE(request: Request, { params }: RouteProps) {
+  try {
+    const { categoryId } = await params;
+    const category = await withCurrentWorkspaceDb((context, db) =>
+      deleteWorkspaceCategory(context, categoryId, db),
+    );
+
+    return NextResponse.json(category);
+  } catch (error) {
+    return errorResponse({
+      error,
+      request,
+      route: "/api/workspace-categories/[categoryId]",
+      message: "Failed to delete workspace category",
+      clientMessage:
+        error instanceof Error ? error.message : "Failed to delete workspace category.",
     });
   }
 }

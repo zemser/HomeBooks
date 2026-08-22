@@ -207,6 +207,31 @@ export function SettingsPageClient({
     setMessage("Workspace category updated.");
   }
 
+  async function handleDeleteCategory(categoryId: string, name: string) {
+    if (!window.confirm(`Remove the category “${name}”? Existing records will keep their category history.`)) {
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+    setPendingCategoryId(categoryId);
+
+    const response = await fetch(`/api/workspace-categories/${categoryId}`, {
+      method: "DELETE",
+    });
+    const payload = (await response.json().catch(() => ({}))) as WorkspaceCategoryMutationResponse;
+
+    setPendingCategoryId(null);
+
+    if (!response.ok) {
+      setError(payload.error ?? "Could not delete workspace category.");
+      return;
+    }
+
+    await loadCategories();
+    setMessage("Workspace category removed.");
+  }
+
   async function handleUpdateMember(
     memberId: string,
     input: { displayName?: string; isActive?: boolean; role?: WorkspaceMemberRole },
@@ -473,19 +498,32 @@ export function SettingsPageClient({
                               </button>
                             </>
                           ) : (
-                            <button
-                              className="link-button"
-                              type="button"
-                              onClick={() => {
-                                setDraftCategoryNames((current) => ({
-                                  ...current,
-                                  [category.id]: category.name,
-                                }));
-                                setEditingCategoryId(category.id);
-                              }}
-                            >
-                              Edit
-                            </button>
+                            <>
+                              <button
+                                className="link-button"
+                                type="button"
+                                disabled={pendingCategoryId === category.id}
+                                onClick={() => {
+                                  setDraftCategoryNames((current) => ({
+                                    ...current,
+                                    [category.id]: category.name,
+                                  }));
+                                  setEditingCategoryId(category.id);
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="button button-danger"
+                                type="button"
+                                disabled={pendingCategoryId === category.id}
+                                onClick={() => {
+                                  void handleDeleteCategory(category.id, category.name);
+                                }}
+                              >
+                                {pendingCategoryId === category.id ? "Removing..." : "Delete"}
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>

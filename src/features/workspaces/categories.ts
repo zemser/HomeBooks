@@ -216,6 +216,7 @@ export async function createWorkspaceCategory(
     .select({
       id: workspaceCategories.id,
       name: workspaceCategories.name,
+      active: workspaceCategories.active,
     })
     .from(workspaceCategories)
     .where(
@@ -230,7 +231,23 @@ export async function createWorkspaceCategory(
     throw new Error("Could not save the workspace category.");
   }
 
-  return existingCategory;
+  if (!existingCategory.active) {
+    const [reactivatedCategory] = await db
+      .update(workspaceCategories)
+      .set({
+        active: true,
+        updatedAt: now,
+      })
+      .where(eq(workspaceCategories.id, existingCategory.id))
+      .returning({
+        id: workspaceCategories.id,
+        name: workspaceCategories.name,
+      });
+
+    return reactivatedCategory ?? existingCategory;
+  }
+
+  return { id: existingCategory.id, name: existingCategory.name };
 }
 
 export async function updateWorkspaceCategory(
@@ -431,4 +448,34 @@ export async function updateWorkspaceCategory(
 
     return updatedCategory;
   });
+}
+
+export async function deleteWorkspaceCategory(
+  context: CurrentWorkspaceContext,
+  categoryId: string,
+  db: DbExecutor = getDb(),
+) {
+  const [deletedCategory] = await db
+    .update(workspaceCategories)
+    .set({
+      active: false,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(workspaceCategories.id, categoryId),
+        eq(workspaceCategories.workspaceId, context.workspaceId),
+        eq(workspaceCategories.active, true),
+      ),
+    )
+    .returning({
+      id: workspaceCategories.id,
+      name: workspaceCategories.name,
+    });
+
+  if (!deletedCategory) {
+    throw new Error("Workspace category was not found.");
+  }
+
+  return deletedCategory;
 }
