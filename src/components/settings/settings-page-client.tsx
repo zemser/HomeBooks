@@ -100,7 +100,7 @@ export function SettingsPageClient({
     setError(null);
 
     try {
-      const response = await fetch("/api/workspace-categories");
+      const response = await fetch("/api/workspace-categories", { cache: "no-store" });
       const payload = (await response.json()) as WorkspaceCategoriesResponse;
 
       if (!response.ok) {
@@ -216,20 +216,33 @@ export function SettingsPageClient({
     setMessage(null);
     setPendingCategoryId(categoryId);
 
-    const response = await fetch(`/api/workspace-categories/${categoryId}`, {
-      method: "DELETE",
-    });
-    const payload = (await response.json().catch(() => ({}))) as WorkspaceCategoryMutationResponse;
+    try {
+      const response = await fetch(`/api/workspace-categories/${categoryId}`, {
+        method: "DELETE",
+      });
+      const payload = (await response.json().catch(() => ({}))) as WorkspaceCategoryMutationResponse;
 
-    setPendingCategoryId(null);
+      if (!response.ok) {
+        setError(payload.error ?? "Could not delete workspace category.");
+        return;
+      }
 
-    if (!response.ok) {
-      setError(payload.error ?? "Could not delete workspace category.");
-      return;
+      setCategories((current) => current.filter((category) => category.id !== categoryId));
+      setDraftCategoryNames((current) => {
+        const next = { ...current };
+        delete next[categoryId];
+        return next;
+      });
+      setMessage("Workspace category removed.");
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Could not delete workspace category.",
+      );
+    } finally {
+      setPendingCategoryId(null);
     }
-
-    await loadCategories();
-    setMessage("Workspace category removed.");
   }
 
   async function handleUpdateMember(
@@ -514,14 +527,22 @@ export function SettingsPageClient({
                                 Edit
                               </button>
                               <button
-                                className="button button-danger"
+                                className="category-delete-button"
                                 type="button"
                                 disabled={pendingCategoryId === category.id}
+                                aria-label={`Delete ${category.name} category`}
+                                title={`Delete ${category.name} category`}
                                 onClick={() => {
                                   void handleDeleteCategory(category.id, category.name);
                                 }}
                               >
-                                {pendingCategoryId === category.id ? "Removing..." : "Delete"}
+                                {pendingCategoryId === category.id ? (
+                                  <span aria-hidden="true">…</span>
+                                ) : (
+                                  <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                                    <path d="M9 4h6m-8 3h10m-9 0 .6 12h6.8L16 7M10 10v6m4-6v6" />
+                                  </svg>
+                                )}
                               </button>
                             </>
                           )}

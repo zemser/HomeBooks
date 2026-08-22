@@ -1025,6 +1025,40 @@ select.input:focus {
   white-space: nowrap;
 }
 
+.category-delete-button {
+  display: inline-grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0.65rem;
+  background: transparent;
+  color: #a24b40;
+  cursor: pointer;
+}
+
+.category-delete-button svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.category-delete-button:hover,
+.category-delete-button:focus-visible {
+  border-color: #efc5c0;
+  background: #fff8f6;
+}
+
+.category-delete-button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
 .composition-list {
   display: grid;
   gap: 1rem;
