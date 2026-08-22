@@ -56,7 +56,7 @@ export function formatDecisionSourceLabel(value: "rule" | "user" | "system_defau
     case "rule":
       return "Rule";
     case "user":
-      return "Manual";
+      return "Reviewed";
     default:
       return "System";
   }
