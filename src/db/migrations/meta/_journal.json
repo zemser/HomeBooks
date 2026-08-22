@@ -71,6 +71,13 @@
       "when": 1785600948038,
       "tag": "0009_elite_kat_farrell",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787392800000,
+      "tag": "0010_harden_jobs_and_current_user_security",
+      "breakpoints": true
     }
   ]
 }
