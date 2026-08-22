@@ -820,6 +820,10 @@ select.input:focus {
   box-shadow: 0 24px 80px rgba(31, 42, 31, 0.24);
 }
 
+.modal-overflow-visible {
+  overflow: visible;
+}
+
 .modal::backdrop {
   background: rgba(31, 42, 31, 0.32);
 }
