@@ -17,6 +17,7 @@ export type ExpenseTransactionItem = {
   id: string;
   accountId: string;
   importId: string;
+  importerMemberId: string | null;
   transactionDate: string;
   bookingDate: string | null;
   description: string;

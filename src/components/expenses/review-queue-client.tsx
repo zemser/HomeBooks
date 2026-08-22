@@ -531,7 +531,10 @@ export function ReviewQueueClient({
       classificationType: selectedTransaction.classification?.classificationType ?? "",
       category: selectedTransaction.classification?.category ?? "",
       categoryId: selectedTransaction.classification?.categoryId ?? "",
-      memberOwnerId: selectedTransaction.classification?.memberOwnerId ?? "",
+      memberOwnerId:
+        selectedTransaction.classification?.memberOwnerId ??
+        selectedTransaction.importerMemberId ??
+        "",
       createRule: false,
       applyToSimilar: false,
     });

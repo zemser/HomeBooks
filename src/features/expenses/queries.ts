@@ -48,6 +48,7 @@ type RawTransactionRow = {
   accountDisplayName: string;
   importSourceName: string | null;
   importOriginalFilename: string;
+  importUploadedByUserId: string;
   classificationType:
     | "personal"
     | "shared"
@@ -86,6 +87,29 @@ async function listMemberNamesById(memberIds: string[], db: DbExecutor) {
   );
 }
 
+async function listMemberIdsByUserId(
+  context: CurrentWorkspaceContext,
+  userIds: string[],
+  db: DbExecutor,
+) {
+  if (userIds.length === 0) {
+    return new Map<string, string>();
+  }
+
+  const members = await db
+    .select({ userId: workspaceMembers.userId, memberId: workspaceMembers.id })
+    .from(workspaceMembers)
+    .where(
+      and(
+        eq(workspaceMembers.workspaceId, context.workspaceId),
+        eq(workspaceMembers.isActive, true),
+        inArray(workspaceMembers.userId, userIds),
+      ),
+    );
+
+  return new Map(members.map((member) => [member.userId, member.memberId]));
+}
+
 async function mapTransactionRows(
   context: CurrentWorkspaceContext,
   rows: RawTransactionRow[],
@@ -99,6 +123,11 @@ async function mapTransactionRows(
     ),
   );
   const memberNamesById = await listMemberNamesById(memberIds, db);
+  const importerMemberIdsByUserId = await listMemberIdsByUserId(
+    context,
+    Array.from(new Set(rows.map((row) => row.importUploadedByUserId))),
+    db,
+  );
   const allocationStatesByTransactionId = await listTransactionAllocationStates(
     context,
     rows.map((row) => row.id),
@@ -109,6 +138,7 @@ async function mapTransactionRows(
     id: row.id,
     accountId: row.accountId,
     importId: row.importId,
+    importerMemberId: importerMemberIdsByUserId.get(row.importUploadedByUserId) ?? null,
     transactionDate: row.transactionDate,
     bookingDate: row.bookingDate,
     description: row.description,
@@ -181,6 +211,7 @@ async function listTransactionsByWorkspace(input: {
       accountDisplayName: financialAccounts.displayName,
       importSourceName: importSources.name,
       importOriginalFilename: imports.originalFilename,
+      importUploadedByUserId: imports.uploadedByUserId,
       classificationType: transactionClassifications.classificationType,
       category: transactionClassifications.category,
       categoryId: transactionClassifications.categoryId,

@@ -18,6 +18,7 @@ function transaction(
     id,
     accountId: "account-1",
     importId: "import-1",
+    importerMemberId: null,
     transactionDate: "2026-06-01",
     bookingDate: null,
     description: `Description ${id}`,
