@@ -4,7 +4,6 @@ import { Suspense } from "react";
 import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { ExpensesPageClient } from "@/components/expenses/expenses-page-client";
 import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expenses/queries";
-import { formatReportMonthLabel } from "@/features/reporting/presentation";
 import { listOneTimeManualEntries } from "@/features/manual-entries/service";
 import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
@@ -30,13 +29,6 @@ async function ExpenseLedger({ searchParams }: ExpensesPageProps) {
       ]),
     );
   const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
-  const latestTransactionMonth = transactions[0]?.transactionDate.slice(0, 7) ?? null;
-  const reportHref = latestTransactionMonth
-    ? `/reports?month=${latestTransactionMonth}`
-    : "/reports";
-  const reportLabel = latestTransactionMonth
-    ? `Open ${formatReportMonthLabel(`${latestTransactionMonth}-01`)} report`
-    : "Open reports";
 
   return (
     <div className="stack" data-testid="expenses-content">
@@ -54,9 +46,7 @@ async function ExpenseLedger({ searchParams }: ExpensesPageProps) {
                   ? `Review ${reviewCount} left`
                   : "Open review queue"}
               </Link>
-              <Link className="button" href={reportHref}>
-                {reportLabel}
-              </Link>
+              <Link className="button" href="/reports">Open reports</Link>
             </div>
           </div>
         </section>

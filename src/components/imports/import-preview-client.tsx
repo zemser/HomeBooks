@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
+import { ImportSourceCell } from "@/components/shared/import-source-cell";
 
 type PreviewTransaction = {
   transactionDate: string;
@@ -614,10 +615,12 @@ export function ImportPreviewClient({
                 {savedImportList.map((savedImport) => (
                   <tr key={savedImport.id}>
                     <td>
-                      <strong>{savedImport.originalFilename}</strong>
-                      <div className="table-note">
-                        {savedImport.sourceName ?? "Unknown source"} · {formatTemplateName(savedImport.templateName)}
-                      </div>
+                      <ImportSourceCell
+                        sourceName={savedImport.sourceName}
+                        filename={savedImport.originalFilename}
+                        filenameFirst
+                      />
+                      <div className="table-note">{formatTemplateName(savedImport.templateName)}</div>
                       <span className="badge badge-neutral">Imported</span>
                     </td>
                     <td>{formatImportActivityRange(savedImport)}</td>

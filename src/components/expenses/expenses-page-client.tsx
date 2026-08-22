@@ -10,10 +10,10 @@ import {
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
 import { Modal } from "@/components/shared/modal";
+import { ImportSourceCell } from "@/components/shared/import-source-cell";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import {
-  buildTransactionReportTargets,
   formatAllocationSummary,
   formatClassificationSummary,
   formatDecisionSourceLabel,
@@ -168,6 +168,7 @@ export function ExpensesPageClient({
   const [importFilter, setImportFilter] = useState("all");
   const [isLoading, setIsLoading] = useState(false);
   const [isManualEntryModalOpen, setIsManualEntryModalOpen] = useState(false);
+  const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
@@ -334,29 +335,6 @@ export function ExpensesPageClient({
     reviewStatusFilter !== "all" ||
     monthFilter !== "all" ||
     importFilter !== "all";
-  const selectedTransactionCurrencyState = selectedTransaction
-    ? getCurrencyNormalizationDisplayState(selectedTransaction)
-    : null;
-  const selectedTransactionReportTargets = selectedTransaction
-    ? buildTransactionReportTargets(selectedTransaction)
-    : [];
-  const selectedTransactionPrimaryReportTarget = selectedTransactionReportTargets[0] ?? null;
-  const preferredReportMonth =
-    (selectedTransaction ? transactionMonth(selectedTransaction.transactionDate) : null) ??
-    (monthFilter !== "all" ? monthFilter : null) ??
-    (visibleTransactions[0]
-      ? transactionMonth(visibleTransactions[0].transactionDate)
-      : null) ??
-    (transactions[0] ? transactionMonth(transactions[0].transactionDate) : null);
-  const reportHref =
-    selectedTransactionPrimaryReportTarget?.href ??
-    (preferredReportMonth ? `/reports?month=${preferredReportMonth}` : "/reports");
-  const reportLabel =
-    selectedTransactionPrimaryReportTarget?.label ??
-    (preferredReportMonth
-      ? `Open ${formatLedgerMonthLabel(preferredReportMonth)} report`
-      : "Open reports");
-
   useEffect(() => {
     setManualEntryForm(
       selectedManualEntry
@@ -402,6 +380,11 @@ export function ExpensesPageClient({
     setError(null);
     setMessage(null);
     setIsManualEntryModalOpen(true);
+  }
+
+  function openAllocationEditor(transactionId: string) {
+    setSelectedTransactionId(transactionId);
+    setIsAllocationModalOpen(true);
   }
 
   function clearLedgerFilters() {
@@ -502,7 +485,7 @@ export function ExpensesPageClient({
     sourceId: string;
     sourceType: "transaction" | "manual";
     form: AllocationFormState;
-  }) {
+  }): Promise<boolean> {
     setError(null);
     setMessage(null);
 
@@ -541,7 +524,7 @@ export function ExpensesPageClient({
 
       if (!response.ok) {
         setError(payload.error ?? "Could not save this allocation.");
-        return;
+        return false;
       }
 
       await loadExpenses({
@@ -551,8 +534,10 @@ export function ExpensesPageClient({
           input.sourceType === "transaction" ? input.sourceId : selectedTransactionId,
       });
       setMessage(allocationSuccessMessage(input.form));
+      return true;
     } catch {
       setError("Could not save this allocation.");
+      return false;
     }
   }
 
@@ -590,13 +575,10 @@ export function ExpensesPageClient({
           <span className="badge badge-neutral">Queue clear</span>
           <h3>Imported transactions no longer need review.</h3>
           <p>
-            The ledger is now the place to spot-check allocations and jump into the matching
-            report month without the queue getting in the way.
+            The ledger is now the place to spot-check transactions and reporting periods.
           </p>
           <div className="action-row">
-            <Link className="button" href={reportHref}>
-              {reportLabel}
-            </Link>
+            <Link className="button" href="/reports">Open reports</Link>
           </div>
         </div>
       ) : null}
@@ -968,16 +950,14 @@ export function ExpensesPageClient({
             <h2>Imported transactions</h2>
             <p className="muted-text">
               Classification still lives in the review queue, but reportable transactions
-              can have their allocation corrected here without leaving `/expenses`.
+              can have their reporting period adjusted here without leaving `/expenses`.
             </p>
           </div>
           <div className="action-row">
             <Link className="button button-secondary" href="/imports/review">
               {reviewCount > 0 ? `Review ${reviewCount} left` : "Open review queue"}
             </Link>
-            <Link className="button" href={reportHref}>
-              {reportLabel}
-            </Link>
+            <Link className="button" href="/reports">Open reports</Link>
           </div>
         </div>
 
@@ -1076,9 +1056,9 @@ export function ExpensesPageClient({
                   <th>Settlement</th>
                   <th>Normalized</th>
                   <th>Account</th>
-                  <th>Import source</th>
+                  <th>Import</th>
                   <th>Classification</th>
-                  <th>Allocation</th>
+                  <th>Reporting period</th>
                   <th />
                 </tr>
               </thead>
@@ -1097,7 +1077,9 @@ export function ExpensesPageClient({
                       <td>{transaction.transactionDate}</td>
                       <td>
                         <strong>{getTransactionMerchant(transaction)}</strong>
-                        <div className="table-note">{transaction.description}</div>
+                        {transaction.description.trim() !== getTransactionMerchant(transaction).trim() ? (
+                          <div className="table-note">{transaction.description}</div>
+                        ) : null}
                       </td>
                       <td>
                         {formatMoneyDisplay(
@@ -1135,10 +1117,19 @@ export function ExpensesPageClient({
                           ) : null}
                         </div>
                       </td>
-                      <td>{transaction.accountDisplayName}</td>
                       <td>
-                        <strong>{transaction.importSourceName ?? "Unknown source"}</strong>
-                        <div className="table-note">{transaction.importOriginalFilename}</div>
+                        <span
+                          className="table-primary-text"
+                          title={transaction.accountDisplayName}
+                        >
+                          {transaction.accountDisplayName}
+                        </span>
+                      </td>
+                      <td>
+                        <ImportSourceCell
+                          sourceName={transaction.importSourceName}
+                          filename={transaction.importOriginalFilename}
+                        />
                       </td>
                       <td>
                         <span
@@ -1170,17 +1161,17 @@ export function ExpensesPageClient({
                           <button
                             className="link-button"
                             type="button"
-                            onClick={() => setSelectedTransactionId(transaction.id)}
+                            onClick={() => openAllocationEditor(transaction.id)}
                           >
                             {selectedTransactionId === transaction.id
-                              ? "Editing allocation"
-                              : "Edit allocation"}
+                              ? "Adjusting period"
+                              : "Adjust period"}
                           </button>
                           <Link
                             className="link-button"
                             href={`/imports/review?transactionId=${transaction.id}`}
                           >
-                            Review
+                            {transaction.classification ? "Edit decision" : "Classify"}
                           </Link>
                         </div>
                       </td>
@@ -1192,84 +1183,57 @@ export function ExpensesPageClient({
           </div>
         ) : null}
 
-        <div className="card stack compact">
-          <div>
-            <h3>Adjusted-period allocation</h3>
-            <p className="muted-text">
-              Select a transaction above to tune which reporting months it lands in.
-            </p>
-          </div>
-
-          {!selectedTransaction ? (
-            <p className="helper-text">
-              Pick a visible transaction row to edit its allocation here.
-            </p>
-          ) : (
-            <div className="stack compact">
-              {selectedTransactionCurrencyState?.label ? (
-                <div className="stack compact">
-                  <span
-                    className={`badge ${
-                      selectedTransactionCurrencyState.tone === "warning"
-                        ? "badge-warning"
-                        : "badge-neutral"
-                    }`}
-                  >
-                    {selectedTransactionCurrencyState.label}
-                  </span>
-                  {selectedTransactionCurrencyState.fullDescription ? (
-                    <p className="helper-text">
-                      {selectedTransactionCurrencyState.fullDescription}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-              {selectedTransactionReportTargets.length > 0 ? (
-                <div className="stack compact">
-                  <p className="helper-text">
-                    {selectedTransactionReportTargets.length === 1
-                      ? "This row is already lined up with its matching report."
-                      : "This adjusted row lands in multiple report months."}
-                  </p>
-                  <div className="action-row">
-                    {selectedTransactionReportTargets.map((target) => (
-                      <Link className="link-button" href={target.href} key={target.href}>
-                        {target.label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          )}
-
-          {!selectedTransaction ? null : !transactionAllocationEditable ? (
-            <p className="helper-text">
-              Save a reportable classification in the review queue before editing this
-              transaction&apos;s allocation.
-            </p>
-          ) : (
-            <AllocationEditor
-              currency={selectedTransaction.workspaceCurrency}
-              direction={selectedTransaction.direction}
-              form={transactionAllocationForm}
-              isSaving={isSavingTransactionAllocation}
-              onSave={() =>
-                startSavingTransactionAllocation(() =>
-                  void submitAllocationUpdate({
-                    sourceId: selectedTransaction.id,
-                    sourceType: "transaction",
-                    form: transactionAllocationForm,
-                  }),
-                )
-              }
-              setForm={setTransactionAllocationForm}
-              sourceDate={selectedTransaction.transactionDate}
-              totalAmount={selectedTransaction.normalizedAmount}
-            />
-          )}
-        </div>
       </article>
+
+      <Modal
+        open={isAllocationModalOpen}
+        onClose={() => setIsAllocationModalOpen(false)}
+        size="wide"
+        title="Adjust reporting period"
+        description="Choose how this transaction should appear in monthly reports."
+      >
+        {selectedTransaction ? (
+          <div className="stack compact">
+            <div className="transaction-modal-summary">
+              <strong>{getTransactionMerchant(selectedTransaction)}</strong>
+              <span className="table-note">
+                {selectedTransaction.transactionDate} · {formatMoneyDisplay(
+                  selectedTransaction.normalizedAmount,
+                  selectedTransaction.workspaceCurrency,
+                  selectedTransaction.direction,
+                )}
+              </span>
+            </div>
+            {!transactionAllocationEditable ? (
+              <p className="helper-text">
+                Save a reportable classification in the review queue before editing this
+                transaction&apos;s allocation.
+              </p>
+            ) : (
+              <AllocationEditor
+                currency={selectedTransaction.workspaceCurrency}
+                direction={selectedTransaction.direction}
+                form={transactionAllocationForm}
+                isSaving={isSavingTransactionAllocation}
+                onSave={() =>
+                  startSavingTransactionAllocation(() =>
+                    submitAllocationUpdate({
+                      sourceId: selectedTransaction.id,
+                      sourceType: "transaction",
+                      form: transactionAllocationForm,
+                    }).then((saved) => {
+                      if (saved) setIsAllocationModalOpen(false);
+                    }),
+                  )
+                }
+                setForm={setTransactionAllocationForm}
+                sourceDate={selectedTransaction.transactionDate}
+                totalAmount={selectedTransaction.normalizedAmount}
+              />
+            )}
+          </div>
+        ) : null}
+      </Modal>
     </section>
   );
 }
