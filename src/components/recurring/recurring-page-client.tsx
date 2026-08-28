@@ -7,7 +7,11 @@ import { Modal } from "@/components/shared/modal";
 import { NormalizationModeSelect } from "@/components/recurring/normalization-mode-select";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
-import { classificationAllowsPayer } from "@/features/expenses/payer";
+import {
+  classificationAllowsPayer,
+  classificationsForEventKind,
+  normalizeClassificationForEventKind,
+} from "@/features/expenses/payer";
 import {
   formatClassificationTypeLabel,
   formatMoneyDisplay,
@@ -169,6 +173,13 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
     versionState.currency,
     data?.workspaceCurrency,
   );
+  const createClassificationOptions = classificationsForEventKind(
+    createState.eventKind,
+    CLASSIFICATION_TYPES,
+  );
+  const editClassificationOptions = editState
+    ? classificationsForEventKind(editState.eventKind, CLASSIFICATION_TYPES)
+    : [];
 
   useEffect(() => {
     if (!selectedEntry) {
@@ -180,11 +191,18 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       return;
     }
 
+    const classificationType = normalizeClassificationForEventKind(
+      selectedEntry.eventKind,
+      selectedEntry.classificationType,
+    );
+
     setEditState({
       title: selectedEntry.title,
       eventKind: selectedEntry.eventKind,
-      payerMemberId: selectedEntry.payerMemberId ?? "",
-      classificationType: selectedEntry.classificationType,
+      payerMemberId: classificationAllowsPayer(classificationType)
+        ? selectedEntry.payerMemberId ?? ""
+        : "",
+      classificationType,
       category: selectedEntry.category ?? "",
       categoryId: selectedEntry.categoryId ?? "",
       active: selectedEntry.active,
@@ -408,7 +426,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                     }))
                   }
                 >
-                  {CLASSIFICATION_TYPES.map((type) => (
+                  {createClassificationOptions.map((type) => (
                     <option key={type} value={type}>
                       {formatClassificationTypeLabel(type)}
                     </option>
@@ -758,7 +776,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                         )
                       }
                     >
-                      {CLASSIFICATION_TYPES.map((type) => (
+                      {editClassificationOptions.map((type) => (
                         <option key={type} value={type}>
                           {formatClassificationTypeLabel(type)}
                         </option>

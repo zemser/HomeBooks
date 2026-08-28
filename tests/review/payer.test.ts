@@ -3,7 +3,10 @@ import test from "node:test";
 
 import {
   classificationAllowsPayer,
+  classificationsForEventKind,
+  getEventKindClassificationValidationMessage,
   getPayerValidationMessage,
+  normalizeClassificationForEventKind,
 } from "../../src/features/expenses/payer";
 
 test("unassigned household expenses are valid but cannot be attributed to one payer", () => {
@@ -44,4 +47,37 @@ test("transfer and ignore never accept payer attribution", () => {
       /cannot have a payer/,
     );
   }
+});
+
+test("event kinds expose only compatible classifications", () => {
+  const allClassifications = [
+    "personal",
+    "shared",
+    "household",
+    "income",
+    "transfer",
+    "ignore",
+  ] as const;
+
+  assert.deepEqual(classificationsForEventKind("income", allClassifications), ["income"]);
+  assert.deepEqual(classificationsForEventKind("expense", allClassifications), [
+    "personal",
+    "shared",
+    "household",
+    "transfer",
+    "ignore",
+  ]);
+  assert.match(
+    getEventKindClassificationValidationMessage({
+      eventKind: "income",
+      classificationType: "household",
+    }) ?? "",
+    /must use income/,
+  );
+});
+
+test("legacy event-kind mismatches normalize to a compatible classification", () => {
+  assert.equal(normalizeClassificationForEventKind("income", "shared"), "income");
+  assert.equal(normalizeClassificationForEventKind("expense", "income"), "household");
+  assert.equal(normalizeClassificationForEventKind("expense", "shared"), "shared");
 });

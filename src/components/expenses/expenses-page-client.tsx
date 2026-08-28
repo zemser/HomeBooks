@@ -15,7 +15,11 @@ import { ImportSourceCell } from "@/components/shared/import-source-cell";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { type ClassificationType } from "@/features/expenses/constants";
-import { classificationAllowsPayer } from "@/features/expenses/payer";
+import {
+  classificationAllowsPayer,
+  classificationsForEventKind,
+  normalizeClassificationForEventKind,
+} from "@/features/expenses/payer";
 import {
   formatAllocationSummary,
   formatClassificationSummary,
@@ -121,11 +125,18 @@ function createInitialManualEntryFormState(): ManualEntryFormState {
 }
 
 function manualEntryToFormState(entry: OneTimeManualEntryItem): ManualEntryFormState {
+  const classificationType = normalizeClassificationForEventKind(
+    entry.eventKind,
+    entry.classificationType,
+  ) as OneTimeManualEntryClassificationType;
+
   return {
     title: entry.title,
     eventKind: entry.eventKind,
-    classificationType: entry.classificationType,
-    payerMemberId: entry.payerMemberId ?? "",
+    classificationType,
+    payerMemberId: classificationAllowsPayer(classificationType)
+      ? entry.payerMemberId ?? ""
+      : "",
     category: entry.category ?? "",
     categoryId: entry.categoryId ?? "",
     amount: Number(entry.originalAmount).toFixed(2),
@@ -136,9 +147,10 @@ function manualEntryToFormState(entry: OneTimeManualEntryItem): ManualEntryFormS
 function listClassificationOptions(
   eventKind: OneTimeManualEntryEventKind,
 ): OneTimeManualEntryClassificationType[] {
-  return eventKind === "income"
-    ? INCOME_CLASSIFICATION_OPTIONS
-    : EXPENSE_CLASSIFICATION_OPTIONS;
+  return classificationsForEventKind(eventKind, [
+    ...EXPENSE_CLASSIFICATION_OPTIONS,
+    ...INCOME_CLASSIFICATION_OPTIONS,
+  ]);
 }
 
 function allocationSuccessMessage(form: AllocationFormState) {

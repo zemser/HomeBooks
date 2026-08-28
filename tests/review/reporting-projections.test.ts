@@ -58,6 +58,8 @@ test("source mutation services maintain reporting projections with their transac
   assert.match(settlements, /update\(transactionClassifications\)[\s\S]*syncTransactionExpenseEvents/);
   assert.match(settlements, /update\(manualEntries\)[\s\S]*syncManualEntryExpenseEvents/);
   assert.match(settlements, /overrideType: "payer"/);
+  assert.match(settlements, /await acquireRecurringMaterializationLock\(context, tx\)/);
+  assert.match(settlements, /onConflictDoUpdate/);
 });
 
 test("allocation comparison treats equivalent stored amounts as unchanged", () => {
@@ -97,6 +99,22 @@ test("projection synchronizers skip unchanged event, allocation, and recurring r
   assert.match(allocations, /expenseAllocationsEqual\(currentAllocations, allocations\)/);
   assert.match(recurring, /if \(generatedManualEntryMatches\(existingRow, effectiveRow\)\) \{\s*continue;/);
   assert.match(recurring, /manualEntryOverrides\.overrideType, "payer"/);
+  assert.ok(
+    recurring.indexOf("await acquireRecurringMaterializationLock(context, tx)") <
+      recurring.indexOf("const recurringEntries = await listRecurringEntries(context, tx)"),
+  );
+});
+
+test("payer migration normalizes legacy rows and constrains recurring overrides", async () => {
+  const migration = await readFile(
+    repositoryFile("src/db/migrations/0011_calm_prodigy.sql"),
+    "utf8",
+  );
+
+  assert.match(migration, /UPDATE "manual_recurring_expenses"[\s\S]*"classification_type"/);
+  assert.match(migration, /UPDATE "manual_entries"[\s\S]*"payer_member_id" = NULL/);
+  assert.match(migration, /DELETE FROM "shared_expense_splits"/);
+  assert.match(migration, /UNIQUE\("manual_entry_id","override_type"\)/);
 });
 
 test("home and report rendering are read-only projection consumers", async () => {

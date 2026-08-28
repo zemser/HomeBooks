@@ -54,7 +54,7 @@ test("insufficient and conflicting history does not produce a suggestion", () =>
   assert.equal(conflict.has("split"), false);
 });
 
-test("member evidence is included only for personal and shared decisions", () => {
+test("member evidence follows payer eligibility, including income receivers", () => {
   const names = new Map([["member-1", "Alex"]]);
   const personal = buildExactMerchantSuggestions(
     [
@@ -70,4 +70,25 @@ test("member evidence is included only for personal and shared decisions", () =>
     decision("Household merchant", "household", "Home", "member-1"),
   ]).get("household merchant");
   assert.equal(household?.memberOwnerId, null);
+
+  const income = buildExactMerchantSuggestions(
+    [
+      decision("Salary", "income", "Salary", "member-1"),
+      decision("Salary", "income", "Salary", "member-1"),
+    ],
+    names,
+  ).get("salary");
+  assert.equal(income?.memberOwnerId, "member-1");
+  assert.equal(income?.memberOwnerName, "Alex");
+});
+
+test("different income receivers do not create false suggestion consensus", () => {
+  const suggestion = buildExactMerchantSuggestions([
+    decision("Salary", "income", "Salary", "member-1"),
+    decision("Salary", "income", "Salary", "member-1"),
+    decision("Salary", "income", "Salary", "member-2"),
+    decision("Salary", "income", "Salary", "member-2"),
+  ]).get("salary");
+
+  assert.equal(suggestion, undefined);
 });

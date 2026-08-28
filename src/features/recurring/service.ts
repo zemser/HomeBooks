@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -12,6 +12,7 @@ import { amountStringToMicros } from "@/features/expenses/allocation-core";
 import type { ClassificationType } from "@/features/expenses/constants";
 import {
   classificationAllowsPayer,
+  getEventKindClassificationValidationMessage,
   getPayerValidationMessage,
 } from "@/features/expenses/payer";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
@@ -28,6 +29,7 @@ import type {
   RecurrenceRule,
 } from "@/features/recurring/constants";
 import { getEffectiveNormalizationMode } from "@/features/recurring/normalization";
+import { acquireRecurringMaterializationLock } from "@/features/recurring/materialization-lock";
 import type {
   GeneratedManualEntryItem,
   RecurringEntryItem,
@@ -199,12 +201,10 @@ function validateRecurringClassification(input: {
   classificationType: ClassificationType;
   payerMemberId: string | null;
 }) {
-  if (input.eventKind === "income" && input.classificationType !== "income") {
-    throw new Error("Income recurring entries must use income classification.");
-  }
+  const eventKindValidationMessage = getEventKindClassificationValidationMessage(input);
 
-  if (input.eventKind === "expense" && input.classificationType === "income") {
-    throw new Error("Expense recurring entries cannot use income classification.");
+  if (eventKindValidationMessage) {
+    throw new Error(eventKindValidationMessage);
   }
 
   const payerValidationMessage = getPayerValidationMessage(input);
@@ -319,9 +319,7 @@ async function withRecurringMaterializationLock<T>(
   run: (tx: DbTransaction) => Promise<T>,
 ) {
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext('recurring_generated'), hashtext(${context.workspaceId}))`,
-    );
+    await acquireRecurringMaterializationLock(context, tx);
 
     return run(tx);
   });
@@ -422,65 +420,65 @@ export async function materializeRecurringEntriesForRange(
     };
   }
 
-  const recurringEntries = await listRecurringEntries(context, db);
-  const activeEntries = recurringEntries.filter(
-    (entry) =>
-      entry.active &&
-      entry.versions.length > 0 &&
-      (!input.recurringEntryIds || input.recurringEntryIds.includes(entry.id)),
-  );
-
-  if (activeEntries.length === 0) {
-    return {
-      createdCount: 0,
-      updatedCount: 0,
-      deletedCount: 0,
-    };
-  }
-
-  const months = listMonthStringsBetween(range.startMonth, range.endMonth);
-  const desiredRows: RecurringGeneratedRowSeed[] = [];
-
-  for (const entry of activeEntries) {
-    for (const month of months) {
-      const version = entry.versions.find(
-        (candidate) =>
-          candidate.effectiveStartMonth <= month &&
-          (!candidate.effectiveEndMonth || candidate.effectiveEndMonth >= month),
-      );
-
-      if (!version || version.recurrenceRule !== "monthly") {
-        continue;
-      }
-
-      const amount = Number(version.amount);
-      const normalized = normalizeGeneratedAmount({
-        amount,
-        currency: version.currency,
-        workspaceCurrency: context.baseCurrency,
-        normalizationMode: version.normalizationMode,
-      });
-
-      desiredRows.push({
-        sourceId: entry.id,
-        eventDate: month,
-        eventKind: entry.eventKind,
-        title: entry.title,
-        originalCurrency: version.currency,
-        originalAmount: normalized.originalAmount.toFixed(6),
-        workspaceCurrency: context.baseCurrency,
-        normalizedAmount: normalized.normalizedAmount.toFixed(6),
-        normalizationRate: normalized.normalizationRate.toFixed(8),
-        normalizationRateSource: normalized.normalizationRateSource,
-        payerMemberId: entry.payerMemberId,
-        classificationType: entry.classificationType,
-        category: entry.category,
-        categoryId: entry.categoryId,
-      });
-    }
-  }
-
   return withRecurringMaterializationLock(context, db, async (tx) => {
+    const recurringEntries = await listRecurringEntries(context, tx);
+    const activeEntries = recurringEntries.filter(
+      (entry) =>
+        entry.active &&
+        entry.versions.length > 0 &&
+        (!input.recurringEntryIds || input.recurringEntryIds.includes(entry.id)),
+    );
+
+    if (activeEntries.length === 0) {
+      return {
+        createdCount: 0,
+        updatedCount: 0,
+        deletedCount: 0,
+      };
+    }
+
+    const months = listMonthStringsBetween(range.startMonth, range.endMonth);
+    const desiredRows: RecurringGeneratedRowSeed[] = [];
+
+    for (const entry of activeEntries) {
+      for (const month of months) {
+        const version = entry.versions.find(
+          (candidate) =>
+            candidate.effectiveStartMonth <= month &&
+            (!candidate.effectiveEndMonth || candidate.effectiveEndMonth >= month),
+        );
+
+        if (!version || version.recurrenceRule !== "monthly") {
+          continue;
+        }
+
+        const amount = Number(version.amount);
+        const normalized = normalizeGeneratedAmount({
+          amount,
+          currency: version.currency,
+          workspaceCurrency: context.baseCurrency,
+          normalizationMode: version.normalizationMode,
+        });
+
+        desiredRows.push({
+          sourceId: entry.id,
+          eventDate: month,
+          eventKind: entry.eventKind,
+          title: entry.title,
+          originalCurrency: version.currency,
+          originalAmount: normalized.originalAmount.toFixed(6),
+          workspaceCurrency: context.baseCurrency,
+          normalizedAmount: normalized.normalizedAmount.toFixed(6),
+          normalizationRate: normalized.normalizationRate.toFixed(8),
+          normalizationRateSource: normalized.normalizationRateSource,
+          payerMemberId: entry.payerMemberId,
+          classificationType: entry.classificationType,
+          category: entry.category,
+          categoryId: entry.categoryId,
+        });
+      }
+    }
+
     const existingRows = await tx
       .select({
         id: manualEntries.id,

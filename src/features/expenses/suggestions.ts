@@ -1,4 +1,5 @@
 import type { ClassificationType } from "@/features/expenses/constants";
+import { classificationAllowsPayer } from "@/features/expenses/payer";
 import type { ClassificationSuggestion } from "@/features/expenses/types";
 
 export type HistoricalClassificationDecision = {
@@ -29,7 +30,7 @@ export function buildExactMerchantSuggestions(
     const decisionKey = JSON.stringify([
       row.classificationType,
       row.categoryId ?? row.category?.trim().toLocaleLowerCase() ?? null,
-      ["personal", "shared"].includes(row.classificationType) ? row.memberOwnerId : null,
+      classificationAllowsPayer(row.classificationType) ? row.memberOwnerId : null,
     ]);
     const decisions = decisionsByMerchant.get(merchantKey) ?? new Map();
     const current = decisions.get(decisionKey);
@@ -45,7 +46,7 @@ export function buildExactMerchantSuggestions(
     const winner = ranked[0];
     const total = ranked.reduce((sum, decision) => sum + decision.count, 0);
     if (!winner || total < 2 || winner.count / total < 0.75) return;
-    const memberOwnerId = ["personal", "shared"].includes(winner.row.classificationType)
+    const memberOwnerId = classificationAllowsPayer(winner.row.classificationType)
       ? winner.row.memberOwnerId
       : null;
 

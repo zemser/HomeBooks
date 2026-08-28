@@ -10,6 +10,7 @@ import {
   transactions,
 } from "@/db/schema";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
+import { acquireRecurringMaterializationLock } from "@/features/recurring/materialization-lock";
 import {
   syncManualEntryExpenseEvents,
   syncTransactionExpenseEvents,
@@ -663,6 +664,8 @@ export async function upsertSharedSettlement(
   }
 
   return db.transaction(async (tx) => {
+    await acquireRecurringMaterializationLock(context, tx);
+
     const expenseEvent = await tx
       .select({
         id: expenseEvents.id,
@@ -724,20 +727,28 @@ export async function upsertSharedSettlement(
         );
 
       if (expenseEvent.sourceType === "recurring") {
+        const changedAt = new Date();
+
         await tx
-          .delete(manualEntryOverrides)
-          .where(
-            and(
-              eq(manualEntryOverrides.manualEntryId, expenseEvent.sourceId),
-              eq(manualEntryOverrides.overrideType, "payer"),
-            ),
-          );
-        await tx.insert(manualEntryOverrides).values({
-          manualEntryId: expenseEvent.sourceId,
-          overrideType: "payer",
-          oldValueJson: { payerMemberId: expenseEvent.payerMemberId },
-          newValueJson: { payerMemberId: input.payerMemberId },
-        });
+          .insert(manualEntryOverrides)
+          .values({
+            manualEntryId: expenseEvent.sourceId,
+            overrideType: "payer",
+            oldValueJson: { payerMemberId: expenseEvent.payerMemberId },
+            newValueJson: { payerMemberId: input.payerMemberId },
+            changedAt,
+          })
+          .onConflictDoUpdate({
+            target: [
+              manualEntryOverrides.manualEntryId,
+              manualEntryOverrides.overrideType,
+            ],
+            set: {
+              oldValueJson: { payerMemberId: expenseEvent.payerMemberId },
+              newValueJson: { payerMemberId: input.payerMemberId },
+              changedAt,
+            },
+          });
       }
 
       await syncManualEntryExpenseEvents(context, [expenseEvent.sourceId], tx);
