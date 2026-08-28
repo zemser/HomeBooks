@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 
-import { CurrencySelect } from "@/components/shared/currency-select";
+import { CurrencyInput } from "@/components/shared/currency-input";
 import { Modal } from "@/components/shared/modal";
 import { NormalizationModeSelect } from "@/components/recurring/normalization-mode-select";
 import { CategorySelect } from "@/components/workspaces/category-select";
@@ -466,7 +466,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
 
               <label className="field">
                 <span>Currency</span>
-                <CurrencySelect
+                <CurrencyInput
                   value={createState.currency}
                   workspaceCurrency={data?.workspaceCurrency ?? createState.currency}
                   onChange={(currency) =>
@@ -841,7 +841,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                   </label>
                   <label className="field">
                     <span>Currency</span>
-                    <CurrencySelect
+                    <CurrencyInput
                       value={versionState.currency}
                       workspaceCurrency={data?.workspaceCurrency ?? versionState.currency}
                       onChange={(currency) =>

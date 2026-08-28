@@ -6,7 +6,10 @@ export const COMMON_CURRENCIES = [
   { code: "JPY", name: "Japanese yen" },
 ] as const;
 
-export function getCurrencyOptions(workspaceCurrency: string, selectedCurrency?: string) {
+export function getSuggestedCurrencyOptions(
+  workspaceCurrency: string,
+  selectedCurrency?: string,
+) {
   const normalizedWorkspaceCurrency = workspaceCurrency.trim().toUpperCase();
   const normalizedSelectedCurrency = selectedCurrency?.trim().toUpperCase();
   const hasSelectedCurrency = COMMON_CURRENCIES.some(

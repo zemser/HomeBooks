@@ -23,6 +23,7 @@ import type {
   NormalizationMode,
   RecurrenceRule,
 } from "@/features/recurring/constants";
+import { getEffectiveNormalizationMode } from "@/features/recurring/normalization";
 import type {
   GeneratedManualEntryItem,
   RecurringEntryItem,
@@ -197,14 +198,6 @@ function normalizeCurrencyCode(value: string) {
   }
 
   return normalized;
-}
-
-function normalizeNormalizationMode(
-  mode: NormalizationMode,
-  currency: string,
-  workspaceCurrency: string,
-): NormalizationMode {
-  return currency === workspaceCurrency ? "none" : mode;
 }
 
 function assertMonthRange(startMonth: string, endMonth: string) {
@@ -786,11 +779,11 @@ export async function createRecurringEntry(
   const notes = normalizeOptionalText(input.notes);
   const effectiveStartMonth = normalizeMonthString(input.effectiveStartMonth);
   const currency = normalizeCurrencyCode(input.currency);
-  const normalizationMode = normalizeNormalizationMode(
-    input.normalizationMode,
+  const normalizationMode = getEffectiveNormalizationMode({
+    mode: input.normalizationMode,
     currency,
-    context.baseCurrency,
-  );
+    workspaceCurrency: context.baseCurrency,
+  });
 
   validateRecurringClassification({
     classificationType: input.classificationType,
@@ -960,11 +953,11 @@ export async function createRecurringEntryVersion(
   const effectiveStartMonth = normalizeMonthString(input.effectiveStartMonth);
   const notes = normalizeOptionalText(input.notes);
   const currency = normalizeCurrencyCode(input.currency);
-  const normalizationMode = normalizeNormalizationMode(
-    input.normalizationMode,
+  const normalizationMode = getEffectiveNormalizationMode({
+    mode: input.normalizationMode,
     currency,
-    context.baseCurrency,
-  );
+    workspaceCurrency: context.baseCurrency,
+  });
   const previousMonth = previousMonthString(effectiveStartMonth);
   const currentMonth = currentMonthString();
 
