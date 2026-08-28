@@ -15,6 +15,7 @@ import { ImportSourceCell } from "@/components/shared/import-source-cell";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { type ClassificationType } from "@/features/expenses/constants";
+import { classificationAllowsPayer } from "@/features/expenses/payer";
 import {
   formatAllocationSummary,
   formatClassificationSummary,
@@ -434,7 +435,7 @@ export function ExpensesPageClient({
       classificationType,
       category: ["transfer", "ignore"].includes(classificationType) ? "" : current.category,
       categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
-      memberOwnerId: ["personal", "shared"].includes(classificationType)
+      memberOwnerId: classificationAllowsPayer(classificationType)
         ? current.memberOwnerId
         : "",
     }));
@@ -457,6 +458,10 @@ export function ExpensesPageClient({
           : current.classificationType === "income"
             ? "household"
             : current.classificationType,
+      payerMemberId:
+        eventKind === "expense" && current.classificationType === "income"
+          ? ""
+          : current.payerMemberId,
     }));
   }
 
@@ -753,6 +758,11 @@ export function ExpensesPageClient({
                       ...current,
                       classificationType:
                         event.target.value as OneTimeManualEntryClassificationType,
+                      payerMemberId: classificationAllowsPayer(
+                        event.target.value as OneTimeManualEntryClassificationType,
+                      )
+                        ? current.payerMemberId
+                        : "",
                     }))
                   }
                 >
@@ -769,6 +779,7 @@ export function ExpensesPageClient({
                 <select
                   className="input"
                   value={manualEntryForm.payerMemberId}
+                  disabled={!classificationAllowsPayer(manualEntryForm.classificationType)}
                   onChange={(event) =>
                     setManualEntryForm((current) => ({
                       ...current,
@@ -1325,11 +1336,14 @@ export function ExpensesPageClient({
               </label>
             ) : null}
 
-            {["personal", "shared"].includes(classificationForm.classificationType) ? (
+            {classificationForm.classificationType &&
+            classificationAllowsPayer(classificationForm.classificationType) ? (
               <label className="field">
                 <span>
                   {classificationForm.classificationType === "shared"
                     ? "Paid by"
+                    : classificationForm.classificationType === "income"
+                      ? "Received by"
                     : "Whose personal expense?"}
                 </span>
                 <select

@@ -32,7 +32,7 @@ transaction.
 | Recurring definition deactivate/delete | Generated IDs from the deactivation boundary, or all generated IDs on delete | Delete generated rows and sync those IDs to remove their events and child rows | Generated-row deletion and projection cleanup share one transaction |
 | Category rename | Classified transaction IDs and manual/generated IDs using the category | Sync exactly the discovered IDs so denormalized event labels and category IDs follow the canonical category | Category references, category row, and projections share one transaction |
 | Allocation update | One transaction or one-time manual source ID | Ensure the event exists, then replace allocations only when the requested allocation state differs | Event and allocation changes share one transaction |
-| Shared settlement update | One shared expense-event ID | Update payer and split state; the manual source payer is updated for one-time manual entries | Event/source payer and split state share one transaction |
+| Shared settlement update | One shared expense-event ID | Update the canonical transaction or manual/generated source payer, record a durable payer override for generated recurring occurrences, rebuild the event, and update split state | Source payer, recurring override, event projection, and split state share one transaction |
 | Projection repair | Union of canonical source IDs and existing projected source IDs; all stored allocation months touched only when drift exists | Re-run both source syncs so missing rows are created and stale rows are removed | One explicit database transaction; safe to repeat |
 
 ## Read-path rule

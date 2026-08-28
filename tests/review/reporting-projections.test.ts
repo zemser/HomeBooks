@@ -34,7 +34,7 @@ test("reporting projection invalidation matrix covers every source mutation owne
 });
 
 test("source mutation services maintain reporting projections with their transaction executor", async () => {
-  const [classifications, manualEntries, imports, recurring, categories, allocations] =
+  const [classifications, manualEntries, imports, recurring, categories, allocations, settlements] =
     await Promise.all([
       readFile(repositoryFile("src/features/expenses/classifications.ts"), "utf8"),
       readFile(repositoryFile("src/features/manual-entries/service.ts"), "utf8"),
@@ -42,6 +42,7 @@ test("source mutation services maintain reporting projections with their transac
       readFile(repositoryFile("src/features/recurring/service.ts"), "utf8"),
       readFile(repositoryFile("src/features/workspaces/categories.ts"), "utf8"),
       readFile(repositoryFile("src/features/expenses/allocation.ts"), "utf8"),
+      readFile(repositoryFile("src/features/shared-settlements/service.ts"), "utf8"),
     ]);
 
   assert.match(classifications, /syncTransactionExpenseEvents\(context, requestedTransactionIds, tx\)/);
@@ -54,6 +55,9 @@ test("source mutation services maintain reporting projections with their transac
   assert.match(categories, /syncTransactionExpenseEvents\(context, transactionIds, tx\)/);
   assert.match(categories, /syncManualEntryExpenseEvents\(context, manualEntryIds, tx\)/);
   assert.match(allocations, /return db\.transaction\(async \(tx\) =>/);
+  assert.match(settlements, /update\(transactionClassifications\)[\s\S]*syncTransactionExpenseEvents/);
+  assert.match(settlements, /update\(manualEntries\)[\s\S]*syncManualEntryExpenseEvents/);
+  assert.match(settlements, /overrideType: "payer"/);
 });
 
 test("allocation comparison treats equivalent stored amounts as unchanged", () => {
@@ -91,7 +95,8 @@ test("projection synchronizers skip unchanged event, allocation, and recurring r
   assert.match(events, /else if \(!expenseEventMatches\(primaryRow, row, nextReportingMode\)\)/);
   assert.match(events, /!expenseAllocationsEqual\(primaryRow\.allocations, nextAllocations\)/);
   assert.match(allocations, /expenseAllocationsEqual\(currentAllocations, allocations\)/);
-  assert.match(recurring, /if \(generatedManualEntryMatches\(existingRow, row\)\) \{\s*continue;/);
+  assert.match(recurring, /if \(generatedManualEntryMatches\(existingRow, effectiveRow\)\) \{\s*continue;/);
+  assert.match(recurring, /manualEntryOverrides\.overrideType, "payer"/);
 });
 
 test("home and report rendering are read-only projection consumers", async () => {
@@ -108,6 +113,19 @@ test("home and report rendering are read-only projection consumers", async () =>
   assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="This month" \/>\}>/);
   assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="Recent activity" \/>\}>/);
   assert.match(homePage, /getWorkspaceHomePrimarySnapshot/);
+});
+
+test("payment-date and allocated-period reports use the synchronized occurrence payer", async () => {
+  const reportService = await readFile(
+    repositoryFile("src/features/reporting/monthly-report.ts"),
+    "utf8",
+  );
+
+  assert.match(reportService, /memberId: transaction\.memberOwnerId/);
+  assert.match(reportService, /memberId: entry\.payerMemberId/);
+  assert.match(reportService, /memberId: row\.payerMemberId/);
+  assert.match(reportService, /const key = record\.memberId \?\? "unassigned"/);
+  assert.match(reportService, /expenseTotal = allRecords[\s\S]*record\.direction === "expense"/);
 });
 
 test("projection repair reconciles canonical and stale source IDs in the request transaction", async () => {

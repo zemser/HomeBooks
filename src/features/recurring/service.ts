@@ -10,6 +10,10 @@ import {
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
 import { amountStringToMicros } from "@/features/expenses/allocation-core";
 import type { ClassificationType } from "@/features/expenses/constants";
+import {
+  classificationAllowsPayer,
+  getPayerValidationMessage,
+} from "@/features/expenses/payer";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
 import {
@@ -118,6 +122,15 @@ type RecurringGeneratedRowSeed = {
   categoryId: string | null;
 };
 
+function payerMemberIdFromOverride(value: unknown) {
+  if (!value || typeof value !== "object" || !("payerMemberId" in value)) {
+    return undefined;
+  }
+
+  const payerMemberId = (value as { payerMemberId?: unknown }).payerMemberId;
+  return typeof payerMemberId === "string" ? payerMemberId : payerMemberId === null ? null : undefined;
+}
+
 function normalizeOptionalText(value?: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -182,11 +195,22 @@ async function assertWorkspaceMember(
 }
 
 function validateRecurringClassification(input: {
+  eventKind: EventKind;
   classificationType: ClassificationType;
   payerMemberId: string | null;
 }) {
-  if (input.classificationType === "personal" && !input.payerMemberId) {
-    throw new Error("Personal recurring entries require a member owner.");
+  if (input.eventKind === "income" && input.classificationType !== "income") {
+    throw new Error("Income recurring entries must use income classification.");
+  }
+
+  if (input.eventKind === "expense" && input.classificationType === "income") {
+    throw new Error("Expense recurring entries cannot use income classification.");
+  }
+
+  const payerValidationMessage = getPayerValidationMessage(input);
+
+  if (payerValidationMessage) {
+    throw new Error(payerValidationMessage);
   }
 }
 
@@ -499,6 +523,33 @@ export async function materializeRecurringEntriesForRange(
       existingByKey.set(recurringGeneratedKey(row.sourceId, row.eventDate), row);
     }
 
+    const payerOverrides =
+      existingRows.length === 0
+        ? []
+        : await tx
+            .select({
+              manualEntryId: manualEntryOverrides.manualEntryId,
+              newValueJson: manualEntryOverrides.newValueJson,
+            })
+            .from(manualEntryOverrides)
+            .where(
+              and(
+                inArray(
+                  manualEntryOverrides.manualEntryId,
+                  existingRows.map((row) => row.id),
+                ),
+                eq(manualEntryOverrides.overrideType, "payer"),
+              ),
+            );
+    const payerOverrideByManualEntryId = new Map(
+      payerOverrides.flatMap((override) => {
+        const payerMemberId = payerMemberIdFromOverride(override.newValueJson);
+        return payerMemberId === undefined
+          ? []
+          : [[override.manualEntryId, payerMemberId] as const];
+      }),
+    );
+
     const affectedManualEntryIds = new Set<string>();
     let createdCount = 0;
     let updatedCount = 0;
@@ -509,26 +560,31 @@ export async function materializeRecurringEntriesForRange(
 
       if (existingRow) {
         existingByKey.delete(key);
+        const payerOverride = classificationAllowsPayer(row.classificationType)
+          ? payerOverrideByManualEntryId.get(existingRow.id)
+          : undefined;
+        const effectiveRow =
+          payerOverride === undefined ? row : { ...row, payerMemberId: payerOverride };
 
-        if (generatedManualEntryMatches(existingRow, row)) {
+        if (generatedManualEntryMatches(existingRow, effectiveRow)) {
           continue;
         }
 
         await tx
           .update(manualEntries)
           .set({
-            eventKind: row.eventKind,
-            title: row.title,
-            originalCurrency: row.originalCurrency,
-            originalAmount: row.originalAmount,
-            workspaceCurrency: row.workspaceCurrency,
-            normalizedAmount: row.normalizedAmount,
-            normalizationRate: row.normalizationRate,
-            normalizationRateSource: row.normalizationRateSource,
-            payerMemberId: row.payerMemberId,
-            classificationType: row.classificationType,
-            category: row.category,
-            categoryId: row.categoryId,
+            eventKind: effectiveRow.eventKind,
+            title: effectiveRow.title,
+            originalCurrency: effectiveRow.originalCurrency,
+            originalAmount: effectiveRow.originalAmount,
+            workspaceCurrency: effectiveRow.workspaceCurrency,
+            normalizedAmount: effectiveRow.normalizedAmount,
+            normalizationRate: effectiveRow.normalizationRate,
+            normalizationRateSource: effectiveRow.normalizationRateSource,
+            payerMemberId: effectiveRow.payerMemberId,
+            classificationType: effectiveRow.classificationType,
+            category: effectiveRow.category,
+            categoryId: effectiveRow.categoryId,
             updatedAt: new Date(),
           })
           .where(eq(manualEntries.id, existingRow.id));
@@ -786,6 +842,7 @@ export async function createRecurringEntry(
   });
 
   validateRecurringClassification({
+    eventKind: input.eventKind,
     classificationType: input.classificationType,
     payerMemberId,
   });
@@ -890,6 +947,7 @@ export async function updateRecurringEntry(
 
   await assertWorkspaceRecurringEntry(context, recurringEntryId, db);
   validateRecurringClassification({
+    eventKind: input.eventKind,
     classificationType: input.classificationType,
     payerMemberId,
   });

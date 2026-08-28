@@ -4,10 +4,16 @@ import { getDb, type DbExecutor } from "@/db";
 import {
   expenseEvents,
   manualEntries,
+  manualEntryOverrides,
   sharedExpenseSplits,
+  transactionClassifications,
   transactions,
 } from "@/db/schema";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
+import {
+  syncManualEntryExpenseEvents,
+  syncTransactionExpenseEvents,
+} from "@/features/reporting/expense-events";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import type {
   EqualSplitDefinition,
@@ -661,6 +667,7 @@ export async function upsertSharedSettlement(
       .select({
         id: expenseEvents.id,
         totalAmount: expenseEvents.totalAmount,
+        payerMemberId: expenseEvents.payerMemberId,
         sourceType: expenseEvents.sourceType,
         sourceId: expenseEvents.sourceId,
       })
@@ -688,15 +695,20 @@ export async function upsertSharedSettlement(
       totalAmount: expenseEvent.totalAmount,
     });
 
-    await tx
-      .update(expenseEvents)
-      .set({
-        payerMemberId: input.payerMemberId,
-        updatedAt: new Date(),
-      })
-      .where(eq(expenseEvents.id, expenseEvent.id));
+    if (expenseEvent.sourceType === "transaction") {
+      await tx
+        .update(transactionClassifications)
+        .set({
+          memberOwnerId: input.payerMemberId,
+          updatedAt: new Date(),
+        })
+        .where(eq(transactionClassifications.transactionId, expenseEvent.sourceId));
 
-    if (expenseEvent.sourceType === "manual") {
+      await syncTransactionExpenseEvents(context, [expenseEvent.sourceId], tx);
+    } else {
+      const manualSourceType =
+        expenseEvent.sourceType === "recurring" ? "recurring_generated" : "one_time_manual";
+
       await tx
         .update(manualEntries)
         .set({
@@ -707,9 +719,28 @@ export async function upsertSharedSettlement(
           and(
             eq(manualEntries.id, expenseEvent.sourceId),
             eq(manualEntries.workspaceId, context.workspaceId),
-            eq(manualEntries.sourceType, "one_time_manual"),
+            eq(manualEntries.sourceType, manualSourceType),
           ),
         );
+
+      if (expenseEvent.sourceType === "recurring") {
+        await tx
+          .delete(manualEntryOverrides)
+          .where(
+            and(
+              eq(manualEntryOverrides.manualEntryId, expenseEvent.sourceId),
+              eq(manualEntryOverrides.overrideType, "payer"),
+            ),
+          );
+        await tx.insert(manualEntryOverrides).values({
+          manualEntryId: expenseEvent.sourceId,
+          overrideType: "payer",
+          oldValueJson: { payerMemberId: expenseEvent.payerMemberId },
+          newValueJson: { payerMemberId: input.payerMemberId },
+        });
+      }
+
+      await syncManualEntryExpenseEvents(context, [expenseEvent.sourceId], tx);
     }
 
     await tx
