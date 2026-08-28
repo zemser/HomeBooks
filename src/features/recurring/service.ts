@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -10,6 +10,11 @@ import {
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
 import { amountStringToMicros } from "@/features/expenses/allocation-core";
 import type { ClassificationType } from "@/features/expenses/constants";
+import {
+  classificationAllowsPayer,
+  getEventKindClassificationValidationMessage,
+  getPayerValidationMessage,
+} from "@/features/expenses/payer";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
 import {
@@ -24,6 +29,7 @@ import type {
   RecurrenceRule,
 } from "@/features/recurring/constants";
 import { getEffectiveNormalizationMode } from "@/features/recurring/normalization";
+import { acquireRecurringMaterializationLock } from "@/features/recurring/materialization-lock";
 import type {
   GeneratedManualEntryItem,
   RecurringEntryItem,
@@ -118,6 +124,15 @@ type RecurringGeneratedRowSeed = {
   categoryId: string | null;
 };
 
+function payerMemberIdFromOverride(value: unknown) {
+  if (!value || typeof value !== "object" || !("payerMemberId" in value)) {
+    return undefined;
+  }
+
+  const payerMemberId = (value as { payerMemberId?: unknown }).payerMemberId;
+  return typeof payerMemberId === "string" ? payerMemberId : payerMemberId === null ? null : undefined;
+}
+
 function normalizeOptionalText(value?: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
@@ -182,11 +197,20 @@ async function assertWorkspaceMember(
 }
 
 function validateRecurringClassification(input: {
+  eventKind: EventKind;
   classificationType: ClassificationType;
   payerMemberId: string | null;
 }) {
-  if (input.classificationType === "personal" && !input.payerMemberId) {
-    throw new Error("Personal recurring entries require a member owner.");
+  const eventKindValidationMessage = getEventKindClassificationValidationMessage(input);
+
+  if (eventKindValidationMessage) {
+    throw new Error(eventKindValidationMessage);
+  }
+
+  const payerValidationMessage = getPayerValidationMessage(input);
+
+  if (payerValidationMessage) {
+    throw new Error(payerValidationMessage);
   }
 }
 
@@ -295,9 +319,7 @@ async function withRecurringMaterializationLock<T>(
   run: (tx: DbTransaction) => Promise<T>,
 ) {
   return db.transaction(async (tx) => {
-    await tx.execute(
-      sql`select pg_advisory_xact_lock(hashtext('recurring_generated'), hashtext(${context.workspaceId}))`,
-    );
+    await acquireRecurringMaterializationLock(context, tx);
 
     return run(tx);
   });
@@ -398,65 +420,65 @@ export async function materializeRecurringEntriesForRange(
     };
   }
 
-  const recurringEntries = await listRecurringEntries(context, db);
-  const activeEntries = recurringEntries.filter(
-    (entry) =>
-      entry.active &&
-      entry.versions.length > 0 &&
-      (!input.recurringEntryIds || input.recurringEntryIds.includes(entry.id)),
-  );
-
-  if (activeEntries.length === 0) {
-    return {
-      createdCount: 0,
-      updatedCount: 0,
-      deletedCount: 0,
-    };
-  }
-
-  const months = listMonthStringsBetween(range.startMonth, range.endMonth);
-  const desiredRows: RecurringGeneratedRowSeed[] = [];
-
-  for (const entry of activeEntries) {
-    for (const month of months) {
-      const version = entry.versions.find(
-        (candidate) =>
-          candidate.effectiveStartMonth <= month &&
-          (!candidate.effectiveEndMonth || candidate.effectiveEndMonth >= month),
-      );
-
-      if (!version || version.recurrenceRule !== "monthly") {
-        continue;
-      }
-
-      const amount = Number(version.amount);
-      const normalized = normalizeGeneratedAmount({
-        amount,
-        currency: version.currency,
-        workspaceCurrency: context.baseCurrency,
-        normalizationMode: version.normalizationMode,
-      });
-
-      desiredRows.push({
-        sourceId: entry.id,
-        eventDate: month,
-        eventKind: entry.eventKind,
-        title: entry.title,
-        originalCurrency: version.currency,
-        originalAmount: normalized.originalAmount.toFixed(6),
-        workspaceCurrency: context.baseCurrency,
-        normalizedAmount: normalized.normalizedAmount.toFixed(6),
-        normalizationRate: normalized.normalizationRate.toFixed(8),
-        normalizationRateSource: normalized.normalizationRateSource,
-        payerMemberId: entry.payerMemberId,
-        classificationType: entry.classificationType,
-        category: entry.category,
-        categoryId: entry.categoryId,
-      });
-    }
-  }
-
   return withRecurringMaterializationLock(context, db, async (tx) => {
+    const recurringEntries = await listRecurringEntries(context, tx);
+    const activeEntries = recurringEntries.filter(
+      (entry) =>
+        entry.active &&
+        entry.versions.length > 0 &&
+        (!input.recurringEntryIds || input.recurringEntryIds.includes(entry.id)),
+    );
+
+    if (activeEntries.length === 0) {
+      return {
+        createdCount: 0,
+        updatedCount: 0,
+        deletedCount: 0,
+      };
+    }
+
+    const months = listMonthStringsBetween(range.startMonth, range.endMonth);
+    const desiredRows: RecurringGeneratedRowSeed[] = [];
+
+    for (const entry of activeEntries) {
+      for (const month of months) {
+        const version = entry.versions.find(
+          (candidate) =>
+            candidate.effectiveStartMonth <= month &&
+            (!candidate.effectiveEndMonth || candidate.effectiveEndMonth >= month),
+        );
+
+        if (!version || version.recurrenceRule !== "monthly") {
+          continue;
+        }
+
+        const amount = Number(version.amount);
+        const normalized = normalizeGeneratedAmount({
+          amount,
+          currency: version.currency,
+          workspaceCurrency: context.baseCurrency,
+          normalizationMode: version.normalizationMode,
+        });
+
+        desiredRows.push({
+          sourceId: entry.id,
+          eventDate: month,
+          eventKind: entry.eventKind,
+          title: entry.title,
+          originalCurrency: version.currency,
+          originalAmount: normalized.originalAmount.toFixed(6),
+          workspaceCurrency: context.baseCurrency,
+          normalizedAmount: normalized.normalizedAmount.toFixed(6),
+          normalizationRate: normalized.normalizationRate.toFixed(8),
+          normalizationRateSource: normalized.normalizationRateSource,
+          payerMemberId: entry.payerMemberId,
+          classificationType: entry.classificationType,
+          category: entry.category,
+          categoryId: entry.categoryId,
+        });
+      }
+    }
+
     const existingRows = await tx
       .select({
         id: manualEntries.id,
@@ -499,6 +521,33 @@ export async function materializeRecurringEntriesForRange(
       existingByKey.set(recurringGeneratedKey(row.sourceId, row.eventDate), row);
     }
 
+    const payerOverrides =
+      existingRows.length === 0
+        ? []
+        : await tx
+            .select({
+              manualEntryId: manualEntryOverrides.manualEntryId,
+              newValueJson: manualEntryOverrides.newValueJson,
+            })
+            .from(manualEntryOverrides)
+            .where(
+              and(
+                inArray(
+                  manualEntryOverrides.manualEntryId,
+                  existingRows.map((row) => row.id),
+                ),
+                eq(manualEntryOverrides.overrideType, "payer"),
+              ),
+            );
+    const payerOverrideByManualEntryId = new Map(
+      payerOverrides.flatMap((override) => {
+        const payerMemberId = payerMemberIdFromOverride(override.newValueJson);
+        return payerMemberId === undefined
+          ? []
+          : [[override.manualEntryId, payerMemberId] as const];
+      }),
+    );
+
     const affectedManualEntryIds = new Set<string>();
     let createdCount = 0;
     let updatedCount = 0;
@@ -509,26 +558,31 @@ export async function materializeRecurringEntriesForRange(
 
       if (existingRow) {
         existingByKey.delete(key);
+        const payerOverride = classificationAllowsPayer(row.classificationType)
+          ? payerOverrideByManualEntryId.get(existingRow.id)
+          : undefined;
+        const effectiveRow =
+          payerOverride === undefined ? row : { ...row, payerMemberId: payerOverride };
 
-        if (generatedManualEntryMatches(existingRow, row)) {
+        if (generatedManualEntryMatches(existingRow, effectiveRow)) {
           continue;
         }
 
         await tx
           .update(manualEntries)
           .set({
-            eventKind: row.eventKind,
-            title: row.title,
-            originalCurrency: row.originalCurrency,
-            originalAmount: row.originalAmount,
-            workspaceCurrency: row.workspaceCurrency,
-            normalizedAmount: row.normalizedAmount,
-            normalizationRate: row.normalizationRate,
-            normalizationRateSource: row.normalizationRateSource,
-            payerMemberId: row.payerMemberId,
-            classificationType: row.classificationType,
-            category: row.category,
-            categoryId: row.categoryId,
+            eventKind: effectiveRow.eventKind,
+            title: effectiveRow.title,
+            originalCurrency: effectiveRow.originalCurrency,
+            originalAmount: effectiveRow.originalAmount,
+            workspaceCurrency: effectiveRow.workspaceCurrency,
+            normalizedAmount: effectiveRow.normalizedAmount,
+            normalizationRate: effectiveRow.normalizationRate,
+            normalizationRateSource: effectiveRow.normalizationRateSource,
+            payerMemberId: effectiveRow.payerMemberId,
+            classificationType: effectiveRow.classificationType,
+            category: effectiveRow.category,
+            categoryId: effectiveRow.categoryId,
             updatedAt: new Date(),
           })
           .where(eq(manualEntries.id, existingRow.id));
@@ -786,6 +840,7 @@ export async function createRecurringEntry(
   });
 
   validateRecurringClassification({
+    eventKind: input.eventKind,
     classificationType: input.classificationType,
     payerMemberId,
   });
@@ -890,6 +945,7 @@ export async function updateRecurringEntry(
 
   await assertWorkspaceRecurringEntry(context, recurringEntryId, db);
   validateRecurringClassification({
+    eventKind: input.eventKind,
     classificationType: input.classificationType,
     payerMemberId,
   });

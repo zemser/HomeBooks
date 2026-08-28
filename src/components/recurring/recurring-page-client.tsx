@@ -8,6 +8,11 @@ import { NormalizationModeSelect } from "@/components/recurring/normalization-mo
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import {
+  classificationAllowsPayer,
+  classificationsForEventKind,
+  normalizeClassificationForEventKind,
+} from "@/features/expenses/payer";
+import {
   formatClassificationTypeLabel,
   formatMoneyDisplay,
 } from "@/features/expenses/presentation";
@@ -168,6 +173,13 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
     versionState.currency,
     data?.workspaceCurrency,
   );
+  const createClassificationOptions = classificationsForEventKind(
+    createState.eventKind,
+    CLASSIFICATION_TYPES,
+  );
+  const editClassificationOptions = editState
+    ? classificationsForEventKind(editState.eventKind, CLASSIFICATION_TYPES)
+    : [];
 
   useEffect(() => {
     if (!selectedEntry) {
@@ -179,11 +191,18 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       return;
     }
 
+    const classificationType = normalizeClassificationForEventKind(
+      selectedEntry.eventKind,
+      selectedEntry.classificationType,
+    );
+
     setEditState({
       title: selectedEntry.title,
       eventKind: selectedEntry.eventKind,
-      payerMemberId: selectedEntry.payerMemberId ?? "",
-      classificationType: selectedEntry.classificationType,
+      payerMemberId: classificationAllowsPayer(classificationType)
+        ? selectedEntry.payerMemberId ?? ""
+        : "",
+      classificationType,
       category: selectedEntry.category ?? "",
       categoryId: selectedEntry.categoryId ?? "",
       active: selectedEntry.active,
@@ -364,12 +383,23 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 <select
                   className="input"
                   value={createState.eventKind}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const eventKind = event.target.value as EventKind;
                     setCreateState((current) => ({
                       ...current,
-                      eventKind: event.target.value as EventKind,
-                    }))
-                  }
+                      eventKind,
+                      classificationType:
+                        eventKind === "income"
+                          ? "income"
+                          : current.classificationType === "income"
+                            ? "household"
+                            : current.classificationType,
+                      payerMemberId:
+                        eventKind === "expense" && current.classificationType === "income"
+                          ? ""
+                          : current.payerMemberId,
+                    }));
+                  }}
                 >
                   {EVENT_KINDS.map((kind) => (
                     <option key={kind} value={kind}>
@@ -388,10 +418,15 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                     setCreateState((current) => ({
                       ...current,
                       classificationType: event.target.value as (typeof CLASSIFICATION_TYPES)[number],
+                      payerMemberId: classificationAllowsPayer(
+                        event.target.value as (typeof CLASSIFICATION_TYPES)[number],
+                      )
+                        ? current.payerMemberId
+                        : "",
                     }))
                   }
                 >
-                  {CLASSIFICATION_TYPES.map((type) => (
+                  {createClassificationOptions.map((type) => (
                     <option key={type} value={type}>
                       {formatClassificationTypeLabel(type)}
                     </option>
@@ -404,6 +439,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 <select
                   className="input"
                   value={createState.payerMemberId}
+                  disabled={!classificationAllowsPayer(createState.classificationType)}
                   onChange={(event) =>
                     setCreateState((current) => ({
                       ...current,
@@ -687,13 +723,28 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                     <select
                       className="input"
                       value={editState.eventKind}
-                      onChange={(event) =>
+                      onChange={(event) => {
+                        const eventKind = event.target.value as EventKind;
                         setEditState((current) =>
                           current
-                            ? { ...current, eventKind: event.target.value as EventKind }
+                            ? {
+                                ...current,
+                                eventKind,
+                                classificationType:
+                                  eventKind === "income"
+                                    ? "income"
+                                    : current.classificationType === "income"
+                                      ? "household"
+                                      : current.classificationType,
+                                payerMemberId:
+                                  eventKind === "expense" &&
+                                  current.classificationType === "income"
+                                    ? ""
+                                    : current.payerMemberId,
+                              }
                             : current,
-                        )
-                      }
+                        );
+                      }}
                     >
                       {EVENT_KINDS.map((kind) => (
                         <option key={kind} value={kind}>
@@ -715,12 +766,17 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                                 ...current,
                                 classificationType:
                                   event.target.value as (typeof CLASSIFICATION_TYPES)[number],
+                                payerMemberId: classificationAllowsPayer(
+                                  event.target.value as (typeof CLASSIFICATION_TYPES)[number],
+                                )
+                                  ? current.payerMemberId
+                                  : "",
                               }
                             : current,
                         )
                       }
                     >
-                      {CLASSIFICATION_TYPES.map((type) => (
+                      {editClassificationOptions.map((type) => (
                         <option key={type} value={type}>
                           {formatClassificationTypeLabel(type)}
                         </option>
@@ -733,6 +789,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                     <select
                       className="input"
                       value={editState.payerMemberId}
+                      disabled={!classificationAllowsPayer(editState.classificationType)}
                       onChange={(event) =>
                         setEditState((current) =>
                           current

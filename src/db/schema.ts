@@ -545,16 +545,22 @@ export const manualEntries = pgTable(
   }),
 );
 
-export const manualEntryOverrides = pgTable("manual_entry_overrides", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  manualEntryId: uuid("manual_entry_id")
-    .notNull()
-    .references(() => manualEntries.id),
-  overrideType: manualEntryOverrideTypeEnum("override_type").notNull(),
-  oldValueJson: jsonb("old_value_json"),
-  newValueJson: jsonb("new_value_json").notNull(),
-  changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const manualEntryOverrides = pgTable(
+  "manual_entry_overrides",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    manualEntryId: uuid("manual_entry_id")
+      .notNull()
+      .references(() => manualEntries.id),
+    overrideType: manualEntryOverrideTypeEnum("override_type").notNull(),
+    oldValueJson: jsonb("old_value_json"),
+    newValueJson: jsonb("new_value_json").notNull(),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    manualEntryOverrideUnique: unique().on(table.manualEntryId, table.overrideType),
+  }),
+);
 
 export const sharedExpenseSplits = pgTable(
   "shared_expense_splits",

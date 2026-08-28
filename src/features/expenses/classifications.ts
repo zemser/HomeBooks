@@ -9,6 +9,7 @@ import {
   workspaceMembers,
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
+import { getPayerValidationMessage } from "@/features/expenses/payer";
 import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import {
@@ -77,13 +78,13 @@ export function validateClassificationInput(input: {
   category: string | null;
   categoryId?: string | null;
 }) {
-  if (input.classificationType === "personal" && !input.memberOwnerId) {
-    throw new ClassificationInputError("Personal classifications require a member owner.");
-  }
-  if (!["personal", "shared"].includes(input.classificationType) && input.memberOwnerId) {
-    throw new ClassificationInputError(
-      "Only Personal and Shared classifications can have a member owner.",
-    );
+  const payerValidationMessage = getPayerValidationMessage({
+    classificationType: input.classificationType,
+    payerMemberId: input.memberOwnerId,
+  });
+
+  if (payerValidationMessage) {
+    throw new ClassificationInputError(payerValidationMessage);
   }
   if (["transfer", "ignore"].includes(input.classificationType) && (input.category || input.categoryId)) {
     throw new ClassificationInputError(

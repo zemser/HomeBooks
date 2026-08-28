@@ -4,6 +4,10 @@ import { getDb, type DbExecutor } from "@/db";
 import { manualEntries, manualEntryOverrides, workspaceMembers } from "@/db/schema";
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
 import { listManualEntryAllocationStates } from "@/features/expenses/allocation";
+import {
+  getEventKindClassificationValidationMessage,
+  getPayerValidationMessage,
+} from "@/features/expenses/payer";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
 import {
@@ -94,16 +98,16 @@ function validateOneTimeManualEntry(input: {
   classificationType: OneTimeManualEntryClassificationType;
   payerMemberId: string | null;
 }) {
-  if (input.eventKind === "income" && input.classificationType !== "income") {
-    throw new Error("Income manual entries must use income classification.");
+  const eventKindValidationMessage = getEventKindClassificationValidationMessage(input);
+
+  if (eventKindValidationMessage) {
+    throw new Error(eventKindValidationMessage);
   }
 
-  if (input.eventKind === "expense" && input.classificationType === "income") {
-    throw new Error("Expense manual entries cannot use income classification.");
-  }
+  const payerValidationMessage = getPayerValidationMessage(input);
 
-  if (input.classificationType === "personal" && !input.payerMemberId) {
-    throw new Error("Personal manual entries require a member owner.");
+  if (payerValidationMessage) {
+    throw new Error(payerValidationMessage);
   }
 }
 

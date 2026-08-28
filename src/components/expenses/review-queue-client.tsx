@@ -14,6 +14,7 @@ import { ClassificationTypePicker } from "@/components/expenses/classification-t
 import { CategoryCombobox } from "@/components/workspaces/category-combobox";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expenses/constants";
+import { classificationAllowsPayer } from "@/features/expenses/payer";
 import {
   buildTransactionReportTargets,
   formatAllocationSummary,
@@ -665,7 +666,7 @@ export function ReviewQueueClient({
       classificationType,
       category: ["transfer", "ignore"].includes(classificationType) ? "" : current.category,
       categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
-      memberOwnerId: ["personal", "shared"].includes(classificationType)
+      memberOwnerId: classificationAllowsPayer(classificationType)
         ? current.memberOwnerId
         : "",
     }));
@@ -945,8 +946,14 @@ export function ReviewQueueClient({
     selectedTransaction.classification.classificationType !== "transfer" &&
     selectedTransaction.classification.classificationType !== "ignore";
   const memberFieldLabel =
-    singleForm.classificationType === "shared" ? "Paid by" : "Whose personal expense?";
-  const showMemberField = ["personal", "shared"].includes(singleForm.classificationType);
+    singleForm.classificationType === "shared"
+      ? "Paid by"
+      : singleForm.classificationType === "income"
+        ? "Received by"
+        : "Whose personal expense?";
+  const showMemberField = Boolean(
+    singleForm.classificationType && classificationAllowsPayer(singleForm.classificationType),
+  );
   const selectedTransactionCurrencyState = selectedTransaction
     ? getCurrencyNormalizationDisplayState(selectedTransaction)
     : null;
@@ -1285,7 +1292,19 @@ export function ReviewQueueClient({
             allowContentOverflow
           >
             <div className="stack">
-              <ClassificationTypePicker value={bulkForm.classificationType} onChange={(classificationType) => setBulkForm((current) => ({ ...current, classificationType }))} legend="Apply which treatment?" />
+              <ClassificationTypePicker
+                value={bulkForm.classificationType}
+                onChange={(classificationType) =>
+                  setBulkForm((current) => ({
+                    ...current,
+                    classificationType,
+                    memberOwnerId: classificationAllowsPayer(classificationType)
+                      ? current.memberOwnerId
+                      : "",
+                  }))
+                }
+                legend="Apply which treatment?"
+              />
               {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(bulkForm.classificationType) ? (
                 <CategoryCombobox
                   categories={categories}
@@ -1300,8 +1319,14 @@ export function ReviewQueueClient({
                   }}
                 />
               ) : null}
-              {(["personal", "shared"] as Array<ClassificationType | "">).includes(bulkForm.classificationType) ? <label className="field">
-                <span>{bulkForm.classificationType === "shared" ? "Paid by" : "Whose personal expense?"}</span>
+              {bulkForm.classificationType && classificationAllowsPayer(bulkForm.classificationType) ? <label className="field">
+                <span>
+                  {bulkForm.classificationType === "shared"
+                    ? "Paid by"
+                    : bulkForm.classificationType === "income"
+                      ? "Received by"
+                      : "Whose personal expense?"}
+                </span>
                 <select className="input" value={bulkForm.memberOwnerId} onChange={(event) => setBulkForm((current) => ({ ...current, memberOwnerId: event.target.value }))}>
                   <option value="">Unassigned</option>
                   {members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}
