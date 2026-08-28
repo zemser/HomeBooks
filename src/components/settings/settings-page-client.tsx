@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 
+import { ConfirmationModal } from "@/components/shared/confirmation-modal";
 import type {
   WorkspaceCategoryItem,
   WorkspaceMemberRole,
@@ -68,6 +69,7 @@ export function SettingsPageClient({
   const [message, setMessage] = useState<string | null>(null);
   const [pendingMemberId, setPendingMemberId] = useState<string | null>(null);
   const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
+  const [categoryPendingDeletion, setCategoryPendingDeletion] = useState<WorkspaceCategoryItem | null>(null);
   const [isSavingBaseCurrency, setIsSavingBaseCurrency] = useState(false);
   const [isSavingCategory, setIsSavingCategory] = useState(false);
   const [isSaving, startSaving] = useTransition();
@@ -207,11 +209,7 @@ export function SettingsPageClient({
     setMessage("Workspace category updated.");
   }
 
-  async function handleDeleteCategory(categoryId: string, name: string) {
-    if (!window.confirm(`Remove the category “${name}”? Existing records will keep their category history.`)) {
-      return;
-    }
-
+  async function handleDeleteCategory(categoryId: string) {
     setError(null);
     setMessage(null);
     setPendingCategoryId(categoryId);
@@ -243,6 +241,14 @@ export function SettingsPageClient({
     } finally {
       setPendingCategoryId(null);
     }
+  }
+
+  function confirmDeleteCategory() {
+    if (!categoryPendingDeletion) return;
+
+    const category = categoryPendingDeletion;
+    setCategoryPendingDeletion(null);
+    void handleDeleteCategory(category.id);
   }
 
   async function handleUpdateMember(
@@ -533,7 +539,7 @@ export function SettingsPageClient({
                                 aria-label={`Delete ${category.name} category`}
                                 title={`Delete ${category.name} category`}
                                 onClick={() => {
-                                  void handleDeleteCategory(category.id, category.name);
+                                  setCategoryPendingDeletion(category);
                                 }}
                               >
                                 {pendingCategoryId === category.id ? (
@@ -563,6 +569,20 @@ export function SettingsPageClient({
           </p>
         ) : null}
       </article>
+
+      <ConfirmationModal
+        open={categoryPendingDeletion !== null}
+        title="Remove category?"
+        description={
+          categoryPendingDeletion
+            ? `Remove “${categoryPendingDeletion.name}”? Existing records will keep their category history.`
+            : ""
+        }
+        confirmLabel="Remove category"
+        confirmDisabled={pendingCategoryId !== null}
+        onClose={() => setCategoryPendingDeletion(null)}
+        onConfirm={confirmDeleteCategory}
+      />
 
       <article className="card stack compact" id="members">
         <div className="page-actions">
