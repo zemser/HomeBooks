@@ -199,6 +199,14 @@ function normalizeCurrencyCode(value: string) {
   return normalized;
 }
 
+function normalizeNormalizationMode(
+  mode: NormalizationMode,
+  currency: string,
+  workspaceCurrency: string,
+): NormalizationMode {
+  return currency === workspaceCurrency ? "none" : mode;
+}
+
 function assertMonthRange(startMonth: string, endMonth: string) {
   if (startMonth > endMonth) {
     throw new Error("Start month must be before or equal to end month.");
@@ -778,6 +786,11 @@ export async function createRecurringEntry(
   const notes = normalizeOptionalText(input.notes);
   const effectiveStartMonth = normalizeMonthString(input.effectiveStartMonth);
   const currency = normalizeCurrencyCode(input.currency);
+  const normalizationMode = normalizeNormalizationMode(
+    input.normalizationMode,
+    currency,
+    context.baseCurrency,
+  );
 
   validateRecurringClassification({
     classificationType: input.classificationType,
@@ -812,7 +825,7 @@ export async function createRecurringEntry(
       effectiveEndMonth: null,
       amount: input.amount.toFixed(6),
       currency,
-      normalizationMode: input.normalizationMode,
+      normalizationMode,
       recurrenceRule: input.recurrenceRule,
       notes,
     });
@@ -947,6 +960,11 @@ export async function createRecurringEntryVersion(
   const effectiveStartMonth = normalizeMonthString(input.effectiveStartMonth);
   const notes = normalizeOptionalText(input.notes);
   const currency = normalizeCurrencyCode(input.currency);
+  const normalizationMode = normalizeNormalizationMode(
+    input.normalizationMode,
+    currency,
+    context.baseCurrency,
+  );
   const previousMonth = previousMonthString(effectiveStartMonth);
   const currentMonth = currentMonthString();
 
@@ -994,7 +1012,7 @@ export async function createRecurringEntryVersion(
       effectiveEndMonth: nextVersion ? previousMonthString(nextVersion.effectiveStartMonth) : null,
       amount: input.amount.toFixed(6),
       currency,
-      normalizationMode: input.normalizationMode,
+      normalizationMode,
       recurrenceRule: input.recurrenceRule,
       notes,
     });

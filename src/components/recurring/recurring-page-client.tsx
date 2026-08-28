@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 
-import { CategorySelect } from "@/components/workspaces/category-select";
+import { CurrencySelect } from "@/components/shared/currency-select";
 import { Modal } from "@/components/shared/modal";
+import { NormalizationModeSelect } from "@/components/recurring/normalization-mode-select";
+import { CategorySelect } from "@/components/workspaces/category-select";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import {
   formatClassificationTypeLabel,
@@ -11,7 +13,7 @@ import {
 } from "@/features/expenses/presentation";
 import {
   EVENT_KINDS,
-  NORMALIZATION_MODES,
+  NORMALIZATION_MODE_OPTIONS,
   RECURRENCE_RULES,
   type EventKind,
   type NormalizationMode,
@@ -85,6 +87,10 @@ const initialVersionState: VersionFormState = {
   notes: "",
 };
 
+function isForeignCurrency(currency: string, workspaceCurrency: string | undefined) {
+  return Boolean(workspaceCurrency) && currency !== workspaceCurrency;
+}
+
 export function RecurringPageClient({ initialData }: { initialData: RecurringPageData }) {
   const [data, setData] = useState<RecurringPageData | null>(initialData);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
@@ -154,6 +160,14 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
     [data?.recurringEntries, selectedEntryId],
   );
   const hasDefinedCategories = (data?.categories.length ?? 0) > 0;
+  const createUsesForeignCurrency = isForeignCurrency(
+    createState.currency,
+    data?.workspaceCurrency,
+  );
+  const versionUsesForeignCurrency = isForeignCurrency(
+    versionState.currency,
+    data?.workspaceCurrency,
+  );
 
   useEffect(() => {
     if (!selectedEntry) {
@@ -452,13 +466,17 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
 
               <label className="field">
                 <span>Currency</span>
-                <input
-                  className="input"
+                <CurrencySelect
                   value={createState.currency}
-                  onChange={(event) =>
+                  workspaceCurrency={data?.workspaceCurrency ?? createState.currency}
+                  onChange={(currency) =>
                     setCreateState((current) => ({
                       ...current,
-                      currency: event.target.value.toUpperCase(),
+                      currency,
+                      normalizationMode:
+                        currency === data?.workspaceCurrency
+                          ? "none"
+                          : current.normalizationMode,
                     }))
                   }
                 />
@@ -472,25 +490,14 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
             ) : null}
 
             <div className="inline-form">
-              <label className="field">
-                <span>Normalization mode</span>
-                <select
-                  className="input"
+              {createUsesForeignCurrency ? (
+                <NormalizationModeSelect
                   value={createState.normalizationMode}
-                  onChange={(event) =>
-                    setCreateState((current) => ({
-                      ...current,
-                      normalizationMode: event.target.value as NormalizationMode,
-                    }))
+                  onChange={(normalizationMode) =>
+                    setCreateState((current) => ({ ...current, normalizationMode }))
                   }
-                >
-                  {NORMALIZATION_MODES.map((mode) => (
-                    <option key={mode} value={mode}>
-                      {mode}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+              ) : null}
 
               <label className="field">
                 <span>Recurrence</span>
@@ -834,13 +841,17 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                   </label>
                   <label className="field">
                     <span>Currency</span>
-                    <input
-                      className="input"
+                    <CurrencySelect
                       value={versionState.currency}
-                      onChange={(event) =>
+                      workspaceCurrency={data?.workspaceCurrency ?? versionState.currency}
+                      onChange={(currency) =>
                         setVersionState((current) => ({
                           ...current,
-                          currency: event.target.value.toUpperCase(),
+                          currency,
+                          normalizationMode:
+                            currency === data?.workspaceCurrency
+                              ? "none"
+                              : current.normalizationMode,
                         }))
                       }
                     />
@@ -848,25 +859,14 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 </div>
 
                 <div className="inline-form">
-                  <label className="field">
-                    <span>Normalization mode</span>
-                    <select
-                      className="input"
+                  {versionUsesForeignCurrency ? (
+                    <NormalizationModeSelect
                       value={versionState.normalizationMode}
-                      onChange={(event) =>
-                        setVersionState((current) => ({
-                          ...current,
-                          normalizationMode: event.target.value as NormalizationMode,
-                        }))
+                      onChange={(normalizationMode) =>
+                        setVersionState((current) => ({ ...current, normalizationMode }))
                       }
-                    >
-                      {NORMALIZATION_MODES.map((mode) => (
-                        <option key={mode} value={mode}>
-                          {mode}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    />
+                  ) : null}
 
                   <label className="field">
                     <span>Recurrence</span>
@@ -903,14 +903,14 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                   </label>
                 </div>
 
-                  <button
+                <button
                   className="button"
                   type="button"
                   disabled={isSavingVersion}
                   onClick={() => startSavingVersion(() => void handleCreateVersion())}
                 >
                   {isSavingVersion ? "Saving..." : "Add future version"}
-                  </button>
+                </button>
                 </div>
               </details>
 
@@ -937,7 +937,13 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                               : "Open"}
                           </td>
                           <td>{formatMoneyDisplay(version.amount, version.currency)}</td>
-                          <td>{version.normalizationMode}</td>
+                          <td>
+                            {version.currency === data?.workspaceCurrency
+                              ? "Not needed"
+                              : NORMALIZATION_MODE_OPTIONS.find(
+                                  (option) => option.value === version.normalizationMode,
+                                )?.label ?? version.normalizationMode}
+                          </td>
                           <td>{version.notes ?? "-"}</td>
                         </tr>
                       ))}
