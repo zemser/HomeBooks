@@ -39,16 +39,19 @@ a {
 
 main {
   min-height: 100vh;
+  min-width: 0;
 }
 
 .page-shell {
-  width: min(1120px, calc(100% - 2rem));
+  width: min(1120px, 100%);
   margin: 0 auto;
   padding: 2rem 0 4rem;
+  min-width: 0;
 }
 
 .settings-shell {
-  width: min(1200px, calc(100% - 2rem));
+  width: min(1200px, 100%);
+  min-width: 0;
 }
 
 .app-shell {
@@ -217,6 +220,7 @@ main {
   min-height: 100vh;
   min-width: 0;
   overflow-x: hidden;
+  padding-inline: 1rem;
 }
 
 .app-mobile-header,
@@ -263,6 +267,7 @@ main {
 
 .page-header {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   align-items: flex-end;
   justify-content: space-between;
@@ -425,6 +430,11 @@ main {
 .stack {
   display: grid;
   gap: 1rem;
+}
+
+.stack > *,
+.page-shell > * {
+  min-width: 0;
 }
 
 .stack.compact {
@@ -757,6 +767,8 @@ select.input:focus {
 }
 
 .table-wrap {
+  min-width: 0;
+  max-width: 100%;
   overflow-x: auto;
 }
 
@@ -2058,6 +2070,7 @@ kbd {
 
 .home-card-header {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   align-items: flex-start;
   justify-content: space-between;
@@ -2070,7 +2083,7 @@ kbd {
   }
 
   .page-shell {
-    width: min(calc(100% - 1rem), 1120px);
+    width: min(100%, 1120px);
     padding-top: 1rem;
   }
 
@@ -2369,7 +2382,7 @@ kbd {
   }
 
   .page-shell {
-    width: min(100% - 1rem, 1120px);
+    width: min(100%, 1120px);
     padding-top: 1.25rem;
   }
 
