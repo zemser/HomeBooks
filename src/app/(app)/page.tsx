@@ -67,35 +67,71 @@ async function HomeReporting() {
   const reportTarget = reporting.available
     ? buildReportTarget(reporting.selectedMonth)
     : "/reports";
+  const completion = reporting.completeness;
+  const monthLabel = formatReportMonthLabel(reporting.selectedMonth);
+  const statusLabel =
+    completion.status === "empty"
+      ? "Empty"
+      : completion.status === "in_progress"
+        ? "In progress"
+        : "Complete";
 
   return (
     <article className="card stack compact">
       <div className="home-card-header">
         <div>
-          <h2>This month</h2>
-          <p className="muted-text">A quick view of the latest reporting period.</p>
+          <h2>{monthLabel}</h2>
+          <p className="muted-text">Month status and reviewed financial totals.</p>
         </div>
         <Link className="link-button" href={reportTarget}>Open reports</Link>
       </div>
+      <div
+        className={`status ${completion.status === "in_progress" ? "warning" : completion.status === "complete" ? "success" : "neutral"}`}
+      >
+        <strong>{statusLabel}</strong>
+        <div>
+          {completion.status === "empty"
+            ? "No imported or manual activity exists for this month."
+            : completion.status === "in_progress"
+              ? `${completion.reviewedTransactionCount} of ${completion.importedTransactionCount} imported transactions reviewed. Totals are based on reviewed transactions.`
+              : completion.importedTransactionCount === 0
+                ? "Manual activity exists and no imported transactions need review."
+                : `All ${completion.importedTransactionCount} imported transactions have been reviewed.`}
+        </div>
+      </div>
       {reporting.available && reporting.monthSummary ? (
-        <div className="summary-strip">
-          <div>
-            <strong>
-              {formatReportMoney(
-                reporting.monthSummary.incomeTotal,
-                reporting.monthSummary.workspaceCurrency,
-              )}
-            </strong>
-            <span>Income</span>
-          </div>
-          <div>
-            <strong>
-              {formatReportMoney(
-                reporting.monthSummary.expenseTotal,
-                reporting.monthSummary.workspaceCurrency,
-              )}
-            </strong>
-            <span>Expenses</span>
+        <div className="stack compact">
+          {completion.status === "in_progress" ? (
+            <p className="muted-text">Based on reviewed transactions</p>
+          ) : null}
+          <div className="summary-strip">
+            <div>
+              <strong>
+                {formatReportMoney(
+                  reporting.monthSummary.incomeTotal,
+                  reporting.monthSummary.workspaceCurrency,
+                )}
+              </strong>
+              <span>Income</span>
+            </div>
+            <div>
+              <strong>
+                {formatReportMoney(
+                  reporting.monthSummary.expenseTotal,
+                  reporting.monthSummary.workspaceCurrency,
+                )}
+              </strong>
+              <span>Total spent</span>
+            </div>
+            <div>
+              <strong>
+                {formatReportMoney(
+                  reporting.monthSummary.savingsTotal,
+                  reporting.monthSummary.workspaceCurrency,
+                )}
+              </strong>
+              <span>Saved</span>
+            </div>
           </div>
         </div>
       ) : (

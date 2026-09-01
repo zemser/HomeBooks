@@ -148,6 +148,8 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
     }).usesPlaceholderRate;
   }).length;
   const showFxColumn = fxLineItemCount > 0;
+  const completeness = report.completeness;
+  const reportMonthLabel = formatReportMonthLabel(report.summary.selectedMonth);
 
   return (
     <div className="stack" data-testid="reports-content">
@@ -190,7 +192,33 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           </div>
         </section>
 
+        <section
+          className={`status ${completeness.status === "in_progress" ? "warning" : completeness.status === "complete" ? "success" : "neutral"}`}
+          aria-live="polite"
+        >
+          <strong>
+            {completeness.status === "empty"
+              ? `${reportMonthLabel} is empty.`
+              : completeness.status === "in_progress"
+                ? `${reportMonthLabel} is in progress.`
+                : `${reportMonthLabel} is complete.`}
+          </strong>{" "}
+          {completeness.status === "empty"
+            ? "No imported or manual activity exists for this month."
+            : completeness.status === "in_progress"
+              ? `${completeness.reviewedTransactionCount} of ${completeness.importedTransactionCount} imported transactions are reviewed. Totals below are based on reviewed transactions and will change.`
+              : completeness.importedTransactionCount === 0
+                ? "Manual activity exists and no imported transactions need review."
+                : `All ${completeness.importedTransactionCount} imported transactions have been reviewed.`}
+          {report.summary.reportingMode === "allocated_period" ? (
+            <> Completion is still measured from transactions dated in the source month.</>
+          ) : null}
+        </section>
+
         <section className="card">
+          {completeness.status === "in_progress" ? (
+            <p className="muted-text">Based on reviewed transactions</p>
+          ) : null}
           <div className="summary-strip">
             <div>
               <strong>{formatReportMoney(report.summary.incomeTotal, report.summary.workspaceCurrency)}</strong>
@@ -198,11 +226,11 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
             </div>
             <div>
               <strong>{formatReportMoney(report.summary.expenseTotal, report.summary.workspaceCurrency)}</strong>
-              <span>Expenses</span>
+              <span>Total spent</span>
             </div>
             <div>
               <strong>{formatReportMoney(report.summary.savingsTotal, report.summary.workspaceCurrency)}</strong>
-              <span>Savings</span>
+              <span>Saved</span>
             </div>
             <div>
               <strong>{report.summary.importedTransactionCount}</strong>

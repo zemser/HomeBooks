@@ -667,6 +667,16 @@ select.input:focus {
   color: #7d5b12;
 }
 
+.status.success {
+  background: #e8f5ee;
+  color: #245f4d;
+}
+
+.status.neutral {
+  background: #edf2ef;
+  color: var(--text);
+}
+
 .mfa-qr-frame {
   display: grid;
   width: min(100%, 18rem);

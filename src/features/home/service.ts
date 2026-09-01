@@ -134,16 +134,18 @@ export async function getWorkspaceHomeReportingSnapshot(
     const selectedMonth = normalizeMonthInput();
     const report = await getMonthlyReport(context, {
       month: selectedMonth,
-      mode: "allocated_period",
+      mode: "payment_date",
     }, db);
-    const reportableItemCount =
-      report.summary.importedTransactionCount + report.summary.manualEntryCount;
+    const hasActivity =
+      report.completeness.importedTransactionCount > 0 ||
+      report.completeness.manualEntryCount > 0;
 
     return {
       selectedMonth,
-      reportingMode: "allocated_period",
-      available: reportableItemCount > 0,
-      monthSummary: reportableItemCount > 0 ? report.summary : null,
+      reportingMode: "payment_date",
+      available: hasActivity,
+      completeness: report.completeness,
+      monthSummary: hasActivity ? report.summary : null,
     };
   });
 }

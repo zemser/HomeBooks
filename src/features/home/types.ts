@@ -1,4 +1,5 @@
 import type {
+  MonthCompleteness,
   MonthlyReportSummary,
   ReportingViewMode,
 } from "@/features/reporting/monthly-report";
@@ -33,6 +34,7 @@ export type WorkspaceHomeReportingSnapshot = {
   selectedMonth: string;
   reportingMode: ReportingViewMode;
   available: boolean;
+  completeness: MonthCompleteness;
   monthSummary: MonthlyReportSummary | null;
 };
 

@@ -6,6 +6,7 @@ Shared finance app for couples and families.
 
 - general design: [docs/general-design.md](./docs/general-design.md)
 - general information: [docs/general-information.md](./docs/general-information.md)
+- focused budgeting experience spec: [docs/focused-budgeting-experience-spec.md](./docs/focused-budgeting-experience-spec.md)
 - schema reference: [docs/schema-reference.md](./docs/schema-reference.md)
 - hosted backup and restore runbook: [docs/hosted-backup-restore.md](./docs/hosted-backup-restore.md)
 - implementation plan and progress: [docs/implementation-plan.md](./docs/implementation-plan.md)

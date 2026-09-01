@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, ne } from "drizzle-orm";
+import { and, eq, gte, lt, ne, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -38,6 +38,24 @@ export type MonthlyReportSummary = {
   importedTransactionCount: number;
   manualEntryCount: number;
 };
+
+export type MonthCompletenessStatus = "empty" | "in_progress" | "complete";
+
+export type MonthCompleteness = {
+  month: string;
+  status: MonthCompletenessStatus;
+  importedTransactionCount: number;
+  reviewedTransactionCount: number;
+  pendingTransactionCount: number;
+  reportableTransactionCount: number;
+  excludedTransactionCount: number;
+  manualEntryCount: number;
+};
+
+type MonthCompletenessCounts = Omit<
+  MonthCompleteness,
+  "month" | "status" | "pendingTransactionCount"
+>;
 
 export type MonthlyCategoryBreakdownItem = {
   category: string;
@@ -79,6 +97,7 @@ export type MonthlyReportLineItem = {
 
 export type MonthlyReportData = {
   summary: MonthlyReportSummary;
+  completeness: MonthCompleteness;
   categoryBreakdown: MonthlyCategoryBreakdownItem[];
   memberBreakdown: MonthlyMemberBreakdownItem[];
   lineItems: MonthlyReportLineItem[];
@@ -174,6 +193,76 @@ function buildMonthWindow(selectedMonth: string) {
     monthStart: selectedMonth,
     nextMonthStart: monthKey(nextMonthStart),
   };
+}
+
+export function buildMonthCompleteness(
+  month: string,
+  counts: MonthCompletenessCounts,
+): MonthCompleteness {
+  const pendingTransactionCount = Math.max(
+    0,
+    counts.importedTransactionCount - counts.reviewedTransactionCount,
+  );
+  const status: MonthCompletenessStatus =
+    counts.importedTransactionCount === 0 && counts.manualEntryCount === 0
+      ? "empty"
+      : pendingTransactionCount > 0
+        ? "in_progress"
+        : "complete";
+
+  return {
+    month,
+    status,
+    ...counts,
+    pendingTransactionCount,
+  };
+}
+
+export async function getMonthCompleteness(
+  context: CurrentWorkspaceContext,
+  input?: { month?: string },
+  db: DbExecutor = getDb(),
+): Promise<MonthCompleteness> {
+  const selectedMonth = normalizeMonthInput(input?.month);
+  const { monthStart, nextMonthStart } = buildMonthWindow(selectedMonth);
+  const [transactionCounts, manualEntryCount] = await Promise.all([
+    db
+      .select({
+        importedTransactionCount: sql<number>`count(${transactions.id})::int`,
+        reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
+        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'household', 'income'))::int`,
+        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore'))::int`,
+      })
+      .from(transactions)
+      .leftJoin(
+        transactionClassifications,
+        eq(transactionClassifications.transactionId, transactions.id),
+      )
+      .where(
+        and(
+          eq(transactions.workspaceId, context.workspaceId),
+          gte(transactions.transactionDate, monthStart),
+          lt(transactions.transactionDate, nextMonthStart),
+        ),
+      )
+      .then((rows) => rows[0]),
+    db.$count(
+      manualEntries,
+      and(
+        eq(manualEntries.workspaceId, context.workspaceId),
+        gte(manualEntries.eventDate, monthStart),
+        lt(manualEntries.eventDate, nextMonthStart),
+      ),
+    ),
+  ]);
+
+  return buildMonthCompleteness(selectedMonth, {
+    importedTransactionCount: Number(transactionCounts?.importedTransactionCount ?? 0),
+    reviewedTransactionCount: Number(transactionCounts?.reviewedTransactionCount ?? 0),
+    reportableTransactionCount: Number(transactionCounts?.reportableTransactionCount ?? 0),
+    excludedTransactionCount: Number(transactionCounts?.excludedTransactionCount ?? 0),
+    manualEntryCount: Number(manualEntryCount),
+  });
 }
 
 function toNumber(amount: string | number | null | undefined) {
@@ -569,9 +658,10 @@ export async function getMonthlyReport(
   const selectedMonth = normalizeMonthInput(input?.month);
   const reportingMode = normalizeReportingModeInput(input?.mode);
 
-  const [memberNames, allRecords] = await Promise.all([
+  const [memberNames, allRecords, completeness] = await Promise.all([
     getMemberNames(context, db),
     listReportRecordsForRange(context, selectedMonth, selectedMonth, reportingMode, db),
+    getMonthCompleteness(context, { month: selectedMonth }, db),
   ]);
 
   const incomeTotal = allRecords
@@ -598,6 +688,7 @@ export async function getMonthlyReport(
       importedTransactionCount: importedRecords.length,
       manualEntryCount: manualRecords.length,
     },
+    completeness,
     categoryBreakdown: accumulateCategoryBreakdown(allRecords),
     memberBreakdown: accumulateMemberBreakdown(allRecords, memberNames),
     lineItems: allRecords.map((record) => ({
