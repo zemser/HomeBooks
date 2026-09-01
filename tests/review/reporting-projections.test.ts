@@ -143,7 +143,9 @@ test("payment-date and allocated-period reports use the synchronized occurrence 
   assert.match(reportService, /memberId: entry\.payerMemberId/);
   assert.match(reportService, /memberId: row\.payerMemberId/);
   assert.match(reportService, /const key = record\.memberId \?\? "unassigned"/);
-  assert.match(reportService, /expenseTotal = allRecords[\s\S]*record\.direction === "expense"/);
+  assert.match(reportService, /expenseTotal = sumMoney\(spendingScopes\.map/);
+  assert.match(reportService, /spendingScopes: SpendingScopeSummary\[\]/);
+  assert.match(reportService, /categoryScopeBreakdown: MonthlyCategoryScopeBreakdownItem\[\]/);
 });
 
 test("projection repair reconciles canonical and stale source IDs in the request transaction", async () => {

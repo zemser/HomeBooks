@@ -243,6 +243,106 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           </div>
         </section>
 
+        <section className="card stack compact">
+          <div>
+            <h2>Spending by scope</h2>
+            <p className="muted-text">
+              Personal, shared, and household spending reconcile to Total spent.
+            </p>
+          </div>
+          <div className="summary-strip">
+            {report.spendingScopes.map((scope) => (
+              <div key={scope.key}>
+                <strong>
+                  {formatReportMoney(scope.expenseTotal, report.summary.workspaceCurrency)}
+                </strong>
+                <span>{scope.label} · {scope.itemCount} item{scope.itemCount === 1 ? "" : "s"}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="card stack compact">
+          <div>
+            <h2>Categories by spending scope</h2>
+            <p className="muted-text">See which categories explain each spending bucket.</p>
+          </div>
+          {report.categoryScopeBreakdown.length === 0 ? (
+            <p className="empty-state">No reportable spending exists for this month yet.</p>
+          ) : (
+            <>
+              <div className="table-wrap scope-matrix-table">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Category</th>
+                      {report.spendingScopes.map((scope) => (
+                        <th key={scope.key}>{scope.label}</th>
+                      ))}
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {report.categoryScopeBreakdown.map((item) => (
+                      <tr key={item.categoryId ?? item.category}>
+                        <td>{item.category}</td>
+                        {item.amounts.map((amount, index) => (
+                          <td key={report.spendingScopes[index].key}>
+                            {formatReportMoney(amount.amount, report.summary.workspaceCurrency)}
+                          </td>
+                        ))}
+                        <td>
+                          <strong>
+                            {formatReportMoney(item.expenseTotal, report.summary.workspaceCurrency)}
+                          </strong>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="scope-category-cards">
+                {report.categoryScopeBreakdown.map((item) => (
+                  <article className="scope-category-card" key={item.categoryId ?? item.category}>
+                    <h3>{item.category}</h3>
+                    <dl className="scope-category-list">
+                      {item.amounts.map((amount, index) => (
+                        <div key={report.spendingScopes[index].key}>
+                          <dt>{report.spendingScopes[index].label}</dt>
+                          <dd>{formatReportMoney(amount.amount, report.summary.workspaceCurrency)}</dd>
+                        </div>
+                      ))}
+                      <div className="scope-category-total">
+                        <dt>Total</dt>
+                        <dd>{formatReportMoney(item.expenseTotal, report.summary.workspaceCurrency)}</dd>
+                      </div>
+                    </dl>
+                  </article>
+                ))}
+              </div>
+            </>
+          )}
+        </section>
+
+        {report.memberIncome.length > 0 ? (
+          <section className="card stack compact">
+            <div>
+              <h2>Income attribution</h2>
+              <p className="muted-text">Income stays separate from spending-scope totals.</p>
+            </div>
+            <div className="summary-strip">
+              {report.memberIncome.map((income) => (
+                <div key={income.memberId ?? "unassigned"}>
+                  <strong>
+                    {formatReportMoney(income.incomeTotal, report.summary.workspaceCurrency)}
+                  </strong>
+                  <span>{income.memberName} · {income.itemCount} item{income.itemCount === 1 ? "" : "s"}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {showFxColumn ? (
           <section className="card">
             <div>
@@ -269,72 +369,6 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           summary={rollingTwelve.summary}
           months={rollingTwelve.months}
         />
-
-        <section className="two-up">
-          <article className="card">
-            <h2>Category breakdown</h2>
-            {report.categoryBreakdown.length === 0 ? (
-              <p className="empty-state">No categorized report rows exist for this month yet.</p>
-            ) : (
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Category</th>
-                      <th>Income</th>
-                      <th>Expenses</th>
-                      <th>Net</th>
-                      <th>Items</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.categoryBreakdown.map((item) => (
-                      <tr key={item.category}>
-                        <td>{item.category}</td>
-                        <td>{formatReportMoney(item.incomeTotal, report.summary.workspaceCurrency)}</td>
-                        <td>{formatReportMoney(item.expenseTotal, report.summary.workspaceCurrency)}</td>
-                        <td>{formatReportMoney(item.netTotal, report.summary.workspaceCurrency)}</td>
-                        <td>{item.itemCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </article>
-
-          <article className="card">
-            <h2>Member or payer breakdown</h2>
-            {report.memberBreakdown.length === 0 ? (
-              <p className="empty-state">No member-attributed report rows exist for this month yet.</p>
-            ) : (
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>Member</th>
-                      <th>Income</th>
-                      <th>Expenses</th>
-                      <th>Net</th>
-                      <th>Items</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {report.memberBreakdown.map((item) => (
-                      <tr key={item.memberId ?? item.memberName}>
-                        <td>{item.memberName}</td>
-                        <td>{formatReportMoney(item.incomeTotal, report.summary.workspaceCurrency)}</td>
-                        <td>{formatReportMoney(item.expenseTotal, report.summary.workspaceCurrency)}</td>
-                        <td>{formatReportMoney(item.netTotal, report.summary.workspaceCurrency)}</td>
-                        <td>{item.itemCount}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </article>
-        </section>
 
         <section className="card">
           <h2>Included line items</h2>

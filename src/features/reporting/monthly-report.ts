@@ -1,4 +1,5 @@
 import { and, eq, gte, lt, ne, sql } from "drizzle-orm";
+import Big from "big.js";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -9,12 +10,12 @@ import {
   transactions,
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
-import { listWorkspaceMembers } from "@/features/expenses/queries";
 import {
   buildRollingTwelveWindow,
   buildYearToDateWindow,
 } from "@/features/reporting/periods";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import {
   addMonths,
   listMonthsBetween,
@@ -74,6 +75,45 @@ export type MonthlyMemberBreakdownItem = {
   itemCount: number;
 };
 
+export type SpendingScope = "personal" | "shared" | "household";
+
+export type SpendingScopeSummary = {
+  key: string;
+  scope: SpendingScope;
+  memberId: string | null;
+  label: string;
+  expenseTotal: number;
+  itemCount: number;
+};
+
+export type CategoryScopeAmount = {
+  scope: SpendingScope;
+  memberId: string | null;
+  amount: number;
+  itemCount: number;
+};
+
+export type MonthlyCategoryScopeBreakdownItem = {
+  categoryId: string | null;
+  category: string;
+  amounts: CategoryScopeAmount[];
+  expenseTotal: number;
+  itemCount: number;
+};
+
+export type MemberIncomeSummary = {
+  memberId: string | null;
+  memberName: string;
+  incomeTotal: number;
+  itemCount: number;
+};
+
+export type ReportMember = {
+  id: string;
+  displayName: string;
+  isActive: boolean;
+};
+
 export type MonthlyReportLineItem = {
   id: string;
   sourceKind: "imported_transaction" | "one_time_manual" | "recurring_generated";
@@ -98,6 +138,9 @@ export type MonthlyReportLineItem = {
 export type MonthlyReportData = {
   summary: MonthlyReportSummary;
   completeness: MonthCompleteness;
+  spendingScopes: SpendingScopeSummary[];
+  categoryScopeBreakdown: MonthlyCategoryScopeBreakdownItem[];
+  memberIncome: MemberIncomeSummary[];
   categoryBreakdown: MonthlyCategoryBreakdownItem[];
   memberBreakdown: MonthlyMemberBreakdownItem[];
   lineItems: MonthlyReportLineItem[];
@@ -159,9 +202,15 @@ type ReportRecord = {
   normalizedAmount: number;
   classificationType: ClassificationType;
   category: string | null;
+  categoryId: string | null;
   memberId: string | null;
   fxDetails: MonthlyReportLineItem["fxDetails"];
 };
+
+export type ScopeAggregationRecord = Pick<
+  ReportRecord,
+  "classificationType" | "category" | "categoryId" | "memberId" | "direction" | "normalizedAmount"
+>;
 
 export function normalizeMonthInput(value?: string) {
   if (!value) {
@@ -276,6 +325,198 @@ function normalizeImportedDirection(classificationType: ClassificationType): Rep
 
 function getCategoryLabel(value: string | null) {
   return value?.trim() || "Uncategorized";
+}
+
+function addMoney(left: number, right: number) {
+  return Number(new Big(left).plus(right).toString());
+}
+
+function sumMoney(values: number[]) {
+  return Number(values.reduce((total, value) => total.plus(value), new Big(0)).toString());
+}
+
+function subtractMoney(left: number, right: number) {
+  return Number(new Big(left).minus(right).toString());
+}
+
+function isSpendingScope(value: ClassificationType): value is SpendingScope {
+  return value === "personal" || value === "shared" || value === "household";
+}
+
+function spendingScopeKey(scope: SpendingScope, memberId: string | null) {
+  return scope === "personal" ? `personal:${memberId ?? "unassigned"}` : scope;
+}
+
+function spendingScopeLabel(
+  scope: SpendingScope,
+  memberId: string | null,
+  memberNames: Map<string, string>,
+) {
+  if (scope === "personal") {
+    return `Personal · ${memberId ? memberNames.get(memberId) ?? "Unknown member" : "Unassigned"}`;
+  }
+
+  return scope === "shared" ? "Shared" : "Household";
+}
+
+export function buildSpendingScopeSummaries(
+  records: ScopeAggregationRecord[],
+  members: ReportMember[],
+): SpendingScopeSummary[] {
+  const memberNames = new Map(members.map((member) => [member.id, member.displayName]));
+  const memberOrder = new Map(members.map((member, index) => [member.id, index]));
+  const summaries = new Map<string, SpendingScopeSummary>();
+
+  const ensureSummary = (scope: SpendingScope, memberId: string | null) => {
+    const key = spendingScopeKey(scope, memberId);
+    const existing = summaries.get(key);
+
+    if (existing) {
+      return existing;
+    }
+
+    const summary: SpendingScopeSummary = {
+      key,
+      scope,
+      memberId,
+      label: spendingScopeLabel(scope, memberId, memberNames),
+      expenseTotal: 0,
+      itemCount: 0,
+    };
+    summaries.set(key, summary);
+    return summary;
+  };
+
+  for (const member of members) {
+    if (member.isActive) {
+      ensureSummary("personal", member.id);
+    }
+  }
+
+  ensureSummary("shared", null);
+  ensureSummary("household", null);
+
+  for (const record of records) {
+    if (record.direction !== "expense" || !isSpendingScope(record.classificationType)) {
+      continue;
+    }
+
+    const memberId = record.classificationType === "personal" ? record.memberId : null;
+    const summary = ensureSummary(record.classificationType, memberId);
+    summary.expenseTotal = addMoney(summary.expenseTotal, record.normalizedAmount);
+    summary.itemCount += 1;
+  }
+
+  return Array.from(summaries.values()).sort((left, right) => {
+    if (left.scope !== right.scope) {
+      const order: SpendingScope[] = ["personal", "shared", "household"];
+      return order.indexOf(left.scope) - order.indexOf(right.scope);
+    }
+
+    if (left.scope !== "personal") {
+      return 0;
+    }
+
+    return (
+      (left.memberId ? memberOrder.get(left.memberId) : undefined) ?? Number.MAX_SAFE_INTEGER
+    ) - (
+      (right.memberId ? memberOrder.get(right.memberId) : undefined) ?? Number.MAX_SAFE_INTEGER
+    );
+  });
+}
+
+export function buildCategoryScopeBreakdown(
+  records: ScopeAggregationRecord[],
+  spendingScopes: SpendingScopeSummary[],
+): MonthlyCategoryScopeBreakdownItem[] {
+  const breakdown = new Map<
+    string,
+    MonthlyCategoryScopeBreakdownItem & { amountsByKey: Map<string, CategoryScopeAmount> }
+  >();
+
+  for (const record of records) {
+    if (record.direction !== "expense" || !isSpendingScope(record.classificationType)) {
+      continue;
+    }
+
+    const category = getCategoryLabel(record.category);
+    const categoryKey = record.categoryId ?? `uncatalogued:${category}`;
+    const current = breakdown.get(categoryKey) ?? {
+      categoryId: record.categoryId,
+      category,
+      amounts: [],
+      amountsByKey: new Map(
+        spendingScopes.map((scope) => [
+          scope.key,
+          {
+            scope: scope.scope,
+            memberId: scope.memberId,
+            amount: 0,
+            itemCount: 0,
+          },
+        ]),
+      ),
+      expenseTotal: 0,
+      itemCount: 0,
+    };
+    const scopeKey = spendingScopeKey(
+      record.classificationType,
+      record.classificationType === "personal" ? record.memberId : null,
+    );
+    const amount = current.amountsByKey.get(scopeKey);
+
+    if (!amount) {
+      throw new Error(`Missing spending scope ${scopeKey} for category aggregation.`);
+    }
+
+    amount.amount = addMoney(amount.amount, record.normalizedAmount);
+    amount.itemCount += 1;
+    current.expenseTotal = addMoney(current.expenseTotal, record.normalizedAmount);
+    current.itemCount += 1;
+    breakdown.set(categoryKey, current);
+  }
+
+  return Array.from(breakdown.values())
+    .map(({ amountsByKey, ...item }) => ({
+      ...item,
+      amounts: spendingScopes.map((scope) => amountsByKey.get(scope.key)!),
+    }))
+    .sort((left, right) => {
+      const totalDifference = right.expenseTotal - left.expenseTotal;
+      return totalDifference !== 0 ? totalDifference : left.category.localeCompare(right.category);
+    });
+}
+
+export function buildMemberIncomeSummaries(
+  records: ScopeAggregationRecord[],
+  members: ReportMember[],
+): MemberIncomeSummary[] {
+  const memberNames = new Map(members.map((member) => [member.id, member.displayName]));
+  const summaries = new Map<string, MemberIncomeSummary>();
+
+  for (const record of records) {
+    if (record.direction !== "income" || record.classificationType !== "income") {
+      continue;
+    }
+
+    const key = record.memberId ?? "unassigned";
+    const current = summaries.get(key) ?? {
+      memberId: record.memberId,
+      memberName: record.memberId
+        ? memberNames.get(record.memberId) ?? "Unknown member"
+        : "Unassigned",
+      incomeTotal: 0,
+      itemCount: 0,
+    };
+    current.incomeTotal = addMoney(current.incomeTotal, record.normalizedAmount);
+    current.itemCount += 1;
+    summaries.set(key, current);
+  }
+
+  return Array.from(summaries.values()).sort((left, right) => {
+    const totalDifference = right.incomeTotal - left.incomeTotal;
+    return totalDifference !== 0 ? totalDifference : left.memberName.localeCompare(right.memberName);
+  });
 }
 
 function createEmptyMonthBucket(month: string): ReportingMonthBucket {
@@ -439,12 +680,16 @@ function summarizeBuckets(
   };
 }
 
-async function getMemberNames(
+async function getReportMembers(
   context: CurrentWorkspaceContext,
   db: DbExecutor,
 ) {
-  const members = await listWorkspaceMembers(context, db);
-  return new Map(members.map((member) => [member.id, member.displayName]));
+  const members = await listWorkspaceMembersForSettings(context, db);
+  return members.map((member) => ({
+    id: member.id,
+    displayName: member.displayName,
+    isActive: member.isActive,
+  }));
 }
 
 async function listPaymentDateReportRecordsForRange(
@@ -471,6 +716,7 @@ async function listPaymentDateReportRecordsForRange(
         normalizationRateSource: transactions.normalizationRateSource,
         classificationType: transactionClassifications.classificationType,
         category: transactionClassifications.category,
+        categoryId: transactionClassifications.categoryId,
         memberOwnerId: transactionClassifications.memberOwnerId,
       })
       .from(transactions)
@@ -497,6 +743,7 @@ async function listPaymentDateReportRecordsForRange(
         eventKind: manualEntries.eventKind,
         classificationType: manualEntries.classificationType,
         category: manualEntries.category,
+        categoryId: manualEntries.categoryId,
         payerMemberId: manualEntries.payerMemberId,
       })
       .from(manualEntries)
@@ -521,6 +768,7 @@ async function listPaymentDateReportRecordsForRange(
     normalizedAmount: toNumber(transaction.normalizedAmount),
     classificationType: transaction.classificationType,
     category: transaction.category,
+    categoryId: transaction.categoryId,
     memberId: transaction.memberOwnerId,
     fxDetails: {
       originalAmount: toNumber(transaction.originalAmount),
@@ -544,6 +792,7 @@ async function listPaymentDateReportRecordsForRange(
     normalizedAmount: toNumber(entry.normalizedAmount),
     classificationType: entry.classificationType,
     category: entry.category,
+    categoryId: entry.categoryId,
     memberId: entry.payerMemberId,
     fxDetails: null,
   }));
@@ -576,6 +825,7 @@ async function listAllocatedPeriodReportRecordsForRange(
       title: expenseEvents.title,
       classificationType: expenseEvents.classificationType,
       category: expenseEvents.category,
+      categoryId: expenseEvents.categoryId,
       payerMemberId: expenseEvents.payerMemberId,
       originalAmount: transactions.originalAmount,
       originalCurrency: transactions.originalCurrency,
@@ -614,6 +864,7 @@ async function listAllocatedPeriodReportRecordsForRange(
       normalizedAmount: toNumber(row.allocatedAmount),
       classificationType: row.classificationType,
       category: row.category,
+      categoryId: row.categoryId,
       memberId: row.payerMemberId,
       fxDetails:
         row.sourceType === "transaction"
@@ -658,18 +909,20 @@ export async function getMonthlyReport(
   const selectedMonth = normalizeMonthInput(input?.month);
   const reportingMode = normalizeReportingModeInput(input?.mode);
 
-  const [memberNames, allRecords, completeness] = await Promise.all([
-    getMemberNames(context, db),
+  const [members, allRecords, completeness] = await Promise.all([
+    getReportMembers(context, db),
     listReportRecordsForRange(context, selectedMonth, selectedMonth, reportingMode, db),
     getMonthCompleteness(context, { month: selectedMonth }, db),
   ]);
+  const memberNames = new Map(members.map((member) => [member.id, member.displayName]));
+  const spendingScopes = buildSpendingScopeSummaries(allRecords, members);
 
-  const incomeTotal = allRecords
-    .filter((record) => record.direction === "income")
-    .reduce((sum, record) => sum + record.normalizedAmount, 0);
-  const expenseTotal = allRecords
-    .filter((record) => record.direction === "expense")
-    .reduce((sum, record) => sum + record.normalizedAmount, 0);
+  const incomeTotal = sumMoney(
+    allRecords
+      .filter((record) => record.direction === "income")
+      .map((record) => record.normalizedAmount),
+  );
+  const expenseTotal = sumMoney(spendingScopes.map((scope) => scope.expenseTotal));
   const importedRecords = allRecords.filter(
     (record) => record.sourceKind === "imported_transaction",
   );
@@ -684,11 +937,14 @@ export async function getMonthlyReport(
       workspaceCurrency: context.baseCurrency,
       incomeTotal,
       expenseTotal,
-      savingsTotal: incomeTotal - expenseTotal,
+      savingsTotal: subtractMoney(incomeTotal, expenseTotal),
       importedTransactionCount: importedRecords.length,
       manualEntryCount: manualRecords.length,
     },
     completeness,
+    spendingScopes,
+    categoryScopeBreakdown: buildCategoryScopeBreakdown(allRecords, spendingScopes),
+    memberIncome: buildMemberIncomeSummaries(allRecords, members),
     categoryBreakdown: accumulateCategoryBreakdown(allRecords),
     memberBreakdown: accumulateMemberBreakdown(allRecords, memberNames),
     lineItems: allRecords.map((record) => ({
