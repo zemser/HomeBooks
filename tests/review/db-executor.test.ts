@@ -207,6 +207,7 @@ test("reporting reads and callers use the explicit transaction executor", async 
   ]);
 
   assert.match(reportingSource, /getMonthlyReport\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(reportingSource, /getYearReport\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(reportingSource, /getYearToDateReport\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(reportingSource, /getRollingTwelveReport\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(reportingSource, /getDashboardSnapshot\([\s\S]*db: DbExecutor = getDb\(\)/);

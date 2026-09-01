@@ -128,9 +128,10 @@ test("home and report rendering are read-only projection consumers", async () =>
   assert.doesNotMatch(home, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
   assert.doesNotMatch(reportService, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
   assert.doesNotMatch(reportsPage, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
-  assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="This month" \/>\}>/);
+  assert.match(homePage, /<Suspense fallback=\{<RouteDataFallback label="Selected month" \/>\}>/);
   assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="Recent activity" \/>\}>/);
-  assert.match(homePage, /getWorkspaceHomePrimarySnapshot/);
+  assert.match(homePage, /getWorkspaceHomeReportingSnapshot\(context, \{ month \}, db\)/);
+  assert.match(reportsPage, /getYearReport\(context/);
 });
 
 test("payment-date and allocated-period reports use the synchronized occurrence payer", async () => {

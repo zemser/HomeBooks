@@ -4,69 +4,36 @@ import { Suspense } from "react";
 import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import {
   getWorkspaceHomeActivitySnapshot,
-  getWorkspaceHomePrimarySnapshot,
   getWorkspaceHomeReportingSnapshot,
 } from "@/features/home/service";
-import type { WorkspaceHomePrimarySnapshot } from "@/features/home/types";
 import {
+  formatMonthInputValue,
   formatReportMoney,
   formatReportMonthLabel,
 } from "@/features/reporting/presentation";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
+type HomePageProps = {
+  searchParams: Promise<{
+    month?: string | string[];
+  }>;
+};
 
 function buildReportTarget(month: string) {
   const normalizedMonth = month.slice(0, 7);
   return `/reports?month=${normalizedMonth}&mode=payment_date`;
 }
 
-function getNextAction(snapshot: WorkspaceHomePrimarySnapshot) {
-  if (snapshot.setup.activeMemberCount === 0) {
-    return {
-      href: "/settings",
-      label: "Finish workspace setup",
-      description: "Add your first household member to get started.",
-    };
-  }
-
-  if (snapshot.workflow.importCount === 0) {
-    return {
-      href: "/imports",
-      label: "Import your first bank file",
-      description: "Add a statement so your transactions can appear in the ledger.",
-    };
-  }
-
-  if (snapshot.workflow.reviewQueueCount > 0) {
-    return {
-      href: "/imports/review",
-      label: `Review ${snapshot.workflow.reviewQueueCount} pending transaction${snapshot.workflow.reviewQueueCount === 1 ? "" : "s"}`,
-      description: "Confirm the transactions that need a decision before relying on reports.",
-    };
-  }
-
-  if (snapshot.workflow.latestTransactionMonth) {
-    return {
-      href: buildReportTarget(snapshot.workflow.latestTransactionMonth),
-      label: `Check your ${formatReportMonthLabel(`${snapshot.workflow.latestTransactionMonth}-01`)} report`,
-      description: "Review the latest month once the queue is clear.",
-    };
-  }
-
-  return {
-    href: "/expenses",
-    label: "Open the household ledger",
-    description: "Browse transactions and add anything missing.",
-  };
+async function getSelectedHomeMonth(searchParams: HomePageProps["searchParams"]) {
+  const params = await searchParams;
+  return typeof params.month === "string" ? params.month : undefined;
 }
 
-async function HomeReporting() {
+async function HomeReporting({ searchParams }: HomePageProps) {
+  const month = await getSelectedHomeMonth(searchParams);
   const reporting = await withCurrentWorkspaceDb((context, db) =>
-    getWorkspaceHomeReportingSnapshot(context, db),
+    getWorkspaceHomeReportingSnapshot(context, { month }, db),
   );
-  const reportTarget = reporting.available
-    ? buildReportTarget(reporting.selectedMonth)
-    : "/reports";
   const completion = reporting.completeness;
   const monthLabel = formatReportMonthLabel(reporting.selectedMonth);
   const statusLabel =
@@ -75,32 +42,74 @@ async function HomeReporting() {
       : completion.status === "in_progress"
         ? "In progress"
         : "Complete";
+  const nextAction =
+    completion.status === "empty"
+      ? {
+          href: "/imports",
+          label: "Import transactions",
+        }
+      : completion.status === "in_progress"
+        ? {
+            href: `/imports/review?month=${reporting.selectedMonth.slice(0, 7)}`,
+            label: `Review ${completion.pendingTransactionCount} transaction${completion.pendingTransactionCount === 1 ? "" : "s"}`,
+          }
+        : {
+            href: buildReportTarget(reporting.selectedMonth),
+            label: "View monthly report",
+          };
 
   return (
-    <article className="card stack compact">
-      <div className="home-card-header">
+    <div className="stack" data-testid="home-content">
+      <section className="card">
+        <div className="report-controls-header">
+          <div>
+            <span className="eyebrow">{reporting.workspaceName}</span>
+            <h2>{monthLabel}</h2>
+            <p className="muted-text">Choose the month you want to finish or understand.</p>
+          </div>
+          <form className="inline-form report-controls-form" method="GET">
+            <label className="field">
+              <span>Selected month</span>
+              <input
+                className="input"
+                type="month"
+                name="month"
+                defaultValue={formatMonthInputValue(reporting.selectedMonth)}
+              />
+            </label>
+            <div className="field">
+              <span>&nbsp;</span>
+              <button className="button button-secondary" type="submit">Load month</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section className="home-next card">
         <div>
+          <span className={`badge ${completion.status === "in_progress" ? "badge-warning" : "badge-neutral"}`}>
+            {statusLabel}
+          </span>
           <h2>{monthLabel}</h2>
-          <p className="muted-text">Month status and reviewed financial totals.</p>
+          <p>
+            {completion.status === "empty"
+              ? "No imported or manual activity exists for this month."
+              : completion.status === "in_progress"
+                ? `${completion.reviewedTransactionCount} of ${completion.importedTransactionCount} imported transactions reviewed. Totals are based on reviewed transactions.`
+                : completion.importedTransactionCount === 0
+                  ? "Manual activity exists and no imported transactions need review."
+                  : `All ${completion.importedTransactionCount} imported transactions have been reviewed.`}
+          </p>
         </div>
-        <Link className="link-button" href={reportTarget}>Open reports</Link>
-      </div>
-      <div
-        className={`status ${completion.status === "in_progress" ? "warning" : completion.status === "complete" ? "success" : "neutral"}`}
-      >
-        <strong>{statusLabel}</strong>
-        <div>
-          {completion.status === "empty"
-            ? "No imported or manual activity exists for this month."
-            : completion.status === "in_progress"
-              ? `${completion.reviewedTransactionCount} of ${completion.importedTransactionCount} imported transactions reviewed. Totals are based on reviewed transactions.`
-              : completion.importedTransactionCount === 0
-                ? "Manual activity exists and no imported transactions need review."
-                : `All ${completion.importedTransactionCount} imported transactions have been reviewed.`}
-        </div>
-      </div>
+        <Link className="button" href={nextAction.href}>{nextAction.label}</Link>
+      </section>
+
       {reporting.available && reporting.monthSummary ? (
-        <div className="stack compact">
+        <section className="card stack compact">
+          <div>
+            <h2>Monthly snapshot</h2>
+            <p className="muted-text">Income, spending, savings, and who or what benefited.</p>
+          </div>
           {completion.status === "in_progress" ? (
             <p className="muted-text">Based on reviewed transactions</p>
           ) : null}
@@ -132,18 +141,56 @@ async function HomeReporting() {
               </strong>
               <span>Saved</span>
             </div>
+            {reporting.spendingScopes.map((scope) => (
+              <div key={scope.key}>
+                <strong>
+                  {formatReportMoney(scope.expenseTotal, reporting.workspaceCurrency)}
+                </strong>
+                <span>{scope.label}</span>
+              </div>
+            ))}
           </div>
-        </div>
+        </section>
       ) : (
-        <p className="empty-state">Reports will appear after transactions are added.</p>
+        <section className="card">
+          <p className="empty-state">The monthly snapshot will appear after activity is added.</p>
+        </section>
       )}
-    </article>
+
+      <section className="card stack compact">
+        <div className="home-card-header">
+          <div>
+            <h2>Top spending categories</h2>
+            <p className="muted-text">The three largest reviewed categories in {monthLabel}.</p>
+          </div>
+          <Link className="link-button" href={buildReportTarget(reporting.selectedMonth)}>
+            See category detail
+          </Link>
+        </div>
+        {reporting.topSpendingCategories.length === 0 ? (
+          <p className="empty-state">No reportable spending exists for this month yet.</p>
+        ) : (
+          reporting.topSpendingCategories.map((category) => (
+            <div className="activity-row" key={category.categoryId ?? category.category}>
+              <div>
+                <strong>{category.category}</strong>
+                <p>{category.itemCount} item{category.itemCount === 1 ? "" : "s"}</p>
+              </div>
+              <strong>
+                {formatReportMoney(category.expenseTotal, reporting.workspaceCurrency)}
+              </strong>
+            </div>
+          ))
+        )}
+      </section>
+    </div>
   );
 }
 
-async function HomeRecentActivity() {
+async function HomeRecentActivity({ searchParams }: HomePageProps) {
+  const month = await getSelectedHomeMonth(searchParams);
   const activity = await withCurrentWorkspaceDb((context, db) =>
-    getWorkspaceHomeActivitySnapshot(context, db),
+    getWorkspaceHomeActivitySnapshot(context, { month }, db),
   );
 
   return (
@@ -151,12 +198,12 @@ async function HomeRecentActivity() {
       <div className="home-card-header">
         <div>
           <h2>Recent activity</h2>
-          <p className="muted-text">Your latest saved bank imports.</p>
+          <p className="muted-text">Saved bank imports affecting the selected month.</p>
         </div>
         <Link className="link-button" href="/imports">Open imports</Link>
       </div>
       {activity.latestImports.length === 0 ? (
-        <p className="empty-state">No imports yet.</p>
+        <p className="empty-state">No saved imports affect this month.</p>
       ) : (
         activity.latestImports.map((item) => (
           <div className="activity-row" key={item.id}>
@@ -202,27 +249,7 @@ function formatActivityTimestamp(value: string) {
   }).format(new Date(value));
 }
 
-async function HomePrimary() {
-  const snapshot = await withCurrentWorkspaceDb((context, db) =>
-    getWorkspaceHomePrimarySnapshot(context, db),
-  );
-  const nextAction = getNextAction(snapshot);
-
-  return (
-    <section className="home-next card" data-testid="home-content">
-          <div>
-            <span className="badge badge-warning">Next up</span>
-            <h2>{nextAction.label}</h2>
-            <p>{snapshot.workspaceName}: {nextAction.description}</p>
-          </div>
-          <Link className="button" href={nextAction.href}>
-            Open
-          </Link>
-    </section>
-  );
-}
-
-export default function HomePage() {
+export default function HomePage({ searchParams }: HomePageProps) {
   return (
     <main>
       <div className="page-shell stack">
@@ -237,18 +264,13 @@ export default function HomePage() {
           </Link>
         </section>
 
-        <Suspense fallback={<RouteDataFallback label="Next action" />}>
-          <HomePrimary />
+        <Suspense fallback={<RouteDataFallback label="Selected month" />}>
+          <HomeReporting searchParams={searchParams} />
         </Suspense>
 
-        <section className="two-up">
-          <Suspense fallback={<HomeCardFallback label="This month" />}>
-            <HomeReporting />
-          </Suspense>
-          <Suspense fallback={<HomeCardFallback label="Recent activity" />}>
-            <HomeRecentActivity />
-          </Suspense>
-        </section>
+        <Suspense fallback={<HomeCardFallback label="Recent activity" />}>
+          <HomeRecentActivity searchParams={searchParams} />
+        </Suspense>
       </div>
     </main>
   );

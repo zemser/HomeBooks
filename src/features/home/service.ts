@@ -23,6 +23,7 @@ import {
   type CurrentWorkspaceContext,
 } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
+import { addMonths, monthKey } from "@/lib/dates/months";
 
 async function getWorkspaceName(context: CurrentWorkspaceContext) {
   return context.workspaceName ?? "Workspace";
@@ -53,11 +54,27 @@ async function getReviewQueueCount(
 
 async function listLatestBankImports(
   context: CurrentWorkspaceContext,
+  input: { month?: string } = {},
   limit = 3,
   db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeImportActivity[]> {
   const recentImports = await listSavedImports(context, { type: "bank" }, db);
-  return recentImports.slice(0, limit);
+  const selectedMonth = input.month ? normalizeMonthInput(input.month) : null;
+
+  if (!selectedMonth) {
+    return recentImports.slice(0, limit);
+  }
+
+  const nextMonth = monthKey(addMonths(new Date(`${selectedMonth}T00:00:00.000Z`), 1));
+  return recentImports
+    .filter(
+      (item) =>
+        item.earliestTransactionDate !== null &&
+        item.latestTransactionDate !== null &&
+        item.earliestTransactionDate < nextMonth &&
+        item.latestTransactionDate >= selectedMonth,
+    )
+    .slice(0, limit);
 }
 
 export async function getAppShellSnapshot(
@@ -128,33 +145,43 @@ export async function getWorkspaceHomePrimarySnapshot(
 
 export async function getWorkspaceHomeReportingSnapshot(
   context: CurrentWorkspaceContext,
+  input: { month?: string } = {},
   db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeReportingSnapshot> {
   return runWithWorkspaceDatabaseUser(context, async () => {
-    const selectedMonth = normalizeMonthInput();
-    const report = await getMonthlyReport(context, {
-      month: selectedMonth,
-      mode: "payment_date",
-    }, db);
+    const selectedMonth = normalizeMonthInput(input.month);
+    const [workspaceName, report] = await Promise.all([
+      getWorkspaceName(context),
+      getMonthlyReport(context, {
+        month: selectedMonth,
+        mode: "payment_date",
+      }, db),
+    ]);
     const hasActivity =
       report.completeness.importedTransactionCount > 0 ||
       report.completeness.manualEntryCount > 0;
 
     return {
+      workspaceName,
+      workspaceCurrency: context.baseCurrency,
       selectedMonth,
       reportingMode: "payment_date",
       available: hasActivity,
       completeness: report.completeness,
       monthSummary: hasActivity ? report.summary : null,
+      spendingScopes: report.spendingScopes,
+      topSpendingCategories: report.categoryScopeBreakdown.slice(0, 3),
     };
   });
 }
 
 export async function getWorkspaceHomeActivitySnapshot(
   context: CurrentWorkspaceContext,
+  input: { month?: string } = {},
   db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeActivitySnapshot> {
+  const selectedMonth = normalizeMonthInput(input.month);
   return runWithWorkspaceDatabaseUser(context, async () => ({
-    latestImports: await listLatestBankImports(context, 3, db),
+    latestImports: await listLatestBankImports(context, { month: selectedMonth }, 3, db),
   }));
 }

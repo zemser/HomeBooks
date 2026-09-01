@@ -1,12 +1,23 @@
+import Link from "next/link";
+import { Suspense } from "react";
+
+import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import {
   getMonthlyReport,
+  getLatestFinancialActivityMonth,
   getRollingTwelveReport,
+  getYearReport,
   getYearToDateReport,
   normalizeMonthInput,
   normalizeReportingModeInput,
   type ReportingMonthBucket,
+  type MonthlyReportData,
   type ReportingPeriodSummary,
+  type ReportingViewMode,
+  type RollingTwelveReportData,
+  type YearToDateReportData,
+  type YearReportData,
 } from "@/features/reporting/monthly-report";
 import {
   formatClassificationTypeLabel,
@@ -23,8 +34,64 @@ type ReportsPageProps = {
   searchParams: Promise<{
     month?: string | string[];
     mode?: string | string[];
+    view?: string | string[];
   }>;
 };
+
+type ReportsView = "month" | "year";
+
+function buildReportsHref(
+  view: ReportsView,
+  month: string,
+  mode: ReportingViewMode,
+) {
+  const params = new URLSearchParams({
+    view,
+    month: month.slice(0, 7),
+    mode,
+  });
+  return `/reports?${params.toString()}`;
+}
+
+function ReportViewSwitch({
+  view,
+  month,
+  mode,
+}: {
+  view: ReportsView;
+  month: string;
+  mode: ReportingViewMode;
+}) {
+  return (
+    <nav className="report-view-switch" aria-label="Report view">
+      <Link
+        className={`button ${view === "month" ? "" : "button-secondary"}`}
+        href={buildReportsHref("month", month, mode)}
+        aria-current={view === "month" ? "page" : undefined}
+      >
+        Month
+      </Link>
+      <Link
+        className={`button ${view === "year" ? "" : "button-secondary"}`}
+        href={buildReportsHref("year", month, mode)}
+        aria-current={view === "year" ? "page" : undefined}
+      >
+        Year
+      </Link>
+    </nav>
+  );
+}
+
+function formatCompletenessStatus(status: YearReportData["months"][number]["status"]) {
+  switch (status) {
+    case "empty":
+      return "Empty";
+    case "in_progress":
+      return "In progress";
+    case "complete":
+      return "Complete";
+  }
+}
 
 function formatFxAmount(amount: number | null, currency: string | null) {
   return amount === null || currency === null ? null : formatReportMoney(amount, currency);
@@ -107,12 +174,276 @@ function PeriodSummarySection({
   );
 }
 
+function AdvancedMonthlyReporting({
+  report,
+  yearToDate,
+  rollingTwelve,
+  fxLineItemCount,
+  placeholderFxLineItemCount,
+}: {
+  report: MonthlyReportData;
+  yearToDate: YearToDateReportData;
+  rollingTwelve: RollingTwelveReportData;
+  fxLineItemCount: number;
+  placeholderFxLineItemCount: number;
+}) {
+  return (
+    <details className="card disclosure">
+      <summary>Advanced reporting and FX</summary>
+      <div className="stack">
+        <form className="inline-form report-controls-form" method="GET">
+          <input type="hidden" name="view" value="month" />
+          <input
+            type="hidden"
+            name="month"
+            value={formatMonthInputValue(report.summary.selectedMonth)}
+          />
+          <label className="field">
+            <span>Reporting mode</span>
+            <select className="input" name="mode" defaultValue={report.summary.reportingMode}>
+              <option value="payment_date">Payment date</option>
+              <option value="allocated_period">Adjusted period</option>
+            </select>
+          </label>
+          <div className="field">
+            <span>&nbsp;</span>
+            <button className="button button-secondary" type="submit">Apply mode</button>
+          </div>
+        </form>
+
+        {fxLineItemCount > 0 ? (
+          <section className="card">
+            <div>
+              <h2>FX transparency</h2>
+              <p className="muted-text">
+                {placeholderFxLineItemCount > 0
+                  ? `${placeholderFxLineItemCount} imported line item${placeholderFxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} still use Placeholder FX. Full multicurrency reporting is not finished yet, so those amounts remain normalized into ${report.summary.workspaceCurrency}.`
+                  : `${fxLineItemCount} imported line item${fxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} came from foreign-currency activity. They are still shown in ${report.summary.workspaceCurrency} while full multicurrency reporting is unfinished.`}
+              </p>
+            </div>
+          </section>
+        ) : (
+          <p className="muted-text">No foreign-currency details apply to this month.</p>
+        )}
+
+        <PeriodSummarySection
+          title="Year to date"
+          description={`January through ${formatReportMonthLabel(yearToDate.summary.selectedMonth)} in ${formatReportingModeLabel(yearToDate.summary.reportingMode).toLowerCase()} mode.`}
+          summary={yearToDate.summary}
+          months={yearToDate.months}
+        />
+
+        <PeriodSummarySection
+          title="Rolling 12 months"
+          description={`Twelve months ending in ${formatReportMonthLabel(rollingTwelve.summary.selectedMonth)} in ${formatReportingModeLabel(rollingTwelve.summary.reportingMode).toLowerCase()} mode.`}
+          summary={rollingTwelve.summary}
+          months={rollingTwelve.months}
+        />
+      </div>
+    </details>
+  );
+}
+
+function YearReportView({
+  report,
+  selectedMonth,
+  reportingMode,
+}: {
+  report: YearReportData;
+  selectedMonth: string;
+  reportingMode: ReportingViewMode;
+}) {
+  return (
+    <div className="stack" data-testid="reports-content">
+      <section className="card stack compact">
+        <ReportViewSwitch view="year" month={selectedMonth} mode={reportingMode} />
+        <div className="report-controls-header">
+          <div>
+            <h2>{report.year} overview</h2>
+            <p className="muted-text">
+              Compare income, spending scopes, and savings month by month.
+              {reportingMode === "allocated_period"
+                ? " Completion status still follows each source transaction month."
+                : " Totals use payment dates."}
+            </p>
+          </div>
+          <form className="inline-form report-controls-form" method="GET">
+            <input type="hidden" name="view" value="year" />
+            <input type="hidden" name="mode" value={reportingMode} />
+            <label className="field">
+              <span>Year through month</span>
+              <input
+                className="input"
+                type="month"
+                name="month"
+                defaultValue={formatMonthInputValue(selectedMonth)}
+              />
+            </label>
+            <div className="field">
+              <span>&nbsp;</span>
+              <button className="button" type="submit">Load year</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section className="card stack compact">
+        <div>
+          <h2>Year totals</h2>
+          <p className="muted-text">Displayed months reconcile exactly to these totals.</p>
+        </div>
+        <div className="summary-strip">
+          <div>
+            <strong>{formatReportMoney(report.totals.incomeTotal, report.workspaceCurrency)}</strong>
+            <span>Total income</span>
+          </div>
+          <div>
+            <strong>{formatReportMoney(report.totals.expenseTotal, report.workspaceCurrency)}</strong>
+            <span>Total spent</span>
+          </div>
+          <div>
+            <strong>{formatReportMoney(report.totals.savingsTotal, report.workspaceCurrency)}</strong>
+            <span>Total saved</span>
+          </div>
+          {report.totals.scopes.map((scope) => (
+            <div key={scope.key}>
+              <strong>{formatReportMoney(scope.expenseTotal, report.workspaceCurrency)}</strong>
+              <span>{scope.label}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="card stack compact">
+        <div>
+          <h2>Monthly averages</h2>
+          <p className="muted-text">Empty months inside the displayed range count as zero.</p>
+        </div>
+        <div className="summary-strip">
+          <div>
+            <strong>{formatReportMoney(report.averages.monthlyIncome, report.workspaceCurrency)}</strong>
+            <span>Average income</span>
+          </div>
+          <div>
+            <strong>{formatReportMoney(report.averages.monthlyExpense, report.workspaceCurrency)}</strong>
+            <span>Average spent</span>
+          </div>
+          <div>
+            <strong>{formatReportMoney(report.averages.monthlySavings, report.workspaceCurrency)}</strong>
+            <span>Average saved</span>
+          </div>
+          {report.averages.scopes.map((scope) => (
+            <div key={scope.key}>
+              <strong>{formatReportMoney(scope.expenseTotal, report.workspaceCurrency)}</strong>
+              <span>Average {scope.label.toLocaleLowerCase()}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="card stack compact">
+        <div>
+          <h2>Months</h2>
+          <p className="muted-text">Select a month to inspect its categories and transactions.</p>
+        </div>
+        <div className="table-wrap">
+          <table className="data-table year-report-table">
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Status</th>
+                <th>Income</th>
+                {report.totals.scopes.map((scope) => (
+                  <th key={scope.key}>{scope.label}</th>
+                ))}
+                <th>Total spent</th>
+                <th>Saved</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.months.map((month) => (
+                <tr key={month.month}>
+                  <td>
+                    <Link href={buildReportsHref("month", month.month, reportingMode)}>
+                      {formatReportMonthLabel(month.month)}
+                    </Link>
+                  </td>
+                  <td>
+                    <span className={`badge ${month.status === "in_progress" ? "badge-warning" : "badge-neutral"}`}>
+                      {formatCompletenessStatus(month.status)}
+                    </span>
+                    {month.totalTransactionCount > 0 ? (
+                      <div className="table-note">
+                        {month.reviewedTransactionCount}/{month.totalTransactionCount} reviewed
+                      </div>
+                    ) : null}
+                  </td>
+                  <td>{formatReportMoney(month.incomeTotal, report.workspaceCurrency)}</td>
+                  {month.scopes.map((scope) => (
+                    <td key={scope.key}>
+                      {formatReportMoney(scope.expenseTotal, report.workspaceCurrency)}
+                    </td>
+                  ))}
+                  <td>{formatReportMoney(month.expenseTotal, report.workspaceCurrency)}</td>
+                  <td>{formatReportMoney(month.savingsTotal, report.workspaceCurrency)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <details className="card disclosure">
+        <summary>Advanced reporting</summary>
+        <form className="inline-form report-controls-form" method="GET">
+          <input type="hidden" name="view" value="year" />
+          <input type="hidden" name="month" value={formatMonthInputValue(selectedMonth)} />
+          <label className="field">
+            <span>Reporting mode</span>
+            <select className="input" name="mode" defaultValue={reportingMode}>
+              <option value="payment_date">Payment date</option>
+              <option value="allocated_period">Adjusted period</option>
+            </select>
+          </label>
+          <div className="field">
+            <span>&nbsp;</span>
+            <button className="button button-secondary" type="submit">Apply mode</button>
+          </div>
+        </form>
+      </details>
+    </div>
+  );
+}
+
 async function ReportsData({ searchParams }: ReportsPageProps) {
   const params = await searchParams;
   const month = typeof params.month === "string" ? params.month : undefined;
   const mode = typeof params.mode === "string" ? params.mode : undefined;
-  const selectedMonth = normalizeMonthInput(month);
+  const view: ReportsView = params.view === "year" ? "year" : "month";
+  const selectedMonth = month
+    ? normalizeMonthInput(month)
+    : await withCurrentWorkspaceDb((context, db) =>
+        getLatestFinancialActivityMonth(context, db),
+      );
   const reportingMode = normalizeReportingModeInput(mode);
+
+  if (view === "year") {
+    const yearReport = await withCurrentWorkspaceDb((context, db) =>
+      getYearReport(context, {
+        throughMonth: selectedMonth,
+        mode: reportingMode,
+      }, db),
+    );
+
+    return (
+      <YearReportView
+        report={yearReport}
+        selectedMonth={selectedMonth}
+        reportingMode={reportingMode}
+      />
+    );
+  }
+
   const [report, yearToDate, rollingTwelve] = await withCurrentWorkspaceDb(
     (context, db) =>
       Promise.all([
@@ -153,7 +484,12 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
 
   return (
     <div className="stack" data-testid="reports-content">
-        <section className="card">
+        <section className="card stack compact">
+          <ReportViewSwitch
+            view="month"
+            month={report.summary.selectedMonth}
+            mode={report.summary.reportingMode}
+          />
           <div className="report-controls-header">
             <div>
               <h2>{formatReportMonthLabel(report.summary.selectedMonth)}</h2>
@@ -166,6 +502,8 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
               </p>
             </div>
             <form className="inline-form report-controls-form" method="GET">
+              <input type="hidden" name="view" value="month" />
+              <input type="hidden" name="mode" value={report.summary.reportingMode} />
               <label className="field">
                 <span>Selected month</span>
                 <input
@@ -174,13 +512,6 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
                   name="month"
                   defaultValue={formatMonthInputValue(report.summary.selectedMonth)}
                 />
-              </label>
-              <label className="field">
-                <span>Reporting mode</span>
-                <select className="input" name="mode" defaultValue={report.summary.reportingMode}>
-                  <option value="payment_date">Payment date</option>
-                  <option value="allocated_period">Adjusted period</option>
-                </select>
               </label>
               <div className="field">
                 <span>&nbsp;</span>
@@ -343,33 +674,6 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           </section>
         ) : null}
 
-        {showFxColumn ? (
-          <section className="card">
-            <div>
-              <h2>FX transparency</h2>
-              <p className="muted-text">
-                {placeholderFxLineItemCount > 0
-                  ? `${placeholderFxLineItemCount} imported line item${placeholderFxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} still use Placeholder FX. Full multicurrency reporting is not finished yet, so those amounts remain normalized into ${report.summary.workspaceCurrency}.`
-                  : `${fxLineItemCount} imported line item${fxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} came from foreign-currency activity. They are still shown in ${report.summary.workspaceCurrency} while full multicurrency reporting is unfinished.`}
-              </p>
-            </div>
-          </section>
-        ) : null}
-
-        <PeriodSummarySection
-          title="Year to date"
-          description={`January through ${formatReportMonthLabel(yearToDate.summary.selectedMonth)} in ${formatReportingModeLabel(yearToDate.summary.reportingMode).toLowerCase()} mode.`}
-          summary={yearToDate.summary}
-          months={yearToDate.months}
-        />
-
-        <PeriodSummarySection
-          title="Rolling 12 months"
-          description={`Twelve months ending in ${formatReportMonthLabel(rollingTwelve.summary.selectedMonth)} in ${formatReportingModeLabel(rollingTwelve.summary.reportingMode).toLowerCase()} mode.`}
-          summary={rollingTwelve.summary}
-          months={rollingTwelve.months}
-        />
-
         <section className="card">
           <h2>Included line items</h2>
           <p className="muted-text">
@@ -471,6 +775,14 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
             </div>
           )}
         </section>
+
+        <AdvancedMonthlyReporting
+          report={report}
+          yearToDate={yearToDate}
+          rollingTwelve={rollingTwelve}
+          fxLineItemCount={fxLineItemCount}
+          placeholderFxLineItemCount={placeholderFxLineItemCount}
+        />
     </div>
   );
 }
@@ -493,6 +805,3 @@ export default function ReportsPage({ searchParams }: ReportsPageProps) {
     </main>
   );
 }
-import { Suspense } from "react";
-
-import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";

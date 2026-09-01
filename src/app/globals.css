@@ -1033,6 +1033,26 @@ select.input:focus {
   grid-template-columns: minmax(0, 1fr) auto;
 }
 
+.report-view-switch {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.report-view-switch .button {
+  min-width: 7rem;
+}
+
+.year-report-table th,
+.year-report-table td {
+  white-space: nowrap;
+}
+
+.year-report-table a {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .report-controls-header > div {
   min-width: 0;
 }

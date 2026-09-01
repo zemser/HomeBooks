@@ -146,6 +146,35 @@ export type MonthlyReportData = {
   lineItems: MonthlyReportLineItem[];
 };
 
+export type YearMonthSummary = {
+  month: string;
+  status: MonthCompletenessStatus;
+  reviewedTransactionCount: number;
+  totalTransactionCount: number;
+  incomeTotal: number;
+  expenseTotal: number;
+  savingsTotal: number;
+  scopes: SpendingScopeSummary[];
+};
+
+export type YearReportData = {
+  year: number;
+  workspaceCurrency: string;
+  months: YearMonthSummary[];
+  totals: {
+    incomeTotal: number;
+    expenseTotal: number;
+    savingsTotal: number;
+    scopes: SpendingScopeSummary[];
+  };
+  averages: {
+    monthlyIncome: number;
+    monthlyExpense: number;
+    monthlySavings: number;
+    scopes: SpendingScopeSummary[];
+  };
+};
+
 export type ReportingMonthBucket = {
   month: string;
   incomeTotal: number;
@@ -211,6 +240,10 @@ export type ScopeAggregationRecord = Pick<
   ReportRecord,
   "classificationType" | "category" | "categoryId" | "memberId" | "direction" | "normalizedAmount"
 >;
+
+export type YearAggregationRecord = ScopeAggregationRecord & {
+  eventDate: string;
+};
 
 export function normalizeMonthInput(value?: string) {
   if (!value) {
@@ -314,6 +347,98 @@ export async function getMonthCompleteness(
   });
 }
 
+export async function getLatestFinancialActivityMonth(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor = getDb(),
+) {
+  const [latestTransaction, latestManualEntry] = await Promise.all([
+    db
+      .select({ latestDate: sql<string | null>`max(${transactions.transactionDate})::text` })
+      .from(transactions)
+      .where(eq(transactions.workspaceId, context.workspaceId))
+      .then((rows) => rows[0]?.latestDate ?? null),
+    db
+      .select({ latestDate: sql<string | null>`max(${manualEntries.eventDate})::text` })
+      .from(manualEntries)
+      .where(eq(manualEntries.workspaceId, context.workspaceId))
+      .then((rows) => rows[0]?.latestDate ?? null),
+  ]);
+  const latestDate = [latestTransaction, latestManualEntry]
+    .filter((value): value is string => Boolean(value))
+    .sort()
+    .at(-1);
+
+  return latestDate ? normalizeMonthInput(latestDate) : normalizeMonthInput();
+}
+
+async function getMonthCompletenessForMonths(
+  context: CurrentWorkspaceContext,
+  months: string[],
+  db: DbExecutor,
+) {
+  if (months.length === 0) {
+    return [];
+  }
+
+  const firstMonth = months[0];
+  const { nextMonthStart } = buildMonthWindow(months[months.length - 1]);
+  const transactionMonth = sql<string>`date_trunc('month', ${transactions.transactionDate})::date::text`;
+  const manualEntryMonth = sql<string>`date_trunc('month', ${manualEntries.eventDate})::date::text`;
+  const [transactionRows, manualEntryRows] = await Promise.all([
+    db
+      .select({
+        month: transactionMonth,
+        importedTransactionCount: sql<number>`count(${transactions.id})::int`,
+        reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
+        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'household', 'income'))::int`,
+        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore'))::int`,
+      })
+      .from(transactions)
+      .leftJoin(
+        transactionClassifications,
+        eq(transactionClassifications.transactionId, transactions.id),
+      )
+      .where(
+        and(
+          eq(transactions.workspaceId, context.workspaceId),
+          gte(transactions.transactionDate, firstMonth),
+          lt(transactions.transactionDate, nextMonthStart),
+        ),
+      )
+      .groupBy(transactionMonth),
+    db
+      .select({
+        month: manualEntryMonth,
+        manualEntryCount: sql<number>`count(${manualEntries.id})::int`,
+      })
+      .from(manualEntries)
+      .where(
+        and(
+          eq(manualEntries.workspaceId, context.workspaceId),
+          gte(manualEntries.eventDate, firstMonth),
+          lt(manualEntries.eventDate, nextMonthStart),
+        ),
+      )
+      .groupBy(manualEntryMonth),
+  ]);
+  const transactionCountsByMonth = new Map(transactionRows.map((row) => [row.month, row]));
+  const manualCountsByMonth = new Map(
+    manualEntryRows.map((row) => [row.month, Number(row.manualEntryCount)]),
+  );
+
+  return months.map((month) => {
+    const counts = transactionCountsByMonth.get(month);
+
+    return buildMonthCompleteness(month, {
+      importedTransactionCount: Number(counts?.importedTransactionCount ?? 0),
+      reviewedTransactionCount: Number(counts?.reviewedTransactionCount ?? 0),
+      reportableTransactionCount: Number(counts?.reportableTransactionCount ?? 0),
+      excludedTransactionCount: Number(counts?.excludedTransactionCount ?? 0),
+      manualEntryCount: manualCountsByMonth.get(month) ?? 0,
+    });
+  });
+}
+
 function toNumber(amount: string | number | null | undefined) {
   const parsed = Number(amount);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -337,6 +462,10 @@ function sumMoney(values: number[]) {
 
 function subtractMoney(left: number, right: number) {
   return Number(new Big(left).minus(right).toString());
+}
+
+function divideMoney(amount: number, divisor: number) {
+  return divisor > 0 ? Number(new Big(amount).div(divisor).toString()) : 0;
 }
 
 function isSpendingScope(value: ClassificationType): value is SpendingScope {
@@ -517,6 +646,99 @@ export function buildMemberIncomeSummaries(
     const totalDifference = right.incomeTotal - left.incomeTotal;
     return totalDifference !== 0 ? totalDifference : left.memberName.localeCompare(right.memberName);
   });
+}
+
+function alignSpendingScopes(
+  scopes: SpendingScopeSummary[],
+  template: SpendingScopeSummary[],
+) {
+  const scopesByKey = new Map(scopes.map((scope) => [scope.key, scope]));
+
+  return template.map((scope) => ({
+    ...scope,
+    expenseTotal: scopesByKey.get(scope.key)?.expenseTotal ?? 0,
+    itemCount: scopesByKey.get(scope.key)?.itemCount ?? 0,
+  }));
+}
+
+export function buildYearReportData(input: {
+  year: number;
+  workspaceCurrency: string;
+  includedMonths: string[];
+  records: YearAggregationRecord[];
+  members: ReportMember[];
+  completeness: MonthCompleteness[];
+}): YearReportData {
+  const completenessByMonth = new Map(
+    input.completeness.map((completeness) => [completeness.month, completeness]),
+  );
+  const yearScopeTemplate = buildSpendingScopeSummaries(input.records, input.members);
+  const months = input.includedMonths.map<YearMonthSummary>((month) => {
+    const monthRecords = input.records.filter(
+      (record) => getRecordMonthKey(record.eventDate) === month,
+    );
+    const completeness = completenessByMonth.get(month);
+    const scopes = alignSpendingScopes(
+      buildSpendingScopeSummaries(monthRecords, input.members),
+      yearScopeTemplate,
+    );
+    const incomeTotal = sumMoney(
+      monthRecords
+        .filter((record) => record.direction === "income")
+        .map((record) => record.normalizedAmount),
+    );
+    const expenseTotal = sumMoney(scopes.map((scope) => scope.expenseTotal));
+
+    return {
+      month,
+      status: completeness?.status ?? "empty",
+      reviewedTransactionCount: completeness?.reviewedTransactionCount ?? 0,
+      totalTransactionCount: completeness?.importedTransactionCount ?? 0,
+      incomeTotal,
+      expenseTotal,
+      savingsTotal: subtractMoney(incomeTotal, expenseTotal),
+      scopes,
+    };
+  });
+  const monthCount = months.length;
+  const incomeTotal = sumMoney(months.map((month) => month.incomeTotal));
+  const expenseTotal = sumMoney(months.map((month) => month.expenseTotal));
+  const savingsTotal = sumMoney(months.map((month) => month.savingsTotal));
+  const totalScopes = yearScopeTemplate.map((scope) => ({
+    ...scope,
+    expenseTotal: sumMoney(
+      months.map(
+        (month) => month.scopes.find((monthScope) => monthScope.key === scope.key)?.expenseTotal ?? 0,
+      ),
+    ),
+    itemCount: months.reduce(
+      (total, month) =>
+        total + (month.scopes.find((monthScope) => monthScope.key === scope.key)?.itemCount ?? 0),
+      0,
+    ),
+  }));
+
+  return {
+    year: input.year,
+    workspaceCurrency: input.workspaceCurrency,
+    months,
+    totals: {
+      incomeTotal,
+      expenseTotal,
+      savingsTotal,
+      scopes: totalScopes,
+    },
+    averages: {
+      monthlyIncome: divideMoney(incomeTotal, monthCount),
+      monthlyExpense: divideMoney(expenseTotal, monthCount),
+      monthlySavings: divideMoney(savingsTotal, monthCount),
+      scopes: totalScopes.map((scope) => ({
+        ...scope,
+        expenseTotal: divideMoney(scope.expenseTotal, monthCount),
+        itemCount: scope.itemCount / Math.max(monthCount, 1),
+      })),
+    },
+  };
 }
 
 function createEmptyMonthBucket(month: string): ReportingMonthBucket {
@@ -962,6 +1184,45 @@ export async function getMonthlyReport(
       fxDetails: record.fxDetails,
     })),
   };
+}
+
+export async function getYearReport(
+  context: CurrentWorkspaceContext,
+  input?: { throughMonth?: string; mode?: ReportingViewMode | string },
+  db: DbExecutor = getDb(),
+): Promise<YearReportData> {
+  const selectedMonth = normalizeMonthInput(input?.throughMonth);
+  const currentMonth = normalizeMonthInput();
+  const reportingMode = normalizeReportingModeInput(input?.mode);
+  const year = Number(selectedMonth.slice(0, 4));
+  const currentYear = Number(currentMonth.slice(0, 4));
+  const startMonth = `${year}-01-01`;
+  const endMonth =
+    year < currentYear
+      ? `${year}-12-01`
+      : year === currentYear
+        ? selectedMonth < currentMonth
+          ? selectedMonth
+          : currentMonth
+        : selectedMonth;
+  const includedMonths = listMonthsBetween(
+    new Date(`${startMonth}T00:00:00.000Z`),
+    new Date(`${endMonth}T00:00:00.000Z`),
+  ).map(monthKey);
+  const [members, records, completeness] = await Promise.all([
+    getReportMembers(context, db),
+    listReportRecordsForRange(context, startMonth, endMonth, reportingMode, db),
+    getMonthCompletenessForMonths(context, includedMonths, db),
+  ]);
+
+  return buildYearReportData({
+    year,
+    workspaceCurrency: context.baseCurrency,
+    includedMonths,
+    records,
+    members,
+    completeness,
+  });
 }
 
 export async function getYearToDateReport(
