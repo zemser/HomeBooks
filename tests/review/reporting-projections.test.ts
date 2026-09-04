@@ -128,9 +128,15 @@ test("home and report rendering are read-only projection consumers", async () =>
   assert.doesNotMatch(home, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
   assert.doesNotMatch(reportService, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
   assert.doesNotMatch(reportsPage, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
-  assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="This month" \/>\}>/);
+  assert.match(homePage, /<Suspense fallback=\{<RouteDataFallback label="Selected month" \/>\}>/);
   assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="Recent activity" \/>\}>/);
-  assert.match(homePage, /getWorkspaceHomePrimarySnapshot/);
+  assert.match(homePage, /const getSelectedHomeMonth = cache/);
+  assert.match(homePage, /getLatestFinancialActivityMonth\(context, db\)/);
+  assert.match(homePage, /getWorkspaceHomeReportingSnapshot\(context, \{ month \}, db\)/);
+  assert.match(homePage, /getWorkspaceHomeActivitySnapshot\(context, \{ month \}, db\)/);
+  assert.match(home, /selectDistinct\(\{ importId: transactions\.importId \}\)/);
+  assert.doesNotMatch(home, /earliestTransactionDate < nextMonth/);
+  assert.match(reportsPage, /getYearReport\(context/);
 });
 
 test("payment-date and allocated-period reports use the synchronized occurrence payer", async () => {
@@ -143,7 +149,9 @@ test("payment-date and allocated-period reports use the synchronized occurrence 
   assert.match(reportService, /memberId: entry\.payerMemberId/);
   assert.match(reportService, /memberId: row\.payerMemberId/);
   assert.match(reportService, /const key = record\.memberId \?\? "unassigned"/);
-  assert.match(reportService, /expenseTotal = allRecords[\s\S]*record\.direction === "expense"/);
+  assert.match(reportService, /expenseTotal = sumMoney\(spendingScopes\.map/);
+  assert.match(reportService, /spendingScopes: SpendingScopeSummary\[\]/);
+  assert.match(reportService, /categoryScopeBreakdown: MonthlyCategoryScopeBreakdownItem\[\]/);
 });
 
 test("projection repair reconciles canonical and stale source IDs in the request transaction", async () => {

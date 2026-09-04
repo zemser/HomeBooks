@@ -1,6 +1,9 @@
 import type {
+  MonthCompleteness,
+  MonthlyCategoryScopeBreakdownItem,
   MonthlyReportSummary,
   ReportingViewMode,
+  SpendingScopeSummary,
 } from "@/features/reporting/monthly-report";
 
 export type WorkspaceHomeImportActivity = {
@@ -30,10 +33,15 @@ export type WorkspaceHomePrimarySnapshot = {
 };
 
 export type WorkspaceHomeReportingSnapshot = {
+  workspaceName: string;
+  workspaceCurrency: string;
   selectedMonth: string;
   reportingMode: ReportingViewMode;
   available: boolean;
+  completeness: MonthCompleteness;
   monthSummary: MonthlyReportSummary | null;
+  spendingScopes: SpendingScopeSummary[];
+  topSpendingCategories: MonthlyCategoryScopeBreakdownItem[];
 };
 
 export type WorkspaceHomeActivitySnapshot = {

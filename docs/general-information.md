@@ -54,6 +54,7 @@ This is the source-of-truth guard against accidental direct pushes to `master`.
 - general design: `docs/general-design.md`
 - general information: `docs/general-information.md`
 - implementation sequencing and progress: `docs/implementation-plan.md`
+- focused budgeting experience and reporting requirements: `docs/focused-budgeting-experience-spec.md`
 - implemented schema reference: `docs/schema-reference.md`
 - agent operational notes: `AGENT.md`
 

@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -23,6 +23,7 @@ import {
   type CurrentWorkspaceContext,
 } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
+import { addMonths, monthKey } from "@/lib/dates/months";
 
 async function getWorkspaceName(context: CurrentWorkspaceContext) {
   return context.workspaceName ?? "Workspace";
@@ -53,11 +54,35 @@ async function getReviewQueueCount(
 
 async function listLatestBankImports(
   context: CurrentWorkspaceContext,
+  input: { month?: string } = {},
   limit = 3,
   db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeImportActivity[]> {
-  const recentImports = await listSavedImports(context, { type: "bank" }, db);
-  return recentImports.slice(0, limit);
+  const selectedMonth = input.month ? normalizeMonthInput(input.month) : null;
+
+  if (!selectedMonth) {
+    return (await listSavedImports(context, { type: "bank" }, db)).slice(0, limit);
+  }
+
+  const nextMonth = monthKey(addMonths(new Date(`${selectedMonth}T00:00:00.000Z`), 1));
+  const [recentImports, matchingImportRows] = await Promise.all([
+    listSavedImports(context, { type: "bank" }, db),
+    db
+      .selectDistinct({ importId: transactions.importId })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.workspaceId, context.workspaceId),
+          gte(transactions.transactionDate, selectedMonth),
+          lt(transactions.transactionDate, nextMonth),
+        ),
+      ),
+  ]);
+  const matchingImportIds = new Set(matchingImportRows.map((row) => row.importId));
+
+  return recentImports
+    .filter((item) => matchingImportIds.has(item.id))
+    .slice(0, limit);
 }
 
 export async function getAppShellSnapshot(
@@ -128,31 +153,43 @@ export async function getWorkspaceHomePrimarySnapshot(
 
 export async function getWorkspaceHomeReportingSnapshot(
   context: CurrentWorkspaceContext,
+  input: { month?: string } = {},
   db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeReportingSnapshot> {
   return runWithWorkspaceDatabaseUser(context, async () => {
-    const selectedMonth = normalizeMonthInput();
-    const report = await getMonthlyReport(context, {
-      month: selectedMonth,
-      mode: "allocated_period",
-    }, db);
-    const reportableItemCount =
-      report.summary.importedTransactionCount + report.summary.manualEntryCount;
+    const selectedMonth = normalizeMonthInput(input.month);
+    const [workspaceName, report] = await Promise.all([
+      getWorkspaceName(context),
+      getMonthlyReport(context, {
+        month: selectedMonth,
+        mode: "payment_date",
+      }, db),
+    ]);
+    const hasActivity =
+      report.completeness.importedTransactionCount > 0 ||
+      report.completeness.manualEntryCount > 0;
 
     return {
+      workspaceName,
+      workspaceCurrency: context.baseCurrency,
       selectedMonth,
-      reportingMode: "allocated_period",
-      available: reportableItemCount > 0,
-      monthSummary: reportableItemCount > 0 ? report.summary : null,
+      reportingMode: "payment_date",
+      available: hasActivity,
+      completeness: report.completeness,
+      monthSummary: hasActivity ? report.summary : null,
+      spendingScopes: report.spendingScopes,
+      topSpendingCategories: report.categoryScopeBreakdown.slice(0, 3),
     };
   });
 }
 
 export async function getWorkspaceHomeActivitySnapshot(
   context: CurrentWorkspaceContext,
+  input: { month?: string } = {},
   db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeActivitySnapshot> {
+  const selectedMonth = normalizeMonthInput(input.month);
   return runWithWorkspaceDatabaseUser(context, async () => ({
-    latestImports: await listLatestBankImports(context, 3, db),
+    latestImports: await listLatestBankImports(context, { month: selectedMonth }, 3, db),
   }));
 }
