@@ -26,6 +26,7 @@ import {
   formatReportMonthLabel,
   formatReportingModeLabel,
   formatSourceKind,
+  getMonthCompletenessPresentation,
 } from "@/features/reporting/presentation";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
@@ -80,17 +81,6 @@ function ReportViewSwitch({
       </Link>
     </nav>
   );
-}
-
-function formatCompletenessStatus(status: YearReportData["months"][number]["status"]) {
-  switch (status) {
-    case "empty":
-      return "Empty";
-    case "in_progress":
-      return "In progress";
-    case "complete":
-      return "Complete";
-  }
 }
 
 function formatFxAmount(amount: number | null, currency: string | null) {
@@ -361,16 +351,21 @@ function YearReportView({
               </tr>
             </thead>
             <tbody>
-              {report.months.map((month) => (
-                <tr key={month.month}>
+              {report.months.map((month) => {
+                const statusPresentation = getMonthCompletenessPresentation(month.status);
+
+                return <tr key={month.month}>
                   <td>
-                    <Link href={buildReportsHref("month", month.month, reportingMode)}>
+                    <Link
+                      className="link-button"
+                      href={buildReportsHref("month", month.month, reportingMode)}
+                    >
                       {formatReportMonthLabel(month.month)}
                     </Link>
                   </td>
                   <td>
-                    <span className={`badge ${month.status === "in_progress" ? "badge-warning" : "badge-neutral"}`}>
-                      {formatCompletenessStatus(month.status)}
+                    <span className={`badge badge-${statusPresentation.tone}`}>
+                      {statusPresentation.label}
                     </span>
                     {month.totalTransactionCount > 0 ? (
                       <div className="table-note">
@@ -387,7 +382,7 @@ function YearReportView({
                   <td>{formatReportMoney(month.expenseTotal, report.workspaceCurrency)}</td>
                   <td>{formatReportMoney(month.savingsTotal, report.workspaceCurrency)}</td>
                 </tr>
-              ))}
+              })}
             </tbody>
           </table>
         </div>
@@ -480,6 +475,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
   }).length;
   const showFxColumn = fxLineItemCount > 0;
   const completeness = report.completeness;
+  const completenessPresentation = getMonthCompletenessPresentation(completeness.status);
   const reportMonthLabel = formatReportMonthLabel(report.summary.selectedMonth);
 
   return (
@@ -524,7 +520,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
         </section>
 
         <section
-          className={`status ${completeness.status === "in_progress" ? "warning" : completeness.status === "complete" ? "success" : "neutral"}`}
+          className={`status ${completenessPresentation.tone}`}
           aria-live="polite"
         >
           <strong>

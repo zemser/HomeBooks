@@ -88,6 +88,30 @@ test("active members receive zero buckets and referenced inactive members remain
   );
 });
 
+test("three active members receive independent personal buckets", () => {
+  const members: ReportMember[] = [
+    lee,
+    { id: "izzy", displayName: "Izzy", isActive: true },
+    { id: "sam", displayName: "Sam", isActive: true },
+  ];
+  const records = [
+    record({ classificationType: "personal", memberId: "lee", normalizedAmount: 4 }),
+    record({ classificationType: "personal", memberId: "izzy", normalizedAmount: 5 }),
+    record({ classificationType: "personal", memberId: "sam", normalizedAmount: 6 }),
+  ];
+
+  assert.deepEqual(
+    buildSpendingScopeSummaries(records, members).map((scope) => [scope.label, scope.expenseTotal]),
+    [
+      ["Personal · Lee", 4],
+      ["Personal · Izzy", 5],
+      ["Personal · Sam", 6],
+      ["Shared", 0],
+      ["Household", 0],
+    ],
+  );
+});
+
 test("income attribution stays outside spending scopes", () => {
   const records = [
     record({ classificationType: "income", memberId: lee.id, normalizedAmount: 80 }),

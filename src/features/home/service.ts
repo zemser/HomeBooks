@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -58,22 +58,30 @@ async function listLatestBankImports(
   limit = 3,
   db: DbExecutor = getDb(),
 ): Promise<WorkspaceHomeImportActivity[]> {
-  const recentImports = await listSavedImports(context, { type: "bank" }, db);
   const selectedMonth = input.month ? normalizeMonthInput(input.month) : null;
 
   if (!selectedMonth) {
-    return recentImports.slice(0, limit);
+    return (await listSavedImports(context, { type: "bank" }, db)).slice(0, limit);
   }
 
   const nextMonth = monthKey(addMonths(new Date(`${selectedMonth}T00:00:00.000Z`), 1));
+  const [recentImports, matchingImportRows] = await Promise.all([
+    listSavedImports(context, { type: "bank" }, db),
+    db
+      .selectDistinct({ importId: transactions.importId })
+      .from(transactions)
+      .where(
+        and(
+          eq(transactions.workspaceId, context.workspaceId),
+          gte(transactions.transactionDate, selectedMonth),
+          lt(transactions.transactionDate, nextMonth),
+        ),
+      ),
+  ]);
+  const matchingImportIds = new Set(matchingImportRows.map((row) => row.importId));
+
   return recentImports
-    .filter(
-      (item) =>
-        item.earliestTransactionDate !== null &&
-        item.latestTransactionDate !== null &&
-        item.earliestTransactionDate < nextMonth &&
-        item.latestTransactionDate >= selectedMonth,
-    )
+    .filter((item) => matchingImportIds.has(item.id))
     .slice(0, limit);
 }
 

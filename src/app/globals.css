@@ -1048,11 +1048,6 @@ select.input:focus {
   white-space: nowrap;
 }
 
-.year-report-table a {
-  color: var(--accent);
-  font-weight: 700;
-}
-
 .report-controls-header > div {
   min-width: 0;
 }
@@ -1890,6 +1885,11 @@ kbd {
 .badge-warning {
   background: #fff4da;
   color: #7d5b12;
+}
+
+.badge-success {
+  background: #e8f5ee;
+  color: #245f4d;
 }
 
 .link-button {

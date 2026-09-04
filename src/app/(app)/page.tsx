@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Suspense } from "react";
+import { cache, Suspense } from "react";
 
 import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import {
@@ -7,9 +7,14 @@ import {
   getWorkspaceHomeReportingSnapshot,
 } from "@/features/home/service";
 import {
+  getLatestFinancialActivityMonth,
+  normalizeMonthInput,
+} from "@/features/reporting/monthly-report";
+import {
   formatMonthInputValue,
   formatReportMoney,
   formatReportMonthLabel,
+  getMonthCompletenessPresentation,
 } from "@/features/reporting/presentation";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
@@ -24,10 +29,16 @@ function buildReportTarget(month: string) {
   return `/reports?month=${normalizedMonth}&mode=payment_date`;
 }
 
-async function getSelectedHomeMonth(searchParams: HomePageProps["searchParams"]) {
+const getSelectedHomeMonth = cache(async (searchParams: HomePageProps["searchParams"]) => {
   const params = await searchParams;
-  return typeof params.month === "string" ? params.month : undefined;
-}
+  if (typeof params.month === "string") {
+    return normalizeMonthInput(params.month);
+  }
+
+  return withCurrentWorkspaceDb((context, db) =>
+    getLatestFinancialActivityMonth(context, db),
+  );
+});
 
 async function HomeReporting({ searchParams }: HomePageProps) {
   const month = await getSelectedHomeMonth(searchParams);
@@ -36,12 +47,7 @@ async function HomeReporting({ searchParams }: HomePageProps) {
   );
   const completion = reporting.completeness;
   const monthLabel = formatReportMonthLabel(reporting.selectedMonth);
-  const statusLabel =
-    completion.status === "empty"
-      ? "Empty"
-      : completion.status === "in_progress"
-        ? "In progress"
-        : "Complete";
+  const statusPresentation = getMonthCompletenessPresentation(completion.status);
   const nextAction =
     completion.status === "empty"
       ? {
@@ -87,8 +93,8 @@ async function HomeReporting({ searchParams }: HomePageProps) {
 
       <section className="home-next card">
         <div>
-          <span className={`badge ${completion.status === "in_progress" ? "badge-warning" : "badge-neutral"}`}>
-            {statusLabel}
+          <span className={`badge badge-${statusPresentation.tone}`}>
+            {statusPresentation.label}
           </span>
           <h2>{monthLabel}</h2>
           <p>

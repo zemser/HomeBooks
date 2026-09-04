@@ -130,7 +130,12 @@ test("home and report rendering are read-only projection consumers", async () =>
   assert.doesNotMatch(reportsPage, /syncExpenseEventsForRange|materializeRecurringEntriesForRange/);
   assert.match(homePage, /<Suspense fallback=\{<RouteDataFallback label="Selected month" \/>\}>/);
   assert.match(homePage, /<Suspense fallback=\{<HomeCardFallback label="Recent activity" \/>\}>/);
+  assert.match(homePage, /const getSelectedHomeMonth = cache/);
+  assert.match(homePage, /getLatestFinancialActivityMonth\(context, db\)/);
   assert.match(homePage, /getWorkspaceHomeReportingSnapshot\(context, \{ month \}, db\)/);
+  assert.match(homePage, /getWorkspaceHomeActivitySnapshot\(context, \{ month \}, db\)/);
+  assert.match(home, /selectDistinct\(\{ importId: transactions\.importId \}\)/);
+  assert.doesNotMatch(home, /earliestTransactionDate < nextMonth/);
   assert.match(reportsPage, /getYearReport\(context/);
 });
 

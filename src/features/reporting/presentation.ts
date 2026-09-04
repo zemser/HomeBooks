@@ -1,5 +1,21 @@
 import { formatClassificationTypeLabel } from "@/features/expenses/presentation";
-import type { ReportingViewMode } from "@/features/reporting/monthly-report";
+import type {
+  MonthCompletenessStatus,
+  ReportingViewMode,
+} from "@/features/reporting/monthly-report";
+
+const MONTH_COMPLETENESS_PRESENTATION = {
+  empty: { label: "Empty", tone: "neutral" },
+  in_progress: { label: "In progress", tone: "warning" },
+  complete: { label: "Complete", tone: "success" },
+} as const satisfies Record<
+  MonthCompletenessStatus,
+  { label: string; tone: "neutral" | "warning" | "success" }
+>;
+
+export function getMonthCompletenessPresentation(status: MonthCompletenessStatus) {
+  return MONTH_COMPLETENESS_PRESENTATION[status];
+}
 
 export function formatMonthInputValue(value: string) {
   return value.slice(0, 7);
