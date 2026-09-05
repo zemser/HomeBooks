@@ -1,7 +1,9 @@
+import { Suspense } from "react";
+
+import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { ImportPreviewClient } from "@/components/imports/import-preview-client";
 import { listSavedImports } from "@/features/imports/persistence";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
-
 
 async function ImportUpload() {
   const workspaceCurrency = await withCurrentWorkspaceDb(async (context) =>
@@ -9,7 +11,7 @@ async function ImportUpload() {
   );
 
   return (
-    <div data-testid="imports-content">
+    <div data-testid="transactions-import-content">
       <ImportPreviewClient mode="upload" workspaceCurrency={workspaceCurrency} />
     </div>
   );
@@ -24,7 +26,7 @@ async function SavedImportHistory() {
   );
 
   return (
-    <div data-testid="imports-history">
+    <div data-testid="transactions-import-history">
       <ImportPreviewClient
         mode="history"
         savedImports={savedImports}
@@ -34,28 +36,15 @@ async function SavedImportHistory() {
   );
 }
 
-export default function ImportsPage() {
+export default function TransactionsImportPage() {
   return (
-    <main>
-      <div className="page-shell stack">
-        <section className="page-header" data-testid="imports-shell">
-          <div>
-            <span className="eyebrow">Imports</span>
-            <h1>Add bank transactions</h1>
-            <p>Add transactions from a bank statement to your ledger.</p>
-          </div>
-        </section>
-
-        <Suspense fallback={<RouteDataFallback label="Bank statement upload" />}>
-          <ImportUpload />
-        </Suspense>
-        <Suspense fallback={<RouteDataFallback label="Saved bank statements" />}>
-          <SavedImportHistory />
-        </Suspense>
-      </div>
-    </main>
+    <>
+      <Suspense fallback={<RouteDataFallback label="Bank statement upload" />}>
+        <ImportUpload />
+      </Suspense>
+      <Suspense fallback={<RouteDataFallback label="Saved bank statements" />}>
+        <SavedImportHistory />
+      </Suspense>
+    </>
   );
 }
-import { Suspense } from "react";
-
-import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";

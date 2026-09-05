@@ -51,12 +51,12 @@ async function HomeReporting({ searchParams }: HomePageProps) {
   const nextAction =
     completion.status === "empty"
       ? {
-          href: "/imports",
+          href: "/transactions",
           label: "Import transactions",
         }
       : completion.status === "in_progress"
         ? {
-            href: `/imports/review?month=${reporting.selectedMonth.slice(0, 7)}`,
+            href: `/transactions/review?month=${reporting.selectedMonth.slice(0, 7)}`,
             label: `Review ${completion.pendingTransactionCount} transaction${completion.pendingTransactionCount === 1 ? "" : "s"}`,
           }
         : {
@@ -206,7 +206,7 @@ async function HomeRecentActivity({ searchParams }: HomePageProps) {
           <h2>Recent activity</h2>
           <p className="muted-text">Saved bank imports affecting the selected month.</p>
         </div>
-        <Link className="link-button" href="/imports">Open imports</Link>
+        <Link className="link-button" href="/transactions">Open transactions</Link>
       </div>
       {activity.latestImports.length === 0 ? (
         <p className="empty-state">No saved imports affect this month.</p>

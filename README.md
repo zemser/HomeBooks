@@ -35,9 +35,9 @@ repository lint, type-check, focused tests, and production build before merging.
 The current product loop is:
 
 1. land on a DB-backed home hub at `/`
-2. import real bank files through `/imports`
-3. review uncertain classifications in `/imports/review`
-4. validate the ledger and manual-entry flow in `/expenses`
+2. import real bank files through `/transactions`
+3. review uncertain classifications in `/transactions/review`
+4. validate the ledger and manual-entry flow in `/transactions/all`
 5. confirm recurring definitions and month-aware reporting behave like one connected flow in `/recurring` and `/reports`
 6. use `/investments` for saved-holdings composition and first-pass saved activity imports
 7. harden the hosted two-user path with Supabase Auth, required TOTP MFA, RLS, and temporary hosted import storage
@@ -98,9 +98,9 @@ Suggested smoke-test flow:
 
 1. Open `/` and confirm the home hub loads with setup and next-action cues.
 2. Open `/settings` and confirm the seeded workspace/member context loads.
-3. Open `/imports` and save a real bank import if you have one ready.
-4. Open `/imports/review` and process any uncertain rows, watching the progress cues as the queue shrinks.
-5. Open `/expenses` and confirm imported rows, search/filtering, saved manual-entry editing, and any FX labels all read clearly.
+3. Open `/transactions` and save a real bank import if you have one ready.
+4. Open `/transactions/review` and process any uncertain rows, watching the progress cues as the queue shrinks.
+5. Open `/transactions/all` and confirm imported rows, search/filtering, saved manual-entry editing, and any FX labels all read clearly.
 6. Create a one-time manual entry and save an adjusted-period allocation.
 7. Open `/recurring`, save a recurring definition, confirm it appears in reports without a separate generate step, then pause it once and confirm the current report month clears.
 8. Open `/reports` and verify payment-date and adjusted-period views render for the month you just reviewed, including any FX transparency cues for imported rows, recurring rows that were prepared automatically, and the expected queue-cleared/month-aware handoff paths.

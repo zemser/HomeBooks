@@ -11,7 +11,7 @@ const baseURL = process.env.PERF_BASE_URL ?? "http://127.0.0.1:3102";
 const port = Number(new URL(baseURL).port || 3102);
 const coldRuns = Number(process.env.PERF_COLD_RUNS ?? 2);
 const warmRuns = Number(process.env.PERF_WARM_RUNS ?? 5);
-const routes = ["/", "/imports", "/imports/review", "/expenses", "/reports"] as const;
+const routes = ["/", "/transactions", "/transactions/review", "/transactions/all", "/reports"] as const;
 
 type TelemetryRecord = {
   operation?: string;
@@ -217,7 +217,7 @@ async function mutationSample(page: Page, scenario: string, run: number, action:
 async function mutationSamples(browser: Browser) {
   const context = await browser.newContext({ baseURL });
   const page = await context.newPage();
-  await page.goto(`${baseURL}/imports/review`);
+  await page.goto(`${baseURL}/transactions/review`);
   const response = await page.request.get("/api/imports/review?page=1&pageSize=10");
   const review = (await response.json()) as ReviewData;
   const categoryId = review.categoryCatalog[0]?.id;

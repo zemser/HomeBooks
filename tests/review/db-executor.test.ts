@@ -112,9 +112,9 @@ test("workspace settings and member services accept an explicit executor", async
 });
 
 test("home and app-shell reads use the explicit transaction executor", async () => {
-  const [homeSource, layoutSource, pageSource, importsSource] = await Promise.all([
+  const [homeSource, shellSnapshotSource, pageSource, importsSource] = await Promise.all([
     readFile(homePath, "utf8"),
-    readFile(new URL("../../src/app/(app)/layout.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../src/features/home/request-shell-snapshot.ts", import.meta.url), "utf8"),
     readFile(new URL("../../src/app/(app)/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../../src/features/imports/persistence.ts", import.meta.url), "utf8"),
   ]);
@@ -122,11 +122,12 @@ test("home and app-shell reads use the explicit transaction executor", async () 
   assert.match(homeSource, /db: DbExecutor = getDb\(\)/);
   assert.match(homeSource, /listWorkspaceMembersForSettings\(context, db\)/);
   assert.match(homeSource, /listSavedImports\(context, \{ type: "bank" \}, db\)/);
-  assert.match(layoutSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(shellSnapshotSource, /cache\(\(\) =>/);
+  assert.match(shellSnapshotSource, /withCurrentWorkspaceDb\(\(context, db\)/);
   assert.match(pageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
   assert.match(importsSource, /db: DbExecutor = getDb\(\)/);
   assert.match(
-    await readFile(new URL("../../src/app/(app)/imports/page.tsx", import.meta.url), "utf8"),
+    await readFile(new URL("../../src/app/(app)/transactions/page.tsx", import.meta.url), "utf8"),
     /withCurrentWorkspaceDb\(\s*async \(context, db\)/,
   );
   assert.match(
@@ -145,9 +146,9 @@ test("expense reads and classification commands use the explicit transaction exe
     await Promise.all([
       readFile(expensesQueriesPath, "utf8"),
       readFile(classificationsPath, "utf8"),
-      readFile(new URL("../../src/app/(app)/expenses/page.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/(app)/transactions/all/page.tsx", import.meta.url), "utf8"),
       readFile(new URL("../../src/app/api/expenses/route.ts", import.meta.url), "utf8"),
-      readFile(new URL("../../src/app/(app)/imports/review/page.tsx", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/(app)/transactions/review/page.tsx", import.meta.url), "utf8"),
     ]);
 
   assert.match(queriesSource, /listExpenseTransactions\([\s\S]*db: DbExecutor = getDb\(\)/);

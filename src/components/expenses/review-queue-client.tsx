@@ -414,7 +414,6 @@ export function ReviewQueueClient({
     const params = new URLSearchParams(query);
     if (page > 1) params.set("page", String(page));
     else params.delete("page");
-    params.delete("pageSize");
     const nextQuery = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
   }, [accountFilter, importFilter, isUrlStateReady, maximumAmount, minimumAmount, monthFilter, page, searchQuery, sort, view]);
@@ -958,8 +957,8 @@ export function ReviewQueueClient({
     ? getCurrencyNormalizationDisplayState(selectedTransaction)
     : null;
   const selectedLedgerHref = selectedTransaction
-    ? `/expenses?transactionId=${selectedTransaction.id}`
-    : "/expenses";
+    ? `/transactions/all?transactionId=${selectedTransaction.id}`
+    : "/transactions/all";
   const selectedReportTargets = selectedTransaction
     ? buildTransactionReportTargets(selectedTransaction)
     : [];
@@ -1376,7 +1375,7 @@ export function ReviewQueueClient({
                   <Link className="button" href={queueClearReportHref}>
                     {queueClearReportLabel}
                   </Link>
-                  <Link className="button button-secondary" href="/expenses">
+                  <Link className="button button-secondary" href="/transactions/all">
                     Open ledger
                   </Link>
                 </div>
@@ -1527,14 +1526,14 @@ export function ReviewQueueClient({
               <h2>Selected transaction</h2>
               <p className="muted-text">
                 Save one row at a time here. You can also open already-classified items from
-                the expenses page to correct them.
+                All transactions to correct them.
               </p>
             </div>
           </div>
 
           {!selectedTransaction ? (
             <p className="empty-state">
-              Select a queue row to review it. If you came from `/expenses`, the chosen
+              Select a queue row to review it. If you came from All transactions, the chosen
               transaction will appear here automatically.
             </p>
           ) : (

@@ -2,15 +2,33 @@ import { expect, test } from "@playwright/test";
 import { instant } from "@next/playwright";
 
 const routes = [
-  { name: "home", href: "/", source: "/imports", shell: "home-shell", content: "home-content" },
-  { name: "review", href: "/imports/review", source: "/", shell: "review-shell", content: "review-content" },
-  { name: "expenses", href: "/expenses", source: "/", shell: "expenses-shell", content: "expenses-content" },
+  { name: "home", href: "/", source: "/transactions", shell: "home-shell", content: "home-content" },
+  {
+    name: "transaction import",
+    href: "/transactions",
+    source: "/",
+    shell: "transactions-shell",
+    content: "transactions-import-content",
+  },
+  {
+    name: "transaction review",
+    href: "/transactions/review",
+    source: "/transactions",
+    shell: "transactions-shell",
+    content: "transactions-review-content",
+  },
+  {
+    name: "all transactions",
+    href: "/transactions/all",
+    source: "/transactions",
+    shell: "transactions-shell",
+    content: "transactions-all-content",
+  },
   { name: "reports", href: "/reports", source: "/", shell: "reports-shell", content: "reports-content" },
-  { name: "settings", href: "/settings", source: "/", shell: "settings-shell", content: "settings-content" },
-  { name: "recurring", href: "/recurring", source: "/", shell: "recurring-shell", content: "recurring-content" },
-  { name: "settlements", href: "/settlements", source: "/", shell: "settlements-shell", content: "settlements-content" },
-  { name: "imports", href: "/imports", source: "/", shell: "imports-shell", content: "imports-content" },
-  { name: "investments", href: "/investments", source: "/", shell: "investments-shell", content: "investments-content" },
+  { name: "settings", href: "/settings", source: "/more", shell: "settings-shell", content: "settings-content" },
+  { name: "recurring", href: "/recurring", source: "/more", shell: "recurring-shell", content: "recurring-content" },
+  { name: "settlements", href: "/settlements", source: "/more", shell: "settlements-shell", content: "settlements-content" },
+  { name: "investments", href: "/investments", source: "/more", shell: "investments-shell", content: "investments-content" },
 ] as const;
 
 for (const route of routes) {
@@ -44,3 +62,29 @@ for (const route of routes) {
     await expect(page.getByTestId(route.content)).toBeVisible();
   });
 }
+
+test("More serves its shell on an initial load", async ({ page, baseURL }) => {
+  if (!baseURL) throw new Error("The instant-navigation rig requires a baseURL.");
+
+  await instant(
+    page,
+    async () => {
+      await page.goto("/more");
+      await expect(page.getByTestId("more-shell")).toBeVisible();
+    },
+    { baseURL },
+  );
+});
+
+test("More commits its shell from the mobile navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+  const trigger = page.getByRole("navigation", { name: "Primary mobile navigation" })
+    .getByRole("link", { name: "More", exact: true });
+
+  await instant(page, async () => {
+    await trigger.click();
+    await page.waitForURL((url) => url.pathname === "/more");
+    await expect(page.getByTestId("more-shell")).toBeVisible();
+  });
+});

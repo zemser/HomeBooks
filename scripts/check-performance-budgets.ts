@@ -55,13 +55,13 @@ function validateBudgets(budgets: JsonObject) {
   if (!isObject(amplification)) errors.push("amplification must be an object");
   else {
     assertRequiredNumbers(amplification.protectedRead, "amplification.protectedRead", ["authCallsMax", "workspaceLookupsMax", "rlsSetupsMax", "reportingWritesOnGetMax"], errors);
-    assertRequiredNumbers(amplification.routeSqlStatementsMax, "amplification.routeSqlStatementsMax", ["/", "/imports", "/imports/review", "/expenses", "/reports"], errors);
-    assertRequiredNumbers(amplification.routeDatabaseUnitsMax, "amplification.routeDatabaseUnitsMax", ["/", "/imports", "/imports/review", "/expenses", "/reports"], errors);
+    assertRequiredNumbers(amplification.routeSqlStatementsMax, "amplification.routeSqlStatementsMax", ["/", "/transactions", "/transactions/review", "/transactions/all", "/reports"], errors);
+    assertRequiredNumbers(amplification.routeDatabaseUnitsMax, "amplification.routeDatabaseUnitsMax", ["/", "/transactions", "/transactions/review", "/transactions/all", "/reports"], errors);
     assertNumber(amplification.bulkSaveSqlStatementsMax, "amplification.bulkSaveSqlStatementsMax", errors);
     assertNumber(amplification.steadyStateAdvisoryLockCallsMax, "amplification.steadyStateAdvisoryLockCallsMax", errors);
   }
 
-  assertRequiredNumbers(budgets.clientJavaScriptFirstLoadKbMax, "clientJavaScriptFirstLoadKbMax", ["shared", "/", "/imports", "/imports/review", "/expenses", "/reports"], errors);
+  assertRequiredNumbers(budgets.clientJavaScriptFirstLoadKbMax, "clientJavaScriptFirstLoadKbMax", ["shared", "/", "/transactions", "/transactions/review", "/transactions/all", "/reports"], errors);
   return errors;
 }
 

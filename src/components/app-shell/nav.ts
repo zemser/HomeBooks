@@ -1,10 +1,13 @@
 export type AppNavItem = {
   href: string;
   label: string;
-  badge?: string | null;
-  badgeTone?: "warning" | "neutral";
   betaLabel?: string | null;
+  attention?: "review";
   matchStrategy?: "exact" | "prefix";
+  activePaths?: Array<{
+    href: string;
+    matchStrategy: "exact" | "prefix";
+  }>;
 };
 
 export type AppNavSection = {
@@ -12,39 +15,55 @@ export type AppNavSection = {
   items: AppNavItem[];
 };
 
-export function createAppNavSections(): AppNavSection[] {
-  return [
-    {
-      title: "Money",
-      items: [
-        { href: "/", label: "Home", matchStrategy: "exact" },
-        { href: "/imports", label: "Imports", matchStrategy: "exact" },
-        {
-          href: "/imports/review",
-          label: "Review",
-          matchStrategy: "prefix",
-        },
-        { href: "/expenses", label: "Expenses", matchStrategy: "prefix" },
-        { href: "/recurring", label: "Recurring", matchStrategy: "prefix" },
-        { href: "/reports", label: "Reports", matchStrategy: "prefix" },
-      ],
-    },
-    {
-      title: "More",
-      items: [
-        { href: "/settlements", label: "Settlements", matchStrategy: "prefix" },
-        {
-          href: "/investments",
-          label: "Investments",
-          matchStrategy: "prefix",
-          betaLabel: "Beta",
-        },
-        {
-          href: "/settings",
-          label: "Settings",
-          matchStrategy: "prefix",
-        },
-      ],
-    },
-  ];
+export type AppNavigation = {
+  desktopSections: AppNavSection[];
+  mobileItems: AppNavItem[];
+  titleItems: AppNavItem[];
+};
+
+const primaryItems: AppNavItem[] = [
+  { href: "/", label: "Home", matchStrategy: "exact" },
+  {
+    href: "/transactions",
+    label: "Transactions",
+    matchStrategy: "prefix",
+    attention: "review",
+  },
+  { href: "/reports", label: "Reports", matchStrategy: "prefix" },
+];
+
+const moreItems: AppNavItem[] = [
+  { href: "/recurring", label: "Recurring", matchStrategy: "prefix" },
+  { href: "/settlements", label: "Settlements", matchStrategy: "prefix" },
+  {
+    href: "/investments",
+    label: "Investments",
+    matchStrategy: "prefix",
+    betaLabel: "Beta",
+  },
+  { href: "/settings", label: "Settings", matchStrategy: "prefix" },
+];
+
+const mobileMoreItem: AppNavItem = {
+  href: "/more",
+  label: "More",
+  matchStrategy: "exact",
+  activePaths: [
+    { href: "/more", matchStrategy: "exact" },
+    ...moreItems.map((item) => ({
+      href: item.href,
+      matchStrategy: item.matchStrategy ?? "prefix",
+    })),
+  ],
+};
+
+export function createAppNavigation(): AppNavigation {
+  return {
+    desktopSections: [
+      { title: "Money", items: primaryItems },
+      { title: "More", items: moreItems },
+    ],
+    mobileItems: [...primaryItems, mobileMoreItem],
+    titleItems: [...primaryItems, ...moreItems, mobileMoreItem],
+  };
 }

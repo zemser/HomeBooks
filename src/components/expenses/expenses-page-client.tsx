@@ -264,7 +264,7 @@ export function ExpensesPageClient({
       const data = (await response.json()) as ExpensesResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Could not load expenses.");
+        throw new Error(data.error ?? "Could not load transactions.");
       }
 
       applyExpensesData(
@@ -278,7 +278,7 @@ export function ExpensesPageClient({
         options,
       );
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Could not load expenses.");
+      setError(loadError instanceof Error ? loadError.message : "Could not load transactions.");
       setTransactions([]);
       setOneTimeManualEntries([]);
       setMembers([]);
@@ -1069,12 +1069,12 @@ export function ExpensesPageClient({
           <div>
             <h2>Imported transactions</h2>
             <p className="muted-text">
-              Classification still lives in the review queue, but reportable transactions
-              can have their reporting period adjusted here without leaving `/expenses`.
+              Classification still lives in the review queue, while reportable transactions
+              can have their reporting period adjusted from this complete history.
             </p>
           </div>
           <div className="action-row">
-            <Link className="button button-secondary" href="/imports/review">
+            <Link className="button button-secondary" href="/transactions/review">
               {reviewCount > 0 ? `Review ${reviewCount} left` : "Open review queue"}
             </Link>
             <Link className="button" href="/reports">Open reports</Link>
@@ -1151,7 +1151,7 @@ export function ExpensesPageClient({
           </div>
         </div>
 
-        {isLoading ? <p className="status">Loading expenses...</p> : null}
+        {isLoading ? <p className="status">Loading transactions...</p> : null}
 
         {!isLoading && transactions.length === 0 ? (
           <p className="empty-state">

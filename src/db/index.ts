@@ -48,31 +48,6 @@ type RootDb = NodePgDatabase<typeof schema>;
 export type DbTransaction = Parameters<Parameters<RootDb["transaction"]>[0]>[0];
 export type DbExecutor = RootDb | DbTransaction;
 
-function getQueryText(query: unknown) {
-  if (typeof query === "string") {
-    return query;
-  }
-
-  if (
-    query
-    && typeof query === "object"
-    && "text" in query
-    && typeof query.text === "string"
-  ) {
-    return query.text;
-  }
-
-  return "";
-}
-
-function isTransactionControlQuery(query: unknown) {
-  const normalizedQuery = getQueryText(query).trim().toLowerCase();
-
-  return /^(begin|commit|rollback|savepoint|release savepoint|rollback to savepoint)\b/.test(
-    normalizedQuery,
-  );
-}
-
 function usesTransactionPooler(connectionString: string) {
   try {
     return new URL(connectionString).port === "6543";

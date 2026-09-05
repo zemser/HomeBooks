@@ -3,7 +3,7 @@ import { expect, test } from "@playwright/test";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 test("manual-entry categories use stable catalog IDs", async ({ page }) => {
-  await page.goto("/expenses");
+  await page.goto("/transactions/all");
   await page.getByRole("button", { name: "Add manual transaction", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Add manual transaction" });
   const category = dialog.getByLabel("Category");
