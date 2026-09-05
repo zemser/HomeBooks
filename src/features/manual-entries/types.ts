@@ -14,6 +14,10 @@ export type OneTimeManualEntryItem = {
   workspaceCurrency: string;
   payerMemberId: string | null;
   payerMemberName: string | null;
+  personalOwnerMemberId: string | null;
+  personalOwnerName: string | null;
+  receivedByMemberId: string | null;
+  receivedByName: string | null;
   classificationType: OneTimeManualEntryClassificationType;
   category: string | null;
   categoryId: string | null;

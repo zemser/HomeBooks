@@ -228,7 +228,7 @@ async function mutationSamples(browser: Browser) {
     const transactionId = queueIds[0];
     if (!transactionId || !categoryId) return undefined;
     const result = await page.request.post("/api/transaction-classifications", {
-      data: { transactionId, classificationType: "household", categoryId, category: null, memberOwnerId: null, createRule: false, additionalTransactionIds: [] },
+      data: { transactionId, classificationType: "household", categoryId, category: null, paidByMemberId: null, createRule: false, additionalTransactionIds: [] },
     });
     if (!result.ok()) throw new Error(`save-one returned ${result.status()}`);
     const payload = (await result.json()) as { undoBatchId?: string };
@@ -239,7 +239,7 @@ async function mutationSamples(browser: Browser) {
   samples.push(await mutationSample(page, "save-bulk", 1, async () => {
     if (queueIds.length === 0 || !categoryId) return undefined;
     const result = await page.request.post("/api/transaction-classifications/bulk", {
-      data: { transactionIds: queueIds, classificationType: "household", categoryId, category: null, memberOwnerId: null },
+      data: { transactionIds: queueIds, classificationType: "household", categoryId, category: null, paidByMemberId: null },
     });
     if (!result.ok()) throw new Error(`save-bulk returned ${result.status()}`);
     const payload = (await result.json()) as { undoBatchId?: string };

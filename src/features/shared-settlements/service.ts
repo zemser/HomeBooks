@@ -702,6 +702,7 @@ export async function upsertSharedSettlement(
       await tx
         .update(transactionClassifications)
         .set({
+          paidByMemberId: input.payerMemberId,
           memberOwnerId: input.payerMemberId,
           updatedAt: new Date(),
         })

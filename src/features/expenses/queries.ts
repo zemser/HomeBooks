@@ -46,6 +46,7 @@ type RawTransactionRow = {
   normalizationRateSource: string | null;
   direction: string;
   accountDisplayName: string;
+  accountOwnerMemberId: string | null;
   importSourceName: string | null;
   importOriginalFilename: string;
   importUploadedByUserId: string;
@@ -59,7 +60,9 @@ type RawTransactionRow = {
     | null;
   category: string | null;
   categoryId: string | null;
-  memberOwnerId: string | null;
+  personalOwnerMemberId: string | null;
+  paidByMemberId: string | null;
+  receivedByMemberId: string | null;
   decidedBy: "rule" | "user" | "system_default" | null;
   reviewedAt: Date | null;
 };
@@ -117,9 +120,12 @@ async function mapTransactionRows(
 ) {
   const memberIds = Array.from(
     new Set(
-      rows
-        .map((row) => row.memberOwnerId)
-        .filter((value): value is string => Boolean(value)),
+      rows.flatMap((row) => [
+        row.personalOwnerMemberId,
+        row.paidByMemberId,
+        row.receivedByMemberId,
+        row.accountOwnerMemberId,
+      ]).filter((value): value is string => Boolean(value)),
     ),
   );
   const memberNamesById = await listMemberNamesById(memberIds, db);
@@ -139,6 +145,7 @@ async function mapTransactionRows(
     accountId: row.accountId,
     importId: row.importId,
     importerMemberId: importerMemberIdsByUserId.get(row.importUploadedByUserId) ?? null,
+    accountOwnerMemberId: row.accountOwnerMemberId,
     transactionDate: row.transactionDate,
     bookingDate: row.bookingDate,
     description: row.description,
@@ -159,9 +166,17 @@ async function mapTransactionRows(
           classificationType: row.classificationType,
           category: row.category,
           categoryId: row.categoryId,
-          memberOwnerId: row.memberOwnerId,
-          memberOwnerName: row.memberOwnerId
-            ? memberNamesById.get(row.memberOwnerId) ?? null
+          personalOwnerMemberId: row.personalOwnerMemberId,
+          personalOwnerName: row.personalOwnerMemberId
+            ? memberNamesById.get(row.personalOwnerMemberId) ?? null
+            : null,
+          paidByMemberId: row.paidByMemberId,
+          paidByName: row.paidByMemberId
+            ? memberNamesById.get(row.paidByMemberId) ?? null
+            : null,
+          receivedByMemberId: row.receivedByMemberId,
+          receivedByName: row.receivedByMemberId
+            ? memberNamesById.get(row.receivedByMemberId) ?? null
             : null,
           decidedBy: row.decidedBy ?? "user",
           reviewedAt: row.reviewedAt?.toISOString() ?? null,
@@ -209,13 +224,16 @@ async function listTransactionsByWorkspace(input: {
       normalizationRateSource: transactions.normalizationRateSource,
       direction: transactions.direction,
       accountDisplayName: financialAccounts.displayName,
+      accountOwnerMemberId: financialAccounts.ownerMemberId,
       importSourceName: importSources.name,
       importOriginalFilename: imports.originalFilename,
       importUploadedByUserId: imports.uploadedByUserId,
       classificationType: transactionClassifications.classificationType,
       category: transactionClassifications.category,
       categoryId: transactionClassifications.categoryId,
-      memberOwnerId: transactionClassifications.memberOwnerId,
+      personalOwnerMemberId: transactionClassifications.personalOwnerMemberId,
+      paidByMemberId: transactionClassifications.paidByMemberId,
+      receivedByMemberId: transactionClassifications.receivedByMemberId,
       decidedBy: transactionClassifications.decidedBy,
       reviewedAt: transactionClassifications.reviewedAt,
     })
@@ -465,7 +483,9 @@ async function listHistoricalClassificationSuggestions(
       classificationType: transactionClassifications.classificationType,
       category: transactionClassifications.category,
       categoryId: transactionClassifications.categoryId,
-      memberOwnerId: transactionClassifications.memberOwnerId,
+      personalOwnerMemberId: transactionClassifications.personalOwnerMemberId,
+      paidByMemberId: transactionClassifications.paidByMemberId,
+      receivedByMemberId: transactionClassifications.receivedByMemberId,
     })
     .from(transactions)
     .innerJoin(
@@ -477,7 +497,13 @@ async function listHistoricalClassificationSuggestions(
     .limit(5000);
 
   const memberIds = Array.from(
-    new Set(rows.map((row) => row.memberOwnerId).filter((id): id is string => Boolean(id))),
+    new Set(
+      rows.flatMap((row) => [
+        row.personalOwnerMemberId,
+        row.paidByMemberId,
+        row.receivedByMemberId,
+      ]).filter((id): id is string => Boolean(id)),
+    ),
   );
   const memberNames = await listMemberNamesById(memberIds, db);
   return buildExactMerchantSuggestions(rows, memberNames);

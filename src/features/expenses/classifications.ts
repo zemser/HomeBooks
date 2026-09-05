@@ -1,15 +1,23 @@
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
   classificationDecisionBatches,
   classificationRules,
+  financialAccounts,
   transactionClassifications,
   transactions,
   workspaceMembers,
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
-import { getPayerValidationMessage } from "@/features/expenses/payer";
+import {
+  compatibilityMemberOwnerId,
+  getMemberAttributionValidationMessage,
+  memberAttributionFromSnapshot,
+  normalizeMemberAttribution,
+  resolveImportedPaidByMemberId,
+  type MemberAttribution,
+} from "@/features/expenses/payer";
 import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import {
@@ -19,22 +27,26 @@ import {
 } from "@/features/workspaces/categories";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 
-type SingleClassificationInput = {
+type ClassificationMemberInput = {
+  personalOwnerMemberId?: string | null;
+  paidByMemberId?: string | null;
+  receivedByMemberId?: string | null;
+};
+
+type SingleClassificationInput = ClassificationMemberInput & {
   transactionId: string;
   classificationType: ClassificationType;
   category?: string | null;
   categoryId?: string | null;
-  memberOwnerId?: string | null;
   createRule?: boolean;
   additionalTransactionIds?: string[];
 };
 
-type BulkClassificationInput = {
+type BulkClassificationInput = ClassificationMemberInput & {
   transactionIds: string[];
   classificationType: ClassificationType;
   category?: string | null;
   categoryId?: string | null;
-  memberOwnerId?: string | null;
 };
 
 export class ClassificationInputError extends Error {
@@ -50,41 +62,60 @@ function normalizeOptionalText(value?: string | null) {
   return normalized ? normalized : null;
 }
 
-async function assertWorkspaceMember(
+function optionalMemberInput(value?: string | null) {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  return normalizeOptionalText(value);
+}
+
+async function assertWorkspaceMembers(
   workspaceId: string,
-  memberOwnerId: string | null,
+  memberIds: Array<string | null | undefined>,
   db: DbExecutor,
 ) {
-  if (!memberOwnerId) {
+  const uniqueIds = Array.from(
+    new Set(memberIds.filter((memberId): memberId is string => Boolean(memberId))),
+  );
+
+  if (uniqueIds.length === 0) {
     return;
   }
 
-  const member = await db.query.workspaceMembers.findFirst({
-    where: and(
-      eq(workspaceMembers.id, memberOwnerId),
-      eq(workspaceMembers.workspaceId, workspaceId),
-      eq(workspaceMembers.isActive, true),
-    ),
-  });
+  const members = await db
+    .select({ id: workspaceMembers.id })
+    .from(workspaceMembers)
+    .where(
+      and(
+        eq(workspaceMembers.workspaceId, workspaceId),
+        eq(workspaceMembers.isActive, true),
+        inArray(workspaceMembers.id, uniqueIds),
+      ),
+    );
 
-  if (!member) {
+  if (members.length !== uniqueIds.length) {
     throw new ClassificationInputError("Selected member does not belong to the current workspace.");
   }
 }
 
 export function validateClassificationInput(input: {
   classificationType: ClassificationType;
-  memberOwnerId: string | null;
+  personalOwnerMemberId?: string | null;
+  paidByMemberId?: string | null;
+  receivedByMemberId?: string | null;
   category: string | null;
   categoryId?: string | null;
 }) {
-  const payerValidationMessage = getPayerValidationMessage({
+  const memberValidationMessage = getMemberAttributionValidationMessage({
     classificationType: input.classificationType,
-    payerMemberId: input.memberOwnerId,
+    personalOwnerMemberId: input.personalOwnerMemberId ?? null,
+    paidByMemberId: input.paidByMemberId ?? null,
+    receivedByMemberId: input.receivedByMemberId ?? null,
   });
 
-  if (payerValidationMessage) {
-    throw new ClassificationInputError(payerValidationMessage);
+  if (memberValidationMessage) {
+    throw new ClassificationInputError(memberValidationMessage);
   }
   if (["transfer", "ignore"].includes(input.classificationType) && (input.category || input.categoryId)) {
     throw new ClassificationInputError(
@@ -93,21 +124,81 @@ export function validateClassificationInput(input: {
   }
 }
 
+function importedAttributionForAccount(input: {
+  classificationType: ClassificationType;
+  personalOwnerMemberId: string | null;
+  paidByMemberId?: string | null;
+  receivedByMemberId: string | null;
+  accountOwnerMemberId: string | null;
+}): MemberAttribution {
+  return normalizeMemberAttribution({
+    classificationType: input.classificationType,
+    personalOwnerMemberId: input.personalOwnerMemberId,
+    paidByMemberId: resolveImportedPaidByMemberId({
+      classificationType: input.classificationType,
+      paidByMemberId: input.paidByMemberId,
+      accountOwnerMemberId: input.accountOwnerMemberId,
+    }),
+    receivedByMemberId: input.receivedByMemberId,
+  });
+}
+
+function classificationWriteValues(input: {
+  classificationType: ClassificationType;
+  attribution: MemberAttribution;
+}) {
+  return {
+    classificationType: input.classificationType,
+    memberOwnerId: compatibilityMemberOwnerId(input.classificationType, input.attribution),
+    personalOwnerMemberId: input.attribution.personalOwnerMemberId,
+    paidByMemberId: input.attribution.paidByMemberId,
+    receivedByMemberId: input.attribution.receivedByMemberId,
+  };
+}
+
+function ruleWriteValues(input: {
+  classificationType: ClassificationType;
+  attribution: MemberAttribution;
+}) {
+  return {
+    defaultClassificationType: input.classificationType,
+    defaultMemberOwnerId: compatibilityMemberOwnerId(input.classificationType, input.attribution),
+    defaultPersonalOwnerMemberId: input.attribution.personalOwnerMemberId,
+    defaultPaidByMemberId: input.attribution.paidByMemberId,
+    defaultReceivedByMemberId: input.attribution.receivedByMemberId,
+  };
+}
+
 export async function upsertTransactionClassification(
   context: CurrentWorkspaceContext,
   input: SingleClassificationInput,
   db: DbExecutor = getDb(),
 ) {
-  const memberOwnerId = normalizeOptionalText(input.memberOwnerId);
+  const personalOwnerMemberId = normalizeOptionalText(input.personalOwnerMemberId);
+  const paidByMemberId = optionalMemberInput(input.paidByMemberId);
+  const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
+  const previewAttribution = importedAttributionForAccount({
+    classificationType: input.classificationType,
+    personalOwnerMemberId,
+    paidByMemberId,
+    receivedByMemberId,
+    accountOwnerMemberId: null,
+  });
 
   validateClassificationInput({
     classificationType: input.classificationType,
-    memberOwnerId,
+    personalOwnerMemberId: previewAttribution.personalOwnerMemberId,
+    paidByMemberId: paidByMemberId === undefined ? previewAttribution.paidByMemberId : paidByMemberId,
+    receivedByMemberId: previewAttribution.receivedByMemberId,
     category,
     categoryId: input.categoryId,
   });
-  await assertWorkspaceMember(context.workspaceId, memberOwnerId, db);
+  await assertWorkspaceMembers(
+    context.workspaceId,
+    [personalOwnerMemberId, paidByMemberId, receivedByMemberId],
+    db,
+  );
   const savedCategory = await resolveWorkspaceCategory(
     context,
     { categoryId: input.categoryId, categoryName: category },
@@ -119,8 +210,13 @@ export async function upsertTransactionClassification(
     ...(input.additionalTransactionIds ?? []),
   ]));
   const matchingTransactions = await db
-    .select({ id: transactions.id, merchantRaw: transactions.merchantRaw })
+    .select({
+      id: transactions.id,
+      merchantRaw: transactions.merchantRaw,
+      accountOwnerMemberId: financialAccounts.ownerMemberId,
+    })
     .from(transactions)
+    .innerJoin(financialAccounts, eq(financialAccounts.id, transactions.accountId))
     .where(
       and(
         eq(transactions.workspaceId, context.workspaceId),
@@ -154,6 +250,40 @@ export async function upsertTransactionClassification(
   const ruleMatchValue = input.createRule && merchantValue
     ? normalizedMerchantValue
     : null;
+  const accountOwnerByTransactionId = new Map(
+    matchingTransactions.map((item) => [item.id, item.accountOwnerMemberId]),
+  );
+  const primaryAttribution = importedAttributionForAccount({
+    classificationType: input.classificationType,
+    personalOwnerMemberId,
+    paidByMemberId,
+    receivedByMemberId,
+    accountOwnerMemberId: transaction.accountOwnerMemberId,
+  });
+  validateClassificationInput({
+    classificationType: input.classificationType,
+    ...primaryAttribution,
+    category,
+    categoryId: input.categoryId,
+  });
+  await assertWorkspaceMembers(
+    context.workspaceId,
+    matchingTransactions.flatMap((item) => {
+      const attribution = importedAttributionForAccount({
+        classificationType: input.classificationType,
+        personalOwnerMemberId,
+        paidByMemberId,
+        receivedByMemberId,
+        accountOwnerMemberId: item.accountOwnerMemberId,
+      });
+      return [
+        attribution.personalOwnerMemberId,
+        attribution.paidByMemberId,
+        attribution.receivedByMemberId,
+      ];
+    }),
+    db,
+  );
 
   const undoBatchId = await db.transaction(async (tx) => {
     const previousRows = await tx
@@ -210,28 +340,43 @@ export async function upsertTransactionClassification(
 
     await tx
       .insert(transactionClassifications)
-      .values(requestedTransactionIds.map((transactionId) => ({
-        transactionId,
-        classificationType: input.classificationType,
-        memberOwnerId,
-        category: savedCategory?.name ?? null,
-        categoryId: savedCategory?.id ?? null,
-        confidence: null,
-        decidedBy: "user" as const,
-        reviewedAt: now,
-        decisionBatchId: decisionBatch.id,
-      })))
-      .onConflictDoUpdate({
-        target: transactionClassifications.transactionId,
-        set: {
+      .values(requestedTransactionIds.map((transactionId) => {
+        const attribution = importedAttributionForAccount({
           classificationType: input.classificationType,
-          memberOwnerId,
+          personalOwnerMemberId,
+          paidByMemberId,
+          receivedByMemberId,
+          accountOwnerMemberId: accountOwnerByTransactionId.get(transactionId) ?? null,
+        });
+
+        return {
+          transactionId,
+          ...classificationWriteValues({
+            classificationType: input.classificationType,
+            attribution,
+          }),
           category: savedCategory?.name ?? null,
           categoryId: savedCategory?.id ?? null,
           confidence: null,
-          decidedBy: "user",
+          decidedBy: "user" as const,
           reviewedAt: now,
           decisionBatchId: decisionBatch.id,
+        };
+      }))
+      .onConflictDoUpdate({
+        target: transactionClassifications.transactionId,
+        set: {
+          classificationType: sql`excluded.classification_type`,
+          memberOwnerId: sql`excluded.member_owner_id`,
+          personalOwnerMemberId: sql`excluded.personal_owner_member_id`,
+          paidByMemberId: sql`excluded.paid_by_member_id`,
+          receivedByMemberId: sql`excluded.received_by_member_id`,
+          category: sql`excluded.category`,
+          categoryId: sql`excluded.category_id`,
+          confidence: sql`excluded.confidence`,
+          decidedBy: sql`excluded.decided_by`,
+          reviewedAt: sql`excluded.reviewed_at`,
+          decisionBatchId: sql`excluded.decision_batch_id`,
           updatedAt: now,
         },
       });
@@ -256,14 +401,17 @@ export async function upsertTransactionClassification(
         ),
       )
       .orderBy(asc(classificationRules.createdAt));
+      const ruleValues = ruleWriteValues({
+        classificationType: input.classificationType,
+        attribution: primaryAttribution,
+      });
 
       if (existingRules.length === 0) {
         await tx.insert(classificationRules).values({
           workspaceId: context.workspaceId,
           matchType: "exact",
           matchValue: ruleMatchValue,
-          defaultClassificationType: input.classificationType,
-          defaultMemberOwnerId: memberOwnerId,
+          ...ruleValues,
           defaultCategory: savedCategory?.name ?? null,
           defaultCategoryId: savedCategory?.id ?? null,
           priority: 100,
@@ -275,8 +423,7 @@ export async function upsertTransactionClassification(
         await tx
           .update(classificationRules)
           .set({
-            defaultClassificationType: input.classificationType,
-            defaultMemberOwnerId: memberOwnerId,
+            ...ruleValues,
             defaultCategory: savedCategory?.name ?? null,
             defaultCategoryId: savedCategory?.id ?? null,
             priority: 100,
@@ -320,20 +467,35 @@ export async function bulkClassifyTransactions(
   db: DbExecutor = getDb(),
 ) {
   const transactionIds = Array.from(new Set(input.transactionIds));
-  const memberOwnerId = normalizeOptionalText(input.memberOwnerId);
+  const personalOwnerMemberId = normalizeOptionalText(input.personalOwnerMemberId);
+  const paidByMemberId = optionalMemberInput(input.paidByMemberId);
+  const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
 
   if (transactionIds.length === 0) {
     throw new ClassificationInputError("Select at least one transaction to classify.");
   }
 
+  const previewAttribution = importedAttributionForAccount({
+    classificationType: input.classificationType,
+    personalOwnerMemberId,
+    paidByMemberId,
+    receivedByMemberId,
+    accountOwnerMemberId: null,
+  });
   validateClassificationInput({
     classificationType: input.classificationType,
-    memberOwnerId,
+    personalOwnerMemberId: previewAttribution.personalOwnerMemberId,
+    paidByMemberId: paidByMemberId === undefined ? previewAttribution.paidByMemberId : paidByMemberId,
+    receivedByMemberId: previewAttribution.receivedByMemberId,
     category,
     categoryId: input.categoryId,
   });
-  await assertWorkspaceMember(context.workspaceId, memberOwnerId, db);
+  await assertWorkspaceMembers(
+    context.workspaceId,
+    [personalOwnerMemberId, paidByMemberId, receivedByMemberId],
+    db,
+  );
   const savedCategory = await resolveWorkspaceCategory(
     context,
     { categoryId: input.categoryId, categoryName: category },
@@ -343,8 +505,10 @@ export async function bulkClassifyTransactions(
   const matchingTransactions = await db
     .select({
       id: transactions.id,
+      accountOwnerMemberId: financialAccounts.ownerMemberId,
     })
     .from(transactions)
+    .innerJoin(financialAccounts, eq(financialAccounts.id, transactions.accountId))
     .where(
       and(
         eq(transactions.workspaceId, context.workspaceId),
@@ -354,6 +518,43 @@ export async function bulkClassifyTransactions(
 
   if (matchingTransactions.length !== transactionIds.length) {
     throw new Error("One or more selected transactions were not found.");
+  }
+
+  const accountOwnerByTransactionId = new Map(
+    matchingTransactions.map((item) => [item.id, item.accountOwnerMemberId]),
+  );
+  await assertWorkspaceMembers(
+    context.workspaceId,
+    matchingTransactions.flatMap((item) => {
+      const attribution = importedAttributionForAccount({
+        classificationType: input.classificationType,
+        personalOwnerMemberId,
+        paidByMemberId,
+        receivedByMemberId,
+        accountOwnerMemberId: item.accountOwnerMemberId,
+      });
+      return [
+        attribution.personalOwnerMemberId,
+        attribution.paidByMemberId,
+        attribution.receivedByMemberId,
+      ];
+    }),
+    db,
+  );
+  for (const item of matchingTransactions) {
+    const attribution = importedAttributionForAccount({
+      classificationType: input.classificationType,
+      personalOwnerMemberId,
+      paidByMemberId,
+      receivedByMemberId,
+      accountOwnerMemberId: item.accountOwnerMemberId,
+    });
+    validateClassificationInput({
+      classificationType: input.classificationType,
+      ...attribution,
+      category,
+      categoryId: input.categoryId,
+    });
   }
 
   const now = new Date();
@@ -398,29 +599,44 @@ export async function bulkClassifyTransactions(
     await tx
       .insert(transactionClassifications)
       .values(
-        transactionIds.map((transactionId) => ({
-          transactionId,
-          classificationType: input.classificationType,
-          memberOwnerId,
-          category: savedCategory?.name ?? null,
-          categoryId: savedCategory?.id ?? null,
-          confidence: null,
-          decidedBy: "user" as const,
-          reviewedAt: now,
-          decisionBatchId: decisionBatch.id,
-        })),
+        transactionIds.map((transactionId) => {
+          const attribution = importedAttributionForAccount({
+            classificationType: input.classificationType,
+            personalOwnerMemberId,
+            paidByMemberId,
+            receivedByMemberId,
+            accountOwnerMemberId: accountOwnerByTransactionId.get(transactionId) ?? null,
+          });
+
+          return {
+            transactionId,
+            ...classificationWriteValues({
+              classificationType: input.classificationType,
+              attribution,
+            }),
+            category: savedCategory?.name ?? null,
+            categoryId: savedCategory?.id ?? null,
+            confidence: null,
+            decidedBy: "user" as const,
+            reviewedAt: now,
+            decisionBatchId: decisionBatch.id,
+          };
+        }),
       )
       .onConflictDoUpdate({
         target: transactionClassifications.transactionId,
         set: {
-          classificationType: input.classificationType,
-          memberOwnerId,
-          category: savedCategory?.name ?? null,
-          categoryId: savedCategory?.id ?? null,
-          confidence: null,
-          decidedBy: "user",
-          reviewedAt: now,
-          decisionBatchId: decisionBatch.id,
+          classificationType: sql`excluded.classification_type`,
+          memberOwnerId: sql`excluded.member_owner_id`,
+          personalOwnerMemberId: sql`excluded.personal_owner_member_id`,
+          paidByMemberId: sql`excluded.paid_by_member_id`,
+          receivedByMemberId: sql`excluded.received_by_member_id`,
+          category: sql`excluded.category`,
+          categoryId: sql`excluded.category_id`,
+          confidence: sql`excluded.confidence`,
+          decidedBy: sql`excluded.decided_by`,
+          reviewedAt: sql`excluded.reviewed_at`,
+          decisionBatchId: sql`excluded.decision_batch_id`,
           updatedAt: now,
         },
       });
@@ -487,20 +703,25 @@ export async function undoClassificationDecision(
 
     if (previousClassifications.length > 0) {
       await tx.insert(transactionClassifications).values(
-        previousClassifications.map((classification) => ({
-          id: classification.id,
-          transactionId: classification.transactionId,
-          classificationType: classification.classificationType,
-          memberOwnerId: classification.memberOwnerId,
-          category: classification.category,
-          categoryId: classification.categoryId,
-          confidence: classification.confidence,
-          decidedBy: classification.decidedBy,
-          reviewedAt: classification.reviewedAt ? new Date(classification.reviewedAt) : null,
-          decisionBatchId: classification.decisionBatchId,
-          createdAt: new Date(classification.createdAt),
-          updatedAt: new Date(classification.updatedAt),
-        })),
+        previousClassifications.map((classification) => {
+          const attribution = memberAttributionFromSnapshot(classification);
+          return {
+            id: classification.id,
+            transactionId: classification.transactionId,
+            ...classificationWriteValues({
+              classificationType: classification.classificationType,
+              attribution,
+            }),
+            category: classification.category,
+            categoryId: classification.categoryId,
+            confidence: classification.confidence,
+            decidedBy: classification.decidedBy,
+            reviewedAt: classification.reviewedAt ? new Date(classification.reviewedAt) : null,
+            decisionBatchId: classification.decisionBatchId,
+            createdAt: new Date(classification.createdAt),
+            updatedAt: new Date(classification.updatedAt),
+          };
+        }),
       );
     }
 
@@ -516,20 +737,31 @@ export async function undoClassificationDecision(
         );
       if (batch.previousRules && batch.previousRules.length > 0) {
         await tx.insert(classificationRules).values(
-          batch.previousRules.map((rule) => ({
-            id: rule.id,
-            workspaceId: context.workspaceId,
-            matchType: rule.matchType,
-            matchValue: rule.matchValue,
-            defaultClassificationType: rule.defaultClassificationType,
-            defaultMemberOwnerId: rule.defaultMemberOwnerId,
-            defaultCategory: rule.defaultCategory,
-            defaultCategoryId: rule.defaultCategoryId,
-            priority: rule.priority,
-            active: rule.active,
-            createdAt: new Date(rule.createdAt),
-            updatedAt: new Date(rule.updatedAt),
-          })),
+          batch.previousRules.map((rule) => {
+            const attribution = memberAttributionFromSnapshot({
+              classificationType: rule.defaultClassificationType,
+              defaultMemberOwnerId: rule.defaultMemberOwnerId,
+              defaultPersonalOwnerMemberId: rule.defaultPersonalOwnerMemberId,
+              defaultPaidByMemberId: rule.defaultPaidByMemberId,
+              defaultReceivedByMemberId: rule.defaultReceivedByMemberId,
+            });
+            return {
+              id: rule.id,
+              workspaceId: context.workspaceId,
+              matchType: rule.matchType,
+              matchValue: rule.matchValue,
+              ...ruleWriteValues({
+                classificationType: rule.defaultClassificationType,
+                attribution,
+              }),
+              defaultCategory: rule.defaultCategory,
+              defaultCategoryId: rule.defaultCategoryId,
+              priority: rule.priority,
+              active: rule.active,
+              createdAt: new Date(rule.createdAt),
+              updatedAt: new Date(rule.updatedAt),
+            };
+          }),
         );
       }
     }

@@ -10,13 +10,17 @@ import {
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
 import { ClassificationTypePicker } from "@/components/expenses/classification-type-picker";
+import {
+  emptyMemberAttributionFormValue,
+  MemberAttributionFields,
+  memberAttributionForClassificationType,
+} from "@/components/expenses/member-attribution-fields";
 import { Modal } from "@/components/shared/modal";
 import { ImportSourceCell } from "@/components/shared/import-source-cell";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { type ClassificationType } from "@/features/expenses/constants";
 import {
-  classificationAllowsPayer,
   classificationsForEventKind,
   normalizeClassificationForEventKind,
 } from "@/features/expenses/payer";
@@ -64,7 +68,9 @@ type ClassificationFormState = {
   classificationType: ClassificationType | "";
   category: string;
   categoryId: string;
-  memberOwnerId: string;
+  personalOwnerMemberId: string;
+  paidByMemberId: string;
+  receivedByMemberId: string;
 };
 
 type ClassificationMutationResponse = {
@@ -75,7 +81,9 @@ type ManualEntryFormState = {
   title: string;
   eventKind: OneTimeManualEntryEventKind;
   classificationType: OneTimeManualEntryClassificationType;
+  personalOwnerMemberId: string;
   payerMemberId: string;
+  receivedByMemberId: string;
   category: string;
   categoryId: string;
   amount: string;
@@ -100,7 +108,7 @@ const emptyClassificationForm: ClassificationFormState = {
   classificationType: "",
   category: "",
   categoryId: "",
-  memberOwnerId: "",
+  ...emptyMemberAttributionFormValue(),
 };
 
 function todayDateInputValue() {
@@ -116,7 +124,9 @@ function createInitialManualEntryFormState(): ManualEntryFormState {
     title: "",
     eventKind: "expense",
     classificationType: "household",
+    personalOwnerMemberId: "",
     payerMemberId: "",
+    receivedByMemberId: "",
     category: "",
     categoryId: "",
     amount: "",
@@ -134,9 +144,9 @@ function manualEntryToFormState(entry: OneTimeManualEntryItem): ManualEntryFormS
     title: entry.title,
     eventKind: entry.eventKind,
     classificationType,
-    payerMemberId: classificationAllowsPayer(classificationType)
-      ? entry.payerMemberId ?? ""
-      : "",
+    personalOwnerMemberId: entry.personalOwnerMemberId ?? "",
+    payerMemberId: entry.payerMemberId ?? "",
+    receivedByMemberId: entry.receivedByMemberId ?? "",
     category: entry.category ?? "",
     categoryId: entry.categoryId ?? "",
     amount: Number(entry.originalAmount).toFixed(2),
@@ -342,7 +352,9 @@ export function ExpensesPageClient({
         transaction.importSourceName ?? "",
         transaction.importOriginalFilename,
         transaction.classification?.category ?? "",
-        transaction.classification?.memberOwnerName ?? "",
+        transaction.classification?.personalOwnerName ?? "",
+        transaction.classification?.paidByName ?? "",
+        transaction.classification?.receivedByName ?? "",
       ]
         .join(" ")
         .toLowerCase()
@@ -407,7 +419,13 @@ export function ExpensesPageClient({
             classificationType: selectedTransaction.classification.classificationType,
             category: selectedTransaction.classification.category ?? "",
             categoryId: selectedTransaction.classification.categoryId ?? "",
-            memberOwnerId: selectedTransaction.classification.memberOwnerId ?? "",
+            personalOwnerMemberId:
+              selectedTransaction.classification.personalOwnerMemberId ?? "",
+            paidByMemberId:
+              selectedTransaction.classification.paidByMemberId ??
+              selectedTransaction.accountOwnerMemberId ??
+              "",
+            receivedByMemberId: selectedTransaction.classification.receivedByMemberId ?? "",
           }
         : emptyClassificationForm,
     );
@@ -447,9 +465,11 @@ export function ExpensesPageClient({
       classificationType,
       category: ["transfer", "ignore"].includes(classificationType) ? "" : current.category,
       categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
-      memberOwnerId: classificationAllowsPayer(classificationType)
-        ? current.memberOwnerId
-        : "",
+      ...memberAttributionForClassificationType(
+        classificationType,
+        current,
+        selectedTransaction?.accountOwnerMemberId ?? "",
+      ),
     }));
   }
 
@@ -470,16 +490,26 @@ export function ExpensesPageClient({
           : current.classificationType === "income"
             ? "household"
             : current.classificationType,
+      personalOwnerMemberId:
+        eventKind === "income" ? "" : current.personalOwnerMemberId,
       payerMemberId:
-        eventKind === "expense" && current.classificationType === "income"
-          ? ""
-          : current.payerMemberId,
+        eventKind === "income" ? "" : current.payerMemberId,
+      receivedByMemberId:
+        eventKind === "income" ? current.receivedByMemberId : "",
     }));
   }
 
   async function submitManualEntry() {
     setError(null);
     setMessage(null);
+
+    if (
+      manualEntryForm.classificationType === "personal" &&
+      !manualEntryForm.personalOwnerMemberId
+    ) {
+      setError("Choose whose personal expense this is before saving.");
+      return;
+    }
 
     try {
       const response = await fetch(
@@ -495,7 +525,9 @@ export function ExpensesPageClient({
             title: manualEntryForm.title,
             eventKind: manualEntryForm.eventKind,
             classificationType: manualEntryForm.classificationType,
+            personalOwnerMemberId: manualEntryForm.personalOwnerMemberId || null,
             payerMemberId: manualEntryForm.payerMemberId || null,
+            receivedByMemberId: manualEntryForm.receivedByMemberId || null,
             category: manualEntryForm.category,
             categoryId: manualEntryForm.categoryId || null,
             amount: Number(manualEntryForm.amount),
@@ -617,7 +649,7 @@ export function ExpensesPageClient({
       return false;
     }
 
-    if (classificationForm.classificationType === "personal" && !classificationForm.memberOwnerId) {
+    if (classificationForm.classificationType === "personal" && !classificationForm.personalOwnerMemberId) {
       setError("Choose whose personal expense this is before saving.");
       return false;
     }
@@ -634,7 +666,9 @@ export function ExpensesPageClient({
           classificationType: classificationForm.classificationType,
           category: classificationForm.category || null,
           categoryId: classificationForm.categoryId || null,
-          memberOwnerId: classificationForm.memberOwnerId || null,
+          personalOwnerMemberId: classificationForm.personalOwnerMemberId || null,
+          paidByMemberId: classificationForm.paidByMemberId || null,
+          receivedByMemberId: classificationForm.receivedByMemberId || null,
           createRule: false,
           additionalTransactionIds: [],
         }),
@@ -765,18 +799,25 @@ export function ExpensesPageClient({
                 <select
                   className="input"
                   value={manualEntryForm.classificationType}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const classificationType = event.target
+                      .value as OneTimeManualEntryClassificationType;
+                    const nextAttribution = memberAttributionForClassificationType(
+                      classificationType,
+                      {
+                        personalOwnerMemberId: manualEntryForm.personalOwnerMemberId,
+                        paidByMemberId: manualEntryForm.payerMemberId,
+                        receivedByMemberId: manualEntryForm.receivedByMemberId,
+                      },
+                    );
                     setManualEntryForm((current) => ({
                       ...current,
-                      classificationType:
-                        event.target.value as OneTimeManualEntryClassificationType,
-                      payerMemberId: classificationAllowsPayer(
-                        event.target.value as OneTimeManualEntryClassificationType,
-                      )
-                        ? current.payerMemberId
-                        : "",
-                    }))
-                  }
+                      classificationType,
+                      personalOwnerMemberId: nextAttribution.personalOwnerMemberId,
+                      payerMemberId: nextAttribution.paidByMemberId,
+                      receivedByMemberId: nextAttribution.receivedByMemberId,
+                    }));
+                  }}
                 >
                   {manualEntryClassificationOptions.map((type) => (
                     <option key={type} value={type}>
@@ -786,27 +827,23 @@ export function ExpensesPageClient({
                 </select>
               </label>
 
-              <label className="field">
-                <span>Payer / owner</span>
-                <select
-                  className="input"
-                  value={manualEntryForm.payerMemberId}
-                  disabled={!classificationAllowsPayer(manualEntryForm.classificationType)}
-                  onChange={(event) =>
-                    setManualEntryForm((current) => ({
-                      ...current,
-                      payerMemberId: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Unassigned</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <MemberAttributionFields
+                classificationType={manualEntryForm.classificationType}
+                value={{
+                  personalOwnerMemberId: manualEntryForm.personalOwnerMemberId,
+                  paidByMemberId: manualEntryForm.payerMemberId,
+                  receivedByMemberId: manualEntryForm.receivedByMemberId,
+                }}
+                members={members}
+                onChange={(next) =>
+                  setManualEntryForm((current) => ({
+                    ...current,
+                    personalOwnerMemberId: next.personalOwnerMemberId,
+                    payerMemberId: next.paidByMemberId,
+                    receivedByMemberId: next.receivedByMemberId,
+                  }))
+                }
+              />
             </div>
 
             <div className="inline-form">
@@ -1348,34 +1385,15 @@ export function ExpensesPageClient({
               </label>
             ) : null}
 
-            {classificationForm.classificationType &&
-            classificationAllowsPayer(classificationForm.classificationType) ? (
-              <label className="field">
-                <span>
-                  {classificationForm.classificationType === "shared"
-                    ? "Paid by"
-                    : classificationForm.classificationType === "income"
-                      ? "Received by"
-                    : "Whose personal expense?"}
-                </span>
-                <select
-                  className="input"
-                  value={classificationForm.memberOwnerId}
-                  onChange={(event) =>
-                    setClassificationForm((current) => ({
-                      ...current,
-                      memberOwnerId: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Unassigned</option>
-                  {members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            {classificationForm.classificationType ? (
+              <MemberAttributionFields
+                classificationType={classificationForm.classificationType}
+                value={classificationForm}
+                members={members}
+                onChange={(next) =>
+                  setClassificationForm((current) => ({ ...current, ...next }))
+                }
+              />
             ) : null}
 
             <div className="action-row">

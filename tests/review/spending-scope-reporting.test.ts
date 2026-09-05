@@ -131,6 +131,24 @@ test("income attribution stays outside spending scopes", () => {
   );
 });
 
+test("household and shared payers do not leak into personal spending buckets", () => {
+  const records = [
+    record({ classificationType: "household", memberId: lee.id, normalizedAmount: 20 }),
+    record({ classificationType: "shared", memberId: lee.id, normalizedAmount: 10 }),
+    record({ classificationType: "personal", memberId: lee.id, normalizedAmount: 5 }),
+  ];
+  const scopes = buildSpendingScopeSummaries(records, [lee]);
+
+  assert.deepEqual(
+    scopes.map((scope) => [scope.label, scope.expenseTotal]),
+    [
+      ["Personal · Lee", 5],
+      ["Shared", 10],
+      ["Household", 20],
+    ],
+  );
+});
+
 test("missing expense categories are grouped under Uncategorized", () => {
   const records = [
     record({

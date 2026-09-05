@@ -21,13 +21,23 @@ export function formatClassificationTypeLabel(value: ClassificationType) {
 
 function formatClassifiedEntrySummary(input: {
   classificationType: ClassificationType;
-  memberOwnerName: string | null;
+  personalOwnerName: string | null;
+  paidByName: string | null;
+  receivedByName: string | null;
   category: string | null;
 }) {
   const parts = [formatClassificationTypeLabel(input.classificationType)];
 
-  if (input.memberOwnerName) {
-    parts.push(input.memberOwnerName);
+  if (input.personalOwnerName) {
+    parts.push(input.personalOwnerName);
+  }
+
+  if (input.paidByName && input.paidByName !== input.personalOwnerName) {
+    parts.push(`paid by ${input.paidByName}`);
+  }
+
+  if (input.receivedByName) {
+    parts.push(input.receivedByName);
   }
 
   if (input.category) {
@@ -46,7 +56,9 @@ export function formatClassificationSummary(
 
   return formatClassifiedEntrySummary({
     classificationType: classification.classificationType,
-    memberOwnerName: classification.memberOwnerName,
+    personalOwnerName: classification.personalOwnerName,
+    paidByName: classification.paidByName,
+    receivedByName: classification.receivedByName,
     category: classification.category,
   });
 }
@@ -171,11 +183,20 @@ export function buildTransactionReportTargets(
 }
 
 export function formatManualEntryClassificationSummary(
-  item: Pick<OneTimeManualEntryItem, "classificationType" | "payerMemberName" | "category">,
+  item: Pick<
+    OneTimeManualEntryItem,
+    | "classificationType"
+    | "personalOwnerName"
+    | "payerMemberName"
+    | "receivedByName"
+    | "category"
+  >,
 ) {
   return formatClassifiedEntrySummary({
     classificationType: item.classificationType,
-    memberOwnerName: item.payerMemberName,
+    personalOwnerName: item.personalOwnerName,
+    paidByName: item.payerMemberName,
+    receivedByName: item.receivedByName,
     category: item.category,
   });
 }

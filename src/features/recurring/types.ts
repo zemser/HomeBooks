@@ -23,6 +23,10 @@ export type RecurringEntryItem = {
   eventKind: EventKind;
   payerMemberId: string | null;
   payerMemberName: string | null;
+  personalOwnerMemberId: string | null;
+  personalOwnerName: string | null;
+  receivedByMemberId: string | null;
+  receivedByName: string | null;
   classificationType: ClassificationType;
   category: string | null;
   categoryId: string | null;
@@ -42,6 +46,10 @@ export type GeneratedManualEntryItem = {
   workspaceCurrency: string;
   payerMemberId: string | null;
   payerMemberName: string | null;
+  personalOwnerMemberId: string | null;
+  personalOwnerName: string | null;
+  receivedByMemberId: string | null;
+  receivedByName: string | null;
   classificationType: ClassificationType;
   category: string | null;
   categoryId: string | null;

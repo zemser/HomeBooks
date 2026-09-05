@@ -37,6 +37,8 @@ type ActiveSourceRow = {
   workspaceCurrency: string;
   classificationType: ClassificationType;
   payerMemberId: string | null;
+  personalOwnerMemberId: string | null;
+  receivedByMemberId: string | null;
   category: string | null;
   categoryId: string | null;
   reportingMode: "payment_date";
@@ -55,6 +57,8 @@ type ExistingExpenseEventRow = {
   workspaceCurrency: string;
   classificationType: ClassificationType;
   payerMemberId: string | null;
+  personalOwnerMemberId: string | null;
+  receivedByMemberId: string | null;
   category: string | null;
   categoryId: string | null;
   reportingMode: "payment_date" | "allocated_period";
@@ -132,6 +136,8 @@ function expenseEventMatches(
     existing.workspaceCurrency === active.workspaceCurrency &&
     existing.classificationType === active.classificationType &&
     existing.payerMemberId === active.payerMemberId &&
+    existing.personalOwnerMemberId === active.personalOwnerMemberId &&
+    existing.receivedByMemberId === active.receivedByMemberId &&
     existing.category === active.category &&
     existing.categoryId === active.categoryId &&
     existing.reportingMode === reportingMode
@@ -204,6 +210,8 @@ async function applyExpenseEventSync(
           workspaceCurrency: row.workspaceCurrency,
           classificationType: row.classificationType,
           payerMemberId: row.payerMemberId,
+          personalOwnerMemberId: row.personalOwnerMemberId,
+          receivedByMemberId: row.receivedByMemberId,
           category: row.category,
           categoryId: row.categoryId,
           reportingMode: nextReportingMode,
@@ -223,6 +231,8 @@ async function applyExpenseEventSync(
           workspaceCurrency: row.workspaceCurrency,
           classificationType: row.classificationType,
           payerMemberId: row.payerMemberId,
+          personalOwnerMemberId: row.personalOwnerMemberId,
+          receivedByMemberId: row.receivedByMemberId,
           category: row.category,
           categoryId: row.categoryId,
           reportingMode: nextReportingMode,
@@ -298,6 +308,8 @@ async function listExistingExpenseEvents(
       workspaceCurrency: expenseEvents.workspaceCurrency,
       classificationType: expenseEvents.classificationType,
       payerMemberId: expenseEvents.payerMemberId,
+      personalOwnerMemberId: expenseEvents.personalOwnerMemberId,
+      receivedByMemberId: expenseEvents.receivedByMemberId,
       category: expenseEvents.category,
       categoryId: expenseEvents.categoryId,
       reportingMode: expenseEvents.reportingMode,
@@ -388,7 +400,9 @@ export async function syncTransactionExpenseEvents(
         normalizedAmount: transactions.normalizedAmount,
         workspaceCurrency: transactions.workspaceCurrency,
         classificationType: transactionClassifications.classificationType,
-        memberOwnerId: transactionClassifications.memberOwnerId,
+        personalOwnerMemberId: transactionClassifications.personalOwnerMemberId,
+        paidByMemberId: transactionClassifications.paidByMemberId,
+        receivedByMemberId: transactionClassifications.receivedByMemberId,
         category: transactionClassifications.category,
         categoryId: transactionClassifications.categoryId,
         transactionDate: transactions.transactionDate,
@@ -420,7 +434,9 @@ export async function syncTransactionExpenseEvents(
     totalAmount: transaction.normalizedAmount,
     workspaceCurrency: transaction.workspaceCurrency,
     classificationType: transaction.classificationType,
-    payerMemberId: transaction.memberOwnerId,
+    payerMemberId: transaction.paidByMemberId,
+    personalOwnerMemberId: transaction.personalOwnerMemberId,
+    receivedByMemberId: transaction.receivedByMemberId,
     category: transaction.category,
     categoryId: transaction.categoryId,
     reportingMode: "payment_date",
@@ -454,6 +470,8 @@ export async function syncManualEntryExpenseEvents(
         workspaceCurrency: manualEntries.workspaceCurrency,
         classificationType: manualEntries.classificationType,
         payerMemberId: manualEntries.payerMemberId,
+        personalOwnerMemberId: manualEntries.personalOwnerMemberId,
+        receivedByMemberId: manualEntries.receivedByMemberId,
         category: manualEntries.category,
         categoryId: manualEntries.categoryId,
         eventDate: manualEntries.eventDate,
@@ -482,6 +500,8 @@ export async function syncManualEntryExpenseEvents(
     workspaceCurrency: entry.workspaceCurrency,
     classificationType: entry.classificationType,
     payerMemberId: entry.payerMemberId,
+    personalOwnerMemberId: entry.personalOwnerMemberId,
+    receivedByMemberId: entry.receivedByMemberId,
     category: entry.category,
     categoryId: entry.categoryId,
     reportingMode: "payment_date",

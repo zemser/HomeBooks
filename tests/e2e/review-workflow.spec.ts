@@ -80,6 +80,35 @@ test.describe("transaction review workflow", () => {
     await expect(page.locator('.review-table td[data-label="Suggestion"]')).toHaveCount(0);
   });
 
+  test("review form shows owner and payer as separate controls", async ({ page }) => {
+    const before = await loadReviewData(page);
+    test.skip(before.queue.length === 0, "The member-control test needs a review row.");
+
+    await page.goto("/transactions/review");
+    const panel = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "Selected transaction" }),
+    });
+    await expect(panel).toBeVisible();
+
+    await panel.getByRole("radio", { name: /Personal/ }).check();
+    await expect(panel.getByRole("radio", { name: /Personal/ })).toBeChecked();
+    await expect(panel.getByLabel("Whose personal expense?")).toBeVisible();
+    await expect(panel.getByLabel("Paid by")).toBeVisible();
+    await expect(panel.getByLabel("Received by")).toHaveCount(0);
+
+    await panel.getByRole("radio", { name: /Household/ }).check();
+    await expect(panel.getByRole("radio", { name: /Household/ })).toBeChecked();
+    await expect(panel.getByLabel("Whose personal expense?")).toHaveCount(0);
+    await expect(panel.getByLabel("Paid by")).toBeVisible();
+    await expect(panel.getByLabel("Received by")).toHaveCount(0);
+
+    await panel.getByRole("radio", { name: /Income/ }).check();
+    await expect(panel.getByRole("radio", { name: /Income/ })).toBeChecked();
+    await expect(panel.getByLabel("Whose personal expense?")).toHaveCount(0);
+    await expect(panel.getByLabel("Paid by")).toHaveCount(0);
+    await expect(panel.getByLabel("Received by")).toBeVisible();
+  });
+
   test("keyboard shortcuts choose a type, select a category, and skip without saving", async ({
     page,
   }) => {
@@ -226,7 +255,9 @@ test.describe("transaction review workflow", () => {
       const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
       await expect(activeRow).toHaveAttribute("data-review-transaction-id", transaction.id);
 
-      await page.getByRole("radio", { name: /Ignore/ }).check();
+      await page.getByRole("heading", { name: "Transactions", exact: true }).click();
+      await page.keyboard.press("6");
+      await expect(page.getByRole("radio", { name: /Ignore/ })).toBeChecked();
       const saveResponsePromise = page.waitForResponse(
         (response) =>
           response.url().endsWith("/api/transaction-classifications")
@@ -375,7 +406,7 @@ test.describe("transaction review workflow", () => {
       data: {
         transactionId: transaction!.id,
         classificationType: "personal",
-        memberOwnerId: "00000000-0000-4000-8000-000000000002",
+        personalOwnerMemberId: "00000000-0000-4000-8000-000000000002",
       },
     });
     expect(invalidMember.status()).toBe(400);
@@ -393,7 +424,7 @@ test.describe("transaction review workflow", () => {
       data: {
         transactionIds: [transaction!.id],
         classificationType: "personal",
-        memberOwnerId: "00000000-0000-4000-8000-000000000002",
+        personalOwnerMemberId: "00000000-0000-4000-8000-000000000002",
       },
     });
     expect(invalidBulkMember.status()).toBe(400);
@@ -417,7 +448,7 @@ test.describe("transaction review workflow", () => {
         data: {
           transactionId: transaction!.id,
           classificationType: "shared",
-          memberOwnerId: member!.id,
+          paidByMemberId: member!.id,
         },
       });
       expect(response.ok()).toBeTruthy();
@@ -428,10 +459,56 @@ test.describe("transaction review workflow", () => {
         `/api/imports/review?transactionId=${transaction!.id}&page=1&pageSize=1`,
       );
       const focused = (await focusedResponse.json()) as {
-        focusTransaction?: { classification?: { memberOwnerId?: string; classificationType?: string } };
+        focusTransaction?: { classification?: { paidByMemberId?: string; classificationType?: string } };
       };
       expect(focused.focusTransaction?.classification?.classificationType).toBe("shared");
-      expect(focused.focusTransaction?.classification?.memberOwnerId).toBe(member!.id);
+      expect(focused.focusTransaction?.classification?.paidByMemberId).toBe(member!.id);
+    } finally {
+      if (undoBatchId) {
+        const cleanup = await page.request.post("/api/transaction-classifications/undo", {
+          data: { batchId: undoBatchId },
+        });
+        expect(cleanup.ok()).toBeTruthy();
+      }
+    }
+  });
+
+  test("personal owner and payer can differ without changing spending scope", async ({ page }) => {
+    const before = await loadReviewData(page);
+    const transaction = before.queue[0];
+    const owner = before.members[0];
+    const payer = before.members[1] ?? before.members[0];
+    test.skip(!transaction || !owner, "The personal attribution test needs a review row and member.");
+
+    let undoBatchId: string | undefined;
+    try {
+      const response = await page.request.post("/api/transaction-classifications", {
+        data: {
+          transactionId: transaction!.id,
+          classificationType: "personal",
+          personalOwnerMemberId: owner!.id,
+          paidByMemberId: payer!.id,
+        },
+      });
+      expect(response.ok()).toBeTruthy();
+      const payload = (await response.json()) as { undoBatchId?: string };
+      undoBatchId = payload.undoBatchId;
+
+      const focusedResponse = await page.request.get(
+        `/api/imports/review?transactionId=${transaction!.id}&page=1&pageSize=1`,
+      );
+      const focused = (await focusedResponse.json()) as {
+        focusTransaction?: {
+          classification?: {
+            classificationType?: string;
+            personalOwnerMemberId?: string;
+            paidByMemberId?: string;
+          };
+        };
+      };
+      expect(focused.focusTransaction?.classification?.classificationType).toBe("personal");
+      expect(focused.focusTransaction?.classification?.personalOwnerMemberId).toBe(owner!.id);
+      expect(focused.focusTransaction?.classification?.paidByMemberId).toBe(payer!.id);
     } finally {
       if (undoBatchId) {
         const cleanup = await page.request.post("/api/transaction-classifications/undo", {

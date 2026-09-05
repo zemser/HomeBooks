@@ -145,9 +145,10 @@ test("payment-date and allocated-period reports use the synchronized occurrence 
     "utf8",
   );
 
-  assert.match(reportService, /memberId: transaction\.memberOwnerId/);
-  assert.match(reportService, /memberId: entry\.payerMemberId/);
-  assert.match(reportService, /memberId: row\.payerMemberId/);
+  assert.match(reportService, /memberId: attributionMemberId\(transaction\.classificationType, attribution\)/);
+  assert.match(reportService, /memberId: attributionMemberId\(entry\.classificationType, attribution\)/);
+  assert.match(reportService, /memberId: attributionMemberId\(row\.classificationType, attribution\)/);
+  assert.match(reportService, /return `\$\{personalOwnerName\} · paid by \$\{paidByName\}`/);
   assert.match(reportService, /const key = record\.memberId \?\? "unassigned"/);
   assert.match(reportService, /expenseTotal = sumMoney\(spendingScopes\.map/);
   assert.match(reportService, /spendingScopes: SpendingScopeSummary\[\]/);
