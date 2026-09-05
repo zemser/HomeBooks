@@ -6,7 +6,8 @@ import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normaliz
 import { listManualEntryAllocationStates } from "@/features/expenses/allocation";
 import {
   getEventKindClassificationValidationMessage,
-  getPayerValidationMessage,
+  getMemberAttributionValidationMessage,
+  normalizeMemberAttribution,
 } from "@/features/expenses/payer";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
@@ -25,7 +26,9 @@ import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
 type CreateOneTimeManualEntryInput = {
   title: string;
   eventKind: OneTimeManualEntryEventKind;
+  personalOwnerMemberId?: string | null;
   payerMemberId?: string | null;
+  receivedByMemberId?: string | null;
   classificationType: OneTimeManualEntryClassificationType;
   category?: string | null;
   categoryId?: string | null;
@@ -96,7 +99,9 @@ async function assertWorkspaceOneTimeManualEntry(
 function validateOneTimeManualEntry(input: {
   eventKind: OneTimeManualEntryEventKind;
   classificationType: OneTimeManualEntryClassificationType;
+  personalOwnerMemberId: string | null;
   payerMemberId: string | null;
+  receivedByMemberId: string | null;
 }) {
   const eventKindValidationMessage = getEventKindClassificationValidationMessage(input);
 
@@ -104,10 +109,15 @@ function validateOneTimeManualEntry(input: {
     throw new Error(eventKindValidationMessage);
   }
 
-  const payerValidationMessage = getPayerValidationMessage(input);
+  const memberValidationMessage = getMemberAttributionValidationMessage({
+    classificationType: input.classificationType,
+    personalOwnerMemberId: input.personalOwnerMemberId,
+    paidByMemberId: input.payerMemberId,
+    receivedByMemberId: input.receivedByMemberId,
+  });
 
-  if (payerValidationMessage) {
-    throw new Error(payerValidationMessage);
+  if (memberValidationMessage) {
+    throw new Error(memberValidationMessage);
   }
 }
 
@@ -125,6 +135,8 @@ export async function listOneTimeManualEntries(
       normalizedAmount: manualEntries.normalizedAmount,
       workspaceCurrency: manualEntries.workspaceCurrency,
       payerMemberId: manualEntries.payerMemberId,
+      personalOwnerMemberId: manualEntries.personalOwnerMemberId,
+      receivedByMemberId: manualEntries.receivedByMemberId,
       classificationType: manualEntries.classificationType,
       category: manualEntries.category,
       categoryId: manualEntries.categoryId,
@@ -163,6 +175,14 @@ export async function listOneTimeManualEntries(
     workspaceCurrency: entry.workspaceCurrency,
     payerMemberId: entry.payerMemberId,
     payerMemberName: entry.payerMemberId ? memberNames.get(entry.payerMemberId) ?? null : null,
+    personalOwnerMemberId: entry.personalOwnerMemberId,
+    personalOwnerName: entry.personalOwnerMemberId
+      ? memberNames.get(entry.personalOwnerMemberId) ?? null
+      : null,
+    receivedByMemberId: entry.receivedByMemberId,
+    receivedByName: entry.receivedByMemberId
+      ? memberNames.get(entry.receivedByMemberId) ?? null
+      : null,
     classificationType: entry.classificationType as OneTimeManualEntryClassificationType,
     category: entry.category,
     categoryId: entry.categoryId,
@@ -177,15 +197,27 @@ export async function createOneTimeManualEntry(
   db: DbExecutor = getDb(),
 ) {
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
+  const personalOwnerMemberId = normalizeOptionalText(input.personalOwnerMemberId);
+  const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const eventDate = normalizeDateInput(input.eventDate);
+  const attribution = normalizeMemberAttribution({
+    classificationType: input.classificationType,
+    personalOwnerMemberId,
+    paidByMemberId: payerMemberId,
+    receivedByMemberId,
+  });
 
   validateOneTimeManualEntry({
     eventKind: input.eventKind,
     classificationType: input.classificationType,
+    personalOwnerMemberId,
     payerMemberId,
+    receivedByMemberId,
   });
+  await assertWorkspaceMember(context, personalOwnerMemberId, db);
   await assertWorkspaceMember(context, payerMemberId, db);
+  await assertWorkspaceMember(context, receivedByMemberId, db);
   const savedCategory = await resolveWorkspaceCategory(context, {
     categoryId: input.categoryId,
     categoryName: category,
@@ -214,7 +246,9 @@ export async function createOneTimeManualEntry(
         normalizedAmount: normalized.normalizedAmount.toFixed(6),
         normalizationRate: normalized.normalizationRate.toFixed(8),
         normalizationRateSource: normalized.normalizationRateSource,
-        payerMemberId,
+        payerMemberId: attribution.paidByMemberId,
+        personalOwnerMemberId: attribution.personalOwnerMemberId,
+        receivedByMemberId: attribution.receivedByMemberId,
         classificationType: input.classificationType,
         category: savedCategory?.name ?? null,
         categoryId: savedCategory?.id ?? null,
@@ -239,16 +273,28 @@ export async function updateOneTimeManualEntry(
   db: DbExecutor = getDb(),
 ) {
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
+  const personalOwnerMemberId = normalizeOptionalText(input.personalOwnerMemberId);
+  const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const eventDate = normalizeDateInput(input.eventDate);
+  const attribution = normalizeMemberAttribution({
+    classificationType: input.classificationType,
+    personalOwnerMemberId,
+    paidByMemberId: payerMemberId,
+    receivedByMemberId,
+  });
 
   await assertWorkspaceOneTimeManualEntry(context, manualEntryId, db);
   validateOneTimeManualEntry({
     eventKind: input.eventKind,
     classificationType: input.classificationType,
+    personalOwnerMemberId,
     payerMemberId,
+    receivedByMemberId,
   });
+  await assertWorkspaceMember(context, personalOwnerMemberId, db);
   await assertWorkspaceMember(context, payerMemberId, db);
+  await assertWorkspaceMember(context, receivedByMemberId, db);
   const savedCategory = await resolveWorkspaceCategory(context, {
     categoryId: input.categoryId,
     categoryName: category,
@@ -274,7 +320,9 @@ export async function updateOneTimeManualEntry(
         normalizedAmount: normalized.normalizedAmount.toFixed(6),
         normalizationRate: normalized.normalizationRate.toFixed(8),
         normalizationRateSource: normalized.normalizationRateSource,
-        payerMemberId,
+        payerMemberId: attribution.paidByMemberId,
+        personalOwnerMemberId: attribution.personalOwnerMemberId,
+        receivedByMemberId: attribution.receivedByMemberId,
         classificationType: input.classificationType,
         category: savedCategory?.name ?? null,
         categoryId: savedCategory?.id ?? null,

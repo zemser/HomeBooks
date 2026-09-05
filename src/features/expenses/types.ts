@@ -7,8 +7,12 @@ export type TransactionClassificationState = {
   classificationType: ClassificationType;
   category: string | null;
   categoryId: string | null;
-  memberOwnerId: string | null;
-  memberOwnerName: string | null;
+  personalOwnerMemberId: string | null;
+  personalOwnerName: string | null;
+  paidByMemberId: string | null;
+  paidByName: string | null;
+  receivedByMemberId: string | null;
+  receivedByName: string | null;
   decidedBy: DecisionSource;
   reviewedAt: string | null;
 } | null;
@@ -18,6 +22,7 @@ export type ExpenseTransactionItem = {
   accountId: string;
   importId: string;
   importerMemberId: string | null;
+  accountOwnerMemberId: string | null;
   transactionDate: string;
   bookingDate: string | null;
   description: string;
@@ -44,8 +49,12 @@ export type ClassificationSuggestion = {
   classificationType: ClassificationType;
   category: string | null;
   categoryId: string | null;
-  memberOwnerId: string | null;
-  memberOwnerName: string | null;
+  personalOwnerMemberId: string | null;
+  personalOwnerName: string | null;
+  paidByMemberId: string | null;
+  paidByName: string | null;
+  receivedByMemberId: string | null;
+  receivedByName: string | null;
   matchingTransactionCount: number;
   supportingTransactionCount: number;
   confidence: "strong" | "likely";

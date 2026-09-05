@@ -17,7 +17,9 @@ import { errorResponse } from "@/lib/logging/server";
 const requestSchema = z.object({
   title: z.string().trim().min(1),
   eventKind: z.enum(ONE_TIME_MANUAL_ENTRY_EVENT_KINDS),
+  personalOwnerMemberId: z.string().uuid().optional().nullable(),
   payerMemberId: z.string().uuid().optional().nullable(),
+  receivedByMemberId: z.string().uuid().optional().nullable(),
   classificationType: z.enum(ONE_TIME_MANUAL_ENTRY_CLASSIFICATION_TYPES),
   category: z.string().trim().optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),

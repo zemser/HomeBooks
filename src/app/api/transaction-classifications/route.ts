@@ -15,7 +15,9 @@ const requestSchema = z.object({
   classificationType: z.enum(CLASSIFICATION_TYPES),
   category: z.string().trim().optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),
-  memberOwnerId: z.string().uuid().optional().nullable(),
+  personalOwnerMemberId: z.string().uuid().optional().nullable(),
+  paidByMemberId: z.string().uuid().optional().nullable(),
+  receivedByMemberId: z.string().uuid().optional().nullable(),
   createRule: z.boolean().optional().default(false),
   additionalTransactionIds: z.array(z.string().uuid()).max(200).optional().default([]),
 });

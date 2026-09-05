@@ -6,9 +6,12 @@ import { CurrencyInput } from "@/components/shared/currency-input";
 import { Modal } from "@/components/shared/modal";
 import { NormalizationModeSelect } from "@/components/recurring/normalization-mode-select";
 import { CategorySelect } from "@/components/workspaces/category-select";
+import {
+  MemberAttributionFields,
+  memberAttributionForClassificationType,
+} from "@/components/expenses/member-attribution-fields";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import {
-  classificationAllowsPayer,
   classificationsForEventKind,
   normalizeClassificationForEventKind,
 } from "@/features/expenses/payer";
@@ -34,7 +37,9 @@ type RecurringResponse = RecurringPageData & {
 type RuleFormState = {
   title: string;
   eventKind: EventKind;
+  personalOwnerMemberId: string;
   payerMemberId: string;
+  receivedByMemberId: string;
   classificationType: (typeof CLASSIFICATION_TYPES)[number];
   category: string;
   categoryId: string;
@@ -70,7 +75,9 @@ function todayMonthInputValue() {
 const initialCreateState: CreateRuleState = {
   title: "",
   eventKind: "expense",
+  personalOwnerMemberId: "",
   payerMemberId: "",
+  receivedByMemberId: "",
   classificationType: "household",
   category: "",
   categoryId: "",
@@ -199,9 +206,9 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
     setEditState({
       title: selectedEntry.title,
       eventKind: selectedEntry.eventKind,
-      payerMemberId: classificationAllowsPayer(classificationType)
-        ? selectedEntry.payerMemberId ?? ""
-        : "",
+      personalOwnerMemberId: selectedEntry.personalOwnerMemberId ?? "",
+      payerMemberId: selectedEntry.payerMemberId ?? "",
+      receivedByMemberId: selectedEntry.receivedByMemberId ?? "",
       classificationType,
       category: selectedEntry.category ?? "",
       categoryId: selectedEntry.categoryId ?? "",
@@ -231,7 +238,9 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       },
       body: JSON.stringify({
         ...createState,
+        personalOwnerMemberId: createState.personalOwnerMemberId || null,
         payerMemberId: createState.payerMemberId || null,
+        receivedByMemberId: createState.receivedByMemberId || null,
         category: createState.category,
         categoryId: createState.categoryId || null,
         effectiveStartMonth: `${createState.effectiveStartMonth}-01`,
@@ -273,7 +282,9 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       },
       body: JSON.stringify({
         ...editState,
+        personalOwnerMemberId: editState.personalOwnerMemberId || null,
         payerMemberId: editState.payerMemberId || null,
+        receivedByMemberId: editState.receivedByMemberId || null,
         categoryId: editState.categoryId || null,
       }),
     });
@@ -394,10 +405,12 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                           : current.classificationType === "income"
                             ? "household"
                             : current.classificationType,
+                      personalOwnerMemberId:
+                        eventKind === "income" ? "" : current.personalOwnerMemberId,
                       payerMemberId:
-                        eventKind === "expense" && current.classificationType === "income"
-                          ? ""
-                          : current.payerMemberId,
+                        eventKind === "income" ? "" : current.payerMemberId,
+                      receivedByMemberId:
+                        eventKind === "income" ? current.receivedByMemberId : "",
                     }));
                   }}
                 >
@@ -414,17 +427,25 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 <select
                   className="input"
                   value={createState.classificationType}
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const classificationType = event.target
+                      .value as (typeof CLASSIFICATION_TYPES)[number];
+                    const nextAttribution = memberAttributionForClassificationType(
+                      classificationType,
+                      {
+                        personalOwnerMemberId: createState.personalOwnerMemberId,
+                        paidByMemberId: createState.payerMemberId,
+                        receivedByMemberId: createState.receivedByMemberId,
+                      },
+                    );
                     setCreateState((current) => ({
                       ...current,
-                      classificationType: event.target.value as (typeof CLASSIFICATION_TYPES)[number],
-                      payerMemberId: classificationAllowsPayer(
-                        event.target.value as (typeof CLASSIFICATION_TYPES)[number],
-                      )
-                        ? current.payerMemberId
-                        : "",
-                    }))
-                  }
+                      classificationType,
+                      personalOwnerMemberId: nextAttribution.personalOwnerMemberId,
+                      payerMemberId: nextAttribution.paidByMemberId,
+                      receivedByMemberId: nextAttribution.receivedByMemberId,
+                    }));
+                  }}
                 >
                   {createClassificationOptions.map((type) => (
                     <option key={type} value={type}>
@@ -434,27 +455,23 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 </select>
               </label>
 
-              <label className="field">
-                <span>Payer</span>
-                <select
-                  className="input"
-                  value={createState.payerMemberId}
-                  disabled={!classificationAllowsPayer(createState.classificationType)}
-                  onChange={(event) =>
-                    setCreateState((current) => ({
-                      ...current,
-                      payerMemberId: event.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Unassigned</option>
-                  {data?.members.map((member) => (
-                    <option key={member.id} value={member.id}>
-                      {member.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <MemberAttributionFields
+                classificationType={createState.classificationType}
+                value={{
+                  personalOwnerMemberId: createState.personalOwnerMemberId,
+                  paidByMemberId: createState.payerMemberId,
+                  receivedByMemberId: createState.receivedByMemberId,
+                }}
+                members={data?.members ?? []}
+                onChange={(next) =>
+                  setCreateState((current) => ({
+                    ...current,
+                    personalOwnerMemberId: next.personalOwnerMemberId,
+                    payerMemberId: next.paidByMemberId,
+                    receivedByMemberId: next.receivedByMemberId,
+                  }))
+                }
+              />
             </div>
 
             <div className="inline-form">
@@ -736,11 +753,12 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                                     : current.classificationType === "income"
                                       ? "household"
                                       : current.classificationType,
+                                personalOwnerMemberId:
+                                  eventKind === "income" ? "" : current.personalOwnerMemberId,
                                 payerMemberId:
-                                  eventKind === "expense" &&
-                                  current.classificationType === "income"
-                                    ? ""
-                                    : current.payerMemberId,
+                                  eventKind === "income" ? "" : current.payerMemberId,
+                                receivedByMemberId:
+                                  eventKind === "income" ? current.receivedByMemberId : "",
                               }
                             : current,
                         );
@@ -759,22 +777,30 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                     <select
                       className="input"
                       value={editState.classificationType}
-                      onChange={(event) =>
-                        setEditState((current) =>
-                          current
-                            ? {
-                                ...current,
-                                classificationType:
-                                  event.target.value as (typeof CLASSIFICATION_TYPES)[number],
-                                payerMemberId: classificationAllowsPayer(
-                                  event.target.value as (typeof CLASSIFICATION_TYPES)[number],
-                                )
-                                  ? current.payerMemberId
-                                  : "",
-                              }
-                            : current,
-                        )
-                      }
+                      onChange={(event) => {
+                        const classificationType = event.target
+                          .value as (typeof CLASSIFICATION_TYPES)[number];
+                        setEditState((current) => {
+                          if (!current) {
+                            return current;
+                          }
+                          const nextAttribution = memberAttributionForClassificationType(
+                            classificationType,
+                            {
+                              personalOwnerMemberId: current.personalOwnerMemberId,
+                              paidByMemberId: current.payerMemberId,
+                              receivedByMemberId: current.receivedByMemberId,
+                            },
+                          );
+                          return {
+                            ...current,
+                            classificationType,
+                            personalOwnerMemberId: nextAttribution.personalOwnerMemberId,
+                            payerMemberId: nextAttribution.paidByMemberId,
+                            receivedByMemberId: nextAttribution.receivedByMemberId,
+                          };
+                        });
+                      }}
                     >
                       {editClassificationOptions.map((type) => (
                         <option key={type} value={type}>
@@ -784,28 +810,27 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                     </select>
                   </label>
 
-                  <label className="field">
-                    <span>Payer</span>
-                    <select
-                      className="input"
-                      value={editState.payerMemberId}
-                      disabled={!classificationAllowsPayer(editState.classificationType)}
-                      onChange={(event) =>
-                        setEditState((current) =>
-                          current
-                            ? { ...current, payerMemberId: event.target.value }
-                            : current,
-                        )
-                      }
-                    >
-                      <option value="">Unassigned</option>
-                      {data?.members.map((member) => (
-                        <option key={member.id} value={member.id}>
-                          {member.displayName}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <MemberAttributionFields
+                    classificationType={editState.classificationType}
+                    value={{
+                      personalOwnerMemberId: editState.personalOwnerMemberId,
+                      paidByMemberId: editState.payerMemberId,
+                      receivedByMemberId: editState.receivedByMemberId,
+                    }}
+                    members={data?.members ?? []}
+                    onChange={(next) =>
+                      setEditState((current) =>
+                        current
+                          ? {
+                              ...current,
+                              personalOwnerMemberId: next.personalOwnerMemberId,
+                              payerMemberId: next.paidByMemberId,
+                              receivedByMemberId: next.receivedByMemberId,
+                            }
+                          : current,
+                      )
+                    }
+                  />
                 </div>
 
                 <div className="inline-form">

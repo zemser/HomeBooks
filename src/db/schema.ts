@@ -1,7 +1,9 @@
+import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   boolean,
   char,
+  check,
   date,
   index,
   integer,
@@ -313,6 +315,9 @@ export const transactionClassifications = pgTable(
       .references(() => transactions.id),
     classificationType: classificationTypeEnum("classification_type").notNull(),
     memberOwnerId: uuid("member_owner_id").references(() => workspaceMembers.id),
+    personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
+    paidByMemberId: uuid("paid_by_member_id").references(() => workspaceMembers.id),
+    receivedByMemberId: uuid("received_by_member_id").references(() => workspaceMembers.id),
     category: text("category"),
     categoryId: uuid("category_id").references(() => workspaceCategories.id, {
       onDelete: "set null",
@@ -325,6 +330,32 @@ export const transactionClassifications = pgTable(
   },
   (table) => ({
     transactionUnique: unique().on(table.transactionId),
+    memberAttributionCheck: check(
+      "transaction_classifications_member_attribution_check",
+      sql`(
+        (
+          ${table.classificationType} = 'personal'
+          AND ${table.personalOwnerMemberId} IS NOT NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} IN ('shared', 'household')
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} = 'income'
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.paidByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} IN ('transfer', 'ignore')
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.paidByMemberId} IS NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+      )`,
+    ),
   }),
 );
 
@@ -348,6 +379,9 @@ export const classificationDecisionBatches = pgTable(
           transactionId: string;
           classificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
           memberOwnerId: string | null;
+          personalOwnerMemberId: string | null;
+          paidByMemberId: string | null;
+          receivedByMemberId: string | null;
           category: string | null;
           categoryId: string | null;
           confidence: string | null;
@@ -366,6 +400,9 @@ export const classificationDecisionBatches = pgTable(
         matchValue: string;
         defaultClassificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
         defaultMemberOwnerId: string | null;
+        defaultPersonalOwnerMemberId: string | null;
+        defaultPaidByMemberId: string | null;
+        defaultReceivedByMemberId: string | null;
         defaultCategory: string | null;
         defaultCategoryId: string | null;
         priority: number;
@@ -397,6 +434,13 @@ export const classificationRules = pgTable(
     matchValue: text("match_value").notNull(),
     defaultClassificationType: classificationTypeEnum("default_classification_type").notNull(),
     defaultMemberOwnerId: uuid("default_member_owner_id").references(() => workspaceMembers.id),
+    defaultPersonalOwnerMemberId: uuid("default_personal_owner_member_id").references(
+      () => workspaceMembers.id,
+    ),
+    defaultPaidByMemberId: uuid("default_paid_by_member_id").references(() => workspaceMembers.id),
+    defaultReceivedByMemberId: uuid("default_received_by_member_id").references(
+      () => workspaceMembers.id,
+    ),
     defaultCategory: text("default_category"),
     defaultCategoryId: uuid("default_category_id").references(() => workspaceCategories.id, {
       onDelete: "set null",
@@ -410,6 +454,32 @@ export const classificationRules = pgTable(
       table.workspaceId,
       table.active,
       table.priority,
+    ),
+    memberAttributionCheck: check(
+      "classification_rules_member_attribution_check",
+      sql`(
+        (
+          ${table.defaultClassificationType} = 'personal'
+          AND ${table.defaultPersonalOwnerMemberId} IS NOT NULL
+          AND ${table.defaultReceivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.defaultClassificationType} IN ('shared', 'household')
+          AND ${table.defaultPersonalOwnerMemberId} IS NULL
+          AND ${table.defaultReceivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.defaultClassificationType} = 'income'
+          AND ${table.defaultPersonalOwnerMemberId} IS NULL
+          AND ${table.defaultPaidByMemberId} IS NULL
+        )
+        OR (
+          ${table.defaultClassificationType} IN ('transfer', 'ignore')
+          AND ${table.defaultPersonalOwnerMemberId} IS NULL
+          AND ${table.defaultPaidByMemberId} IS NULL
+          AND ${table.defaultReceivedByMemberId} IS NULL
+        )
+      )`,
     ),
   }),
 );
@@ -429,6 +499,8 @@ export const expenseEvents = pgTable(
     workspaceCurrency: char("workspace_currency", { length: 3 }).notNull(),
     classificationType: classificationTypeEnum("classification_type").notNull(),
     payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
+    personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
+    receivedByMemberId: uuid("received_by_member_id").references(() => workspaceMembers.id),
     category: text("category"),
     categoryId: uuid("category_id").references(() => workspaceCategories.id, {
       onDelete: "set null",
@@ -445,6 +517,32 @@ export const expenseEvents = pgTable(
     workspaceReportingModeIdx: index("expense_events_workspace_reporting_mode_idx").on(
       table.workspaceId,
       table.reportingMode,
+    ),
+    memberAttributionCheck: check(
+      "expense_events_member_attribution_check",
+      sql`(
+        (
+          ${table.classificationType} = 'personal'
+          AND ${table.personalOwnerMemberId} IS NOT NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} IN ('shared', 'household')
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} = 'income'
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.payerMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} IN ('transfer', 'ignore')
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.payerMemberId} IS NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+      )`,
     ),
   }),
 );
@@ -469,22 +567,55 @@ export const expenseAllocations = pgTable(
   }),
 );
 
-export const manualRecurringExpenses = pgTable("manual_recurring_expenses", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  workspaceId: uuid("workspace_id")
-    .notNull()
-    .references(() => workspaces.id),
-  title: text("title").notNull(),
-  eventKind: eventKindEnum("event_kind").notNull(),
-  payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
-  classificationType: classificationTypeEnum("classification_type").notNull(),
-  category: text("category"),
-  categoryId: uuid("category_id").references(() => workspaceCategories.id, {
-    onDelete: "set null",
+export const manualRecurringExpenses = pgTable(
+  "manual_recurring_expenses",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    title: text("title").notNull(),
+    eventKind: eventKindEnum("event_kind").notNull(),
+    payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
+    personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
+    receivedByMemberId: uuid("received_by_member_id").references(() => workspaceMembers.id),
+    classificationType: classificationTypeEnum("classification_type").notNull(),
+    category: text("category"),
+    categoryId: uuid("category_id").references(() => workspaceCategories.id, {
+      onDelete: "set null",
+    }),
+    active: boolean("active").notNull().default(true),
+    ...timestamps,
+  },
+  (table) => ({
+    memberAttributionCheck: check(
+      "manual_recurring_expenses_member_attribution_check",
+      sql`(
+        (
+          ${table.classificationType} = 'personal'
+          AND ${table.personalOwnerMemberId} IS NOT NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} IN ('shared', 'household')
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} = 'income'
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.payerMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} IN ('transfer', 'ignore')
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.payerMemberId} IS NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+      )`,
+    ),
   }),
-  active: boolean("active").notNull().default(true),
-  ...timestamps,
-});
+);
 
 export const recurringEntryVersions = pgTable(
   "recurring_entry_versions",
@@ -528,6 +659,8 @@ export const manualEntries = pgTable(
     normalizationRate: numeric("normalization_rate", { precision: 18, scale: 8 }),
     normalizationRateSource: text("normalization_rate_source"),
     payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
+    personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
+    receivedByMemberId: uuid("received_by_member_id").references(() => workspaceMembers.id),
     classificationType: classificationTypeEnum("classification_type").notNull(),
     category: text("category"),
     categoryId: uuid("category_id").references(() => workspaceCategories.id, {
@@ -542,6 +675,32 @@ export const manualEntries = pgTable(
       table.eventDate,
     ),
     sourceIdx: index("manual_entries_source_idx").on(table.sourceType, table.sourceId),
+    memberAttributionCheck: check(
+      "manual_entries_member_attribution_check",
+      sql`(
+        (
+          ${table.classificationType} = 'personal'
+          AND ${table.personalOwnerMemberId} IS NOT NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} IN ('shared', 'household')
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} = 'income'
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.payerMemberId} IS NULL
+        )
+        OR (
+          ${table.classificationType} IN ('transfer', 'ignore')
+          AND ${table.personalOwnerMemberId} IS NULL
+          AND ${table.payerMemberId} IS NULL
+          AND ${table.receivedByMemberId} IS NULL
+        )
+      )`,
+    ),
   }),
 );
 

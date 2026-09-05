@@ -14,6 +14,11 @@ import {
   transactions,
 } from "@/db/schema";
 import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
+import {
+  compatibilityMemberOwnerId,
+  normalizeMemberAttribution,
+  resolveImportedPaidByMemberId,
+} from "@/features/expenses/payer";
 import { getSupportedBankImportCatalog } from "@/features/imports/catalog";
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
@@ -39,7 +44,9 @@ type CurrentImportContext = {
 type ActiveExactClassificationRule = {
   matchValue: string;
   classificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
-  memberOwnerId: string | null;
+  personalOwnerMemberId: string | null;
+  paidByMemberId: string | null;
+  receivedByMemberId: string | null;
   category: string | null;
   categoryId: string | null;
 };
@@ -158,7 +165,9 @@ export async function analyzeParsedBankImport(input: {
       .select({
         matchValue: classificationRules.matchValue,
         classificationType: classificationRules.defaultClassificationType,
-        memberOwnerId: classificationRules.defaultMemberOwnerId,
+        personalOwnerMemberId: classificationRules.defaultPersonalOwnerMemberId,
+        paidByMemberId: classificationRules.defaultPaidByMemberId,
+        receivedByMemberId: classificationRules.defaultReceivedByMemberId,
         category: classificationRules.defaultCategory,
         categoryId: classificationRules.defaultCategoryId,
       })
@@ -620,11 +629,28 @@ export async function persistBankImport(input: {
             return [];
           }
 
+          const attribution = normalizeMemberAttribution({
+            classificationType: matchedRule.classificationType,
+            personalOwnerMemberId: matchedRule.personalOwnerMemberId,
+            paidByMemberId: resolveImportedPaidByMemberId({
+              classificationType: matchedRule.classificationType,
+              paidByMemberId: matchedRule.paidByMemberId ?? undefined,
+              accountOwnerMemberId: account.ownerMemberId,
+            }),
+            receivedByMemberId: matchedRule.receivedByMemberId,
+          });
+
           return [
             {
               transactionId: transaction.id,
               classificationType: matchedRule.classificationType,
-              memberOwnerId: matchedRule.memberOwnerId,
+              memberOwnerId: compatibilityMemberOwnerId(
+                matchedRule.classificationType,
+                attribution,
+              ),
+              personalOwnerMemberId: attribution.personalOwnerMemberId,
+              paidByMemberId: attribution.paidByMemberId,
+              receivedByMemberId: attribution.receivedByMemberId,
               category: matchedRule.category,
               categoryId: matchedRule.categoryId,
               confidence: null,

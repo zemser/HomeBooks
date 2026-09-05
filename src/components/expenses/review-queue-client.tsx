@@ -11,10 +11,14 @@ import {
 } from "@/components/expenses/allocation-editor";
 import { Modal } from "@/components/shared/modal";
 import { ClassificationTypePicker } from "@/components/expenses/classification-type-picker";
+import {
+  emptyMemberAttributionFormValue,
+  MemberAttributionFields,
+  memberAttributionForClassificationType,
+} from "@/components/expenses/member-attribution-fields";
 import { CategoryCombobox } from "@/components/workspaces/category-combobox";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expenses/constants";
-import { classificationAllowsPayer } from "@/features/expenses/payer";
 import {
   buildTransactionReportTargets,
   formatAllocationSummary,
@@ -49,7 +53,9 @@ type SingleFormState = {
   classificationType: ClassificationType | "";
   category: string;
   categoryId: string;
-  memberOwnerId: string;
+  personalOwnerMemberId: string;
+  paidByMemberId: string;
+  receivedByMemberId: string;
   createRule: boolean;
   applyToSimilar: boolean;
 };
@@ -58,7 +64,9 @@ type BulkFormState = {
   classificationType: ClassificationType | "";
   category: string;
   categoryId: string;
-  memberOwnerId: string;
+  personalOwnerMemberId: string;
+  paidByMemberId: string;
+  receivedByMemberId: string;
 };
 
 type ActiveFilterKey =
@@ -151,7 +159,7 @@ const emptySingleForm: SingleFormState = {
   classificationType: "",
   category: "",
   categoryId: "",
-  memberOwnerId: "",
+  ...emptyMemberAttributionFormValue(),
   createRule: false,
   applyToSimilar: false,
 };
@@ -160,7 +168,7 @@ const emptyBulkForm: BulkFormState = {
   classificationType: "",
   category: "",
   categoryId: "",
-  memberOwnerId: "",
+  ...emptyMemberAttributionFormValue(),
 };
 
 const emptyReviewSummary: ReviewQueueSummary = {
@@ -531,10 +539,12 @@ export function ReviewQueueClient({
       classificationType: selectedTransaction.classification?.classificationType ?? "",
       category: selectedTransaction.classification?.category ?? "",
       categoryId: selectedTransaction.classification?.categoryId ?? "",
-      memberOwnerId:
-        selectedTransaction.classification?.memberOwnerId ??
-        selectedTransaction.importerMemberId ??
+      personalOwnerMemberId: selectedTransaction.classification?.personalOwnerMemberId ?? "",
+      paidByMemberId:
+        selectedTransaction.classification?.paidByMemberId ??
+        selectedTransaction.accountOwnerMemberId ??
         "",
+      receivedByMemberId: selectedTransaction.classification?.receivedByMemberId ?? "",
       createRule: false,
       applyToSimilar: false,
     });
@@ -665,9 +675,11 @@ export function ReviewQueueClient({
       classificationType,
       category: ["transfer", "ignore"].includes(classificationType) ? "" : current.category,
       categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
-      memberOwnerId: classificationAllowsPayer(classificationType)
-        ? current.memberOwnerId
-        : "",
+      ...memberAttributionForClassificationType(
+        classificationType,
+        current,
+        selectedTransaction?.accountOwnerMemberId ?? "",
+      ),
     }));
   }
 
@@ -679,7 +691,10 @@ export function ReviewQueueClient({
       classificationType: suggestion.classificationType,
       category: suggestion.category ?? "",
       categoryId: suggestion.categoryId ?? "",
-      memberOwnerId: suggestion.memberOwnerId ?? "",
+      personalOwnerMemberId: suggestion.personalOwnerMemberId ?? "",
+      paidByMemberId:
+        suggestion.paidByMemberId ?? selectedTransaction.accountOwnerMemberId ?? "",
+      receivedByMemberId: suggestion.receivedByMemberId ?? "",
     }));
     setMessage("Suggestion applied. Review it, then save when ready.");
   }
@@ -696,7 +711,9 @@ export function ReviewQueueClient({
       classificationType: singleForm.classificationType,
       category: singleForm.category,
       categoryId: singleForm.categoryId,
-      memberOwnerId: singleForm.memberOwnerId,
+      personalOwnerMemberId: singleForm.personalOwnerMemberId,
+      paidByMemberId: singleForm.paidByMemberId,
+      receivedByMemberId: singleForm.receivedByMemberId,
     });
     setIsBulkModalOpen(true);
   }
@@ -709,7 +726,7 @@ export function ReviewQueueClient({
         ?.focus();
       return;
     }
-    if (singleForm.classificationType === "personal" && !singleForm.memberOwnerId) {
+    if (singleForm.classificationType === "personal" && !singleForm.personalOwnerMemberId) {
       setError("Choose whose personal expense this is before saving.");
       memberSelectRef.current?.focus();
       return;
@@ -731,7 +748,9 @@ export function ReviewQueueClient({
         classificationType: singleForm.classificationType,
         category: singleForm.category,
         categoryId: singleForm.categoryId || null,
-        memberOwnerId: singleForm.memberOwnerId || null,
+        personalOwnerMemberId: singleForm.personalOwnerMemberId || null,
+        paidByMemberId: singleForm.paidByMemberId || null,
+        receivedByMemberId: singleForm.receivedByMemberId || null,
         createRule: singleForm.createRule,
         additionalTransactionIds,
       }),
@@ -779,7 +798,7 @@ export function ReviewQueueClient({
       setError("Choose a classification type before applying a bulk update.");
       return;
     }
-    if (bulkForm.classificationType === "personal" && !bulkForm.memberOwnerId) {
+    if (bulkForm.classificationType === "personal" && !bulkForm.personalOwnerMemberId) {
       setError("Choose whose personal expenses these are before applying the bulk update.");
       return;
     }
@@ -802,7 +821,9 @@ export function ReviewQueueClient({
         classificationType: bulkForm.classificationType,
         category: bulkForm.category,
         categoryId: bulkForm.categoryId || null,
-        memberOwnerId: bulkForm.memberOwnerId || null,
+        personalOwnerMemberId: bulkForm.personalOwnerMemberId || null,
+        paidByMemberId: bulkForm.paidByMemberId || null,
+        receivedByMemberId: bulkForm.receivedByMemberId || null,
       }),
     });
     const data = (await response.json().catch(() => ({}))) as { error?: string; undoBatchId?: string };
@@ -944,15 +965,6 @@ export function ReviewQueueClient({
     selectedTransaction?.classification &&
     selectedTransaction.classification.classificationType !== "transfer" &&
     selectedTransaction.classification.classificationType !== "ignore";
-  const memberFieldLabel =
-    singleForm.classificationType === "shared"
-      ? "Paid by"
-      : singleForm.classificationType === "income"
-        ? "Received by"
-        : "Whose personal expense?";
-  const showMemberField = Boolean(
-    singleForm.classificationType && classificationAllowsPayer(singleForm.classificationType),
-  );
   const selectedTransactionCurrencyState = selectedTransaction
     ? getCurrencyNormalizationDisplayState(selectedTransaction)
     : null;
@@ -1297,9 +1309,7 @@ export function ReviewQueueClient({
                   setBulkForm((current) => ({
                     ...current,
                     classificationType,
-                    memberOwnerId: classificationAllowsPayer(classificationType)
-                      ? current.memberOwnerId
-                      : "",
+                    ...memberAttributionForClassificationType(classificationType, current),
                   }))
                 }
                 legend="Apply which treatment?"
@@ -1318,19 +1328,14 @@ export function ReviewQueueClient({
                   }}
                 />
               ) : null}
-              {bulkForm.classificationType && classificationAllowsPayer(bulkForm.classificationType) ? <label className="field">
-                <span>
-                  {bulkForm.classificationType === "shared"
-                    ? "Paid by"
-                    : bulkForm.classificationType === "income"
-                      ? "Received by"
-                      : "Whose personal expense?"}
-                </span>
-                <select className="input" value={bulkForm.memberOwnerId} onChange={(event) => setBulkForm((current) => ({ ...current, memberOwnerId: event.target.value }))}>
-                  <option value="">Unassigned</option>
-                  {members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}
-                </select>
-              </label> : null}
+              {bulkForm.classificationType ? (
+                <MemberAttributionFields
+                  classificationType={bulkForm.classificationType}
+                  value={bulkForm}
+                  members={members}
+                  onChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
+                />
+              ) : null}
               {!hasDefinedCategories ? <p className="helper-text">Add categories in <Link href="/settings">settings</Link> before assigning one here.</p> : null}
               <div className="action-row">
                 <button className="button" type="button" disabled={isSavingBulk || isSubmittingBulk} onClick={() => startSavingBulk(() => void runBulkClassification())}>
@@ -1682,27 +1687,15 @@ export function ReviewQueueClient({
                   />
                 ) : null}
 
-                {showMemberField ? <label className="field">
-                  <span>{memberFieldLabel}</span>
-                  <select
-                    ref={memberSelectRef}
-                    className="input"
-                    value={singleForm.memberOwnerId}
-                    onChange={(event) =>
-                      setSingleForm((current) => ({
-                        ...current,
-                        memberOwnerId: event.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Unassigned</option>
-                    {members.map((member) => (
-                      <option key={member.id} value={member.id}>
-                        {member.displayName}
-                      </option>
-                    ))}
-                  </select>
-                </label> : null}
+                {singleForm.classificationType ? (
+                  <MemberAttributionFields
+                    classificationType={singleForm.classificationType}
+                    value={singleForm}
+                    members={members}
+                    onChange={(next) => setSingleForm((current) => ({ ...current, ...next }))}
+                    personalOwnerSelectRef={memberSelectRef}
+                  />
+                ) : null}
 
                 <label className="checkbox-label merchant-rule-toggle">
                   <input
