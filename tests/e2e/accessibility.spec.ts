@@ -41,10 +41,15 @@ for (const route of [
   "/transactions/all",
   "/more",
   "/recurring",
+  "/reports?view=year",
 ] as const) {
   test(`${route} has no serious or critical automated accessibility violations`, async ({ page }) => {
     await page.goto(route);
     await expect(page.getByRole("main")).toBeVisible();
+    if (route.includes("view=year")) {
+      await expect(page.getByTestId("reports-content")).toBeVisible();
+      await expect(page.getByRole("link", { name: "Download year summary" })).toBeVisible();
+    }
     await expectNoSeriousAccessibilityViolations(page);
   });
 }
