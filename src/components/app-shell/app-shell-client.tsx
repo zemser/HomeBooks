@@ -3,25 +3,42 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import type { AppNavSection, AppNavItem } from "@/components/app-shell/nav";
+import type { AppNavigation, AppNavItem } from "@/components/app-shell/nav";
 
 type AppShellClientProps = {
-  navSections: AppNavSection[];
+  navigation: AppNavigation;
   workspaceGlance: React.ReactNode;
   reviewBadge: React.ReactNode;
   children: React.ReactNode;
 };
 
+function matchesPath(
+  pathname: string,
+  href: string,
+  matchStrategy: "exact" | "prefix",
+) {
+  if (matchStrategy === "exact") return pathname === href;
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 function isActivePath(pathname: string, item: AppNavItem) {
-  if (item.matchStrategy === "exact") {
-    return pathname === item.href;
-  }
+  const activePaths = item.activePaths ?? [
+    { href: item.href, matchStrategy: item.matchStrategy ?? "prefix" },
+  ];
+  return activePaths.some((path) =>
+    matchesPath(pathname, path.href, path.matchStrategy),
+  );
+}
 
-  if (item.href === "/") {
-    return pathname === "/";
-  }
-
-  return pathname === item.href || pathname.startsWith(`${item.href}/`);
+function AttentionBadge({
+  item,
+  reviewBadge,
+}: {
+  item: AppNavItem;
+  reviewBadge: React.ReactNode;
+}) {
+  return item.attention === "review" ? reviewBadge : null;
 }
 
 function MobileNavItem({
@@ -42,36 +59,25 @@ function MobileNavItem({
       aria-current={active ? "page" : undefined}
     >
       <span>{item.label}</span>
-      {item.href === "/imports/review" ? reviewBadge : null}
-      {item.badge ? (
-        <span className={`nav-badge ${item.badgeTone === "warning" ? "nav-badge-warning" : ""}`}>
-          {item.badge}
-        </span>
-      ) : null}
+      <AttentionBadge item={item} reviewBadge={reviewBadge} />
     </Link>
   );
 }
 
 export function AppShellClient({
-  navSections,
+  navigation,
   workspaceGlance,
   reviewBadge,
   children,
 }: AppShellClientProps) {
   const pathname = usePathname();
-  const primaryItems = navSections[0]?.items ?? [];
-  const secondaryItems = navSections[1]?.items ?? [];
-  const flatItems = navSections.flatMap((section) => section.items);
-  const currentItem = flatItems.find((item) => isActivePath(pathname, item));
+  const currentItem = navigation.titleItems.find((item) => isActivePath(pathname, item));
 
   return (
     <div className="app-shell" data-testid="app-shell">
       <aside className="app-sidebar">
         <div className="app-sidebar-inner">
-          <Link
-            className="app-brand"
-            href="/"
-          >
+          <Link className="app-brand" href="/">
             <span className="app-brand-mark">FA</span>
             <span>
               <strong>Fin App</strong>
@@ -82,7 +88,7 @@ export function AppShellClient({
           {workspaceGlance}
 
           <nav className="app-nav" aria-label="Primary application">
-            {navSections.map((section) => (
+            {navigation.desktopSections.map((section) => (
               <div className="app-nav-section" key={section.title}>
                 <p className="app-nav-title">{section.title}</p>
                 <div className="app-nav-list">
@@ -99,14 +105,7 @@ export function AppShellClient({
                         <span>{item.label}</span>
                         <span className="app-nav-meta">
                           {item.betaLabel ? <span className="nav-chip">{item.betaLabel}</span> : null}
-                          {item.href === "/imports/review" ? reviewBadge : null}
-                          {item.badge ? (
-                            <span
-                              className={`nav-badge ${item.badgeTone === "warning" ? "nav-badge-warning" : ""}`}
-                            >
-                              {item.badge}
-                            </span>
-                          ) : null}
+                          <AttentionBadge item={item} reviewBadge={reviewBadge} />
                         </span>
                       </Link>
                     );
@@ -124,23 +123,12 @@ export function AppShellClient({
             <p className="app-kicker">Fin App</p>
             <h1>{currentItem?.label ?? "Home"}</h1>
           </div>
-          <div className="app-mobile-actions">
-            {secondaryItems.map((item) => (
-              <Link
-                className="mobile-pill-link"
-                href={item.href}
-                key={item.href}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </div>
         </header>
 
         <div className="app-main-scroll">{children}</div>
 
         <nav className="app-mobile-nav" aria-label="Primary mobile navigation">
-          {primaryItems.map((item) => (
+          {navigation.mobileItems.map((item) => (
             <MobileNavItem
               item={item}
               key={item.href}

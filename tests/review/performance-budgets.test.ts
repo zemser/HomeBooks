@@ -22,5 +22,5 @@ test("PERF-003 budget artifact covers web vitals, durations, amplification, and 
   assert.ok(budgets.serverDurationMs.mutations);
   assert.equal(budgets.amplification.protectedRead !== undefined, true);
   assert.equal(budgets.amplification.routeSqlStatementsMax !== undefined, true);
-  assert.deepEqual(Object.keys(budgets.clientJavaScriptFirstLoadKbMax).sort(), ["/", "/expenses", "/imports", "/imports/review", "/reports", "shared"]);
+  assert.deepEqual(Object.keys(budgets.clientJavaScriptFirstLoadKbMax).sort(), ["/", "/reports", "/transactions", "/transactions/all", "/transactions/review", "shared"]);
 });

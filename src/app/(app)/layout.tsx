@@ -1,13 +1,9 @@
-import { Suspense, cache } from "react";
+import { Suspense } from "react";
 
 import { AppShellClient } from "@/components/app-shell/app-shell-client";
-import { createAppNavSections } from "@/components/app-shell/nav";
-import { getAppShellSnapshot } from "@/features/home/service";
-import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
-
-const getRequestShellSnapshot = cache(() =>
-  withCurrentWorkspaceDb((context, db) => getAppShellSnapshot(context, db)),
-);
+import { createAppNavigation } from "@/components/app-shell/nav";
+import { ReviewQueueBadge } from "@/components/app-shell/review-queue-badge";
+import { getRequestShellSnapshot } from "@/features/home/request-shell-snapshot";
 
 async function WorkspaceGlance() {
   const snapshot = await getRequestShellSnapshot();
@@ -34,24 +30,16 @@ function WorkspaceGlanceFallback() {
   );
 }
 
-async function ReviewQueueBadge() {
-  const snapshot = await getRequestShellSnapshot();
-
-  return snapshot.reviewQueueCount > 0 ? (
-    <span className="nav-badge nav-badge-warning">{snapshot.reviewQueueCount}</span>
-  ) : null;
-}
-
 export default function AppLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const navSections = createAppNavSections();
+  const navigation = createAppNavigation();
 
   return (
     <AppShellClient
-      navSections={navSections}
+      navigation={navigation}
       workspaceGlance={(
         <Suspense fallback={<WorkspaceGlanceFallback />}>
           <WorkspaceGlance />

@@ -30,8 +30,8 @@ test.describe("transaction review workflow", () => {
     const merchant = initial.queue.find((item) => item.merchantRaw?.trim())?.merchantRaw?.trim();
     test.skip(!merchant, "The seeded review queue has no searchable merchant.");
 
-    await page.goto("/imports/review");
-    await expect(page.getByRole("heading", { name: "Review transactions" })).toBeVisible();
+    await page.goto("/transactions/review");
+    await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
 
     const search = page.getByRole("searchbox", { name: "Search" });
     await search.fill(merchant!);
@@ -46,8 +46,8 @@ test.describe("transaction review workflow", () => {
   });
 
   test("filter panel closes on outside click and Escape", async ({ page }) => {
-    await page.goto("/imports/review");
-    await expect(page.getByRole("heading", { name: "Review transactions" })).toBeVisible();
+    await page.goto("/transactions/review");
+    await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
 
     const filters = page.locator("details.review-filter-disclosure");
     const trigger = filters.locator(":scope > summary");
@@ -73,8 +73,8 @@ test.describe("transaction review workflow", () => {
   });
 
   test("review table does not reserve a column for suggestions", async ({ page }) => {
-    await page.goto("/imports/review");
-    await expect(page.getByRole("heading", { name: "Review transactions" })).toBeVisible();
+    await page.goto("/transactions/review");
+    await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
 
     await expect(page.getByRole("columnheader", { name: "Suggestion" })).toHaveCount(0);
     await expect(page.locator('.review-table td[data-label="Suggestion"]')).toHaveCount(0);
@@ -86,13 +86,13 @@ test.describe("transaction review workflow", () => {
     const before = await loadReviewData(page);
     test.skip(before.queue.length < 2, "The keyboard test needs two review rows.");
 
-    await page.goto("/imports/review");
-    await expect(page.getByRole("heading", { name: "Review transactions" })).toBeVisible();
+    await page.goto("/transactions/review");
+    await expect(page.getByRole("heading", { name: "Transactions", exact: true })).toBeVisible();
 
     const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
     const startingId = await activeRow.getAttribute("data-review-transaction-id");
 
-    await page.getByRole("heading", { name: "Review transactions" }).click();
+    await page.getByRole("heading", { name: "Transactions", exact: true }).click();
     await page.keyboard.press("3");
     await expect(page.getByRole("radio", { name: /Household/ })).toBeChecked();
 
@@ -104,7 +104,7 @@ test.describe("transaction review workflow", () => {
     await category.press("Enter");
     await expect(category).not.toHaveValue("");
 
-    await page.getByRole("heading", { name: "Review transactions" }).click();
+    await page.getByRole("heading", { name: "Transactions", exact: true }).click();
     await page.keyboard.press("s");
     await expect(activeRow).not.toHaveAttribute("data-review-transaction-id", startingId!);
 
@@ -113,7 +113,7 @@ test.describe("transaction review workflow", () => {
   });
 
   test("radio, combobox, and shortcut-help keyboard contracts remain isolated", async ({ page }) => {
-    await page.goto("/imports/review");
+    await page.goto("/transactions/review");
 
     const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
     const startingRowId = await activeRow.getAttribute("data-review-transaction-id");
@@ -161,7 +161,7 @@ test.describe("transaction review workflow", () => {
 
     let undoBatchId: string | undefined;
     try {
-      await page.goto(`/imports/review?transactionId=${transaction.id}`);
+      await page.goto(`/transactions/review?transactionId=${transaction.id}`);
       await expect(page.locator(`[data-review-transaction-id="${transaction.id}"]`)).toHaveAttribute(
         "aria-current",
         "true",
@@ -222,7 +222,7 @@ test.describe("transaction review workflow", () => {
 
     let undoBatchId: string | undefined;
     try {
-      await page.goto("/imports/review");
+      await page.goto("/transactions/review");
       const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
       await expect(activeRow).toHaveAttribute("data-review-transaction-id", transaction.id);
 
@@ -266,7 +266,7 @@ test.describe("transaction review workflow", () => {
 
     let undoBatchId: string | undefined;
     try {
-      await page.goto(`/imports/review?transactionId=${transaction!.id}`);
+      await page.goto(`/transactions/review?transactionId=${transaction!.id}`);
       const householdRadio = page.getByRole("radio", { name: /Household/ });
       await householdRadio.check();
       await expect(householdRadio).toBeChecked();
@@ -320,7 +320,7 @@ test.describe("transaction review workflow", () => {
 
     let undoBatchId: string | undefined;
     try {
-      await page.goto(`/imports/review?transactionId=${transaction!.id}`);
+      await page.goto(`/transactions/review?transactionId=${transaction!.id}`);
       await page.getByRole("radio", { name: /Household/ }).check();
       const categoryInput = page.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
@@ -452,7 +452,7 @@ test.describe("transaction review workflow", () => {
 
     let undoBatchId: string | undefined;
     try {
-      await page.goto("/imports/review");
+      await page.goto("/transactions/review");
       for (const transaction of transactions) {
         const row = page.locator(`[data-review-transaction-id="${transaction.id}"]`);
         await row.getByRole("checkbox").check();
@@ -504,7 +504,7 @@ test.describe("responsive review workflow", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
   test("mobile review does not overflow the viewport", async ({ page }) => {
-    await page.goto("/imports/review");
+    await page.goto("/transactions/review");
     await expect(page.getByRole("heading", { name: "Selected transaction" })).toBeVisible();
 
     const dimensions = await page.evaluate(() => ({

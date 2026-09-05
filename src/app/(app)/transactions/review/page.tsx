@@ -1,3 +1,6 @@
+import { Suspense } from "react";
+
+import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { ReviewQueueClient } from "@/components/expenses/review-queue-client";
 import { listReviewQueue } from "@/features/expenses/queries";
 import { parseReviewQuery } from "@/features/expenses/review-query";
@@ -22,31 +25,16 @@ async function ReviewQueue({ searchParams }: ReviewPageProps) {
   );
 
   return (
-    <div data-testid="review-content">
+    <div data-testid="transactions-review-content">
       <ReviewQueueClient initialData={initialData} initialTransactionId={transactionId} />
     </div>
   );
 }
 
-export default function ReviewPage({ searchParams }: ReviewPageProps) {
+export default function TransactionsReviewPage({ searchParams }: ReviewPageProps) {
   return (
-    <main>
-      <div className="page-shell stack">
-        <section className="page-header review-page-header" data-testid="review-shell">
-          <div>
-            <span className="eyebrow">Review queue</span>
-            <h1>Review transactions</h1>
-            <p>Choose a row, make a decision, and move to the next one.</p>
-          </div>
-        </section>
-
-        <Suspense fallback={<RouteDataFallback label="Review queue" />}>
-          <ReviewQueue searchParams={searchParams} />
-        </Suspense>
-      </div>
-    </main>
+    <Suspense fallback={<RouteDataFallback label="Review queue" />}>
+      <ReviewQueue searchParams={searchParams} />
+    </Suspense>
   );
 }
-import { Suspense } from "react";
-
-import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";

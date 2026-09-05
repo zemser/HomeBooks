@@ -35,7 +35,13 @@ async function expectNoSeriousAccessibilityViolations(page: Page) {
   expect(violations, JSON.stringify(violations, null, 2)).toEqual([]);
 }
 
-for (const route of ["/imports", "/imports/review", "/expenses", "/recurring"] as const) {
+for (const route of [
+  "/transactions",
+  "/transactions/review",
+  "/transactions/all",
+  "/more",
+  "/recurring",
+] as const) {
   test(`${route} has no serious or critical automated accessibility violations`, async ({ page }) => {
     await page.goto(route);
     await expect(page.getByRole("main")).toBeVisible();

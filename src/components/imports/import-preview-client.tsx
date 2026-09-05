@@ -479,7 +479,7 @@ export function ImportPreviewClient({
                   <div className="action-row">
                     <Link
                       className="button"
-                      href={`/imports/review?import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
+                      href={`/transactions/review?import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
                       onClick={() => router.refresh()}
                     >
                       {savedReviewPendingCount > 0
@@ -493,7 +493,7 @@ export function ImportPreviewClient({
                     >
                       Upload another statement
                     </button>
-                    <Link className="link-button" href="/expenses">
+                    <Link className="link-button" href="/transactions/all">
                       Go to all transactions
                     </Link>
                   </div>
@@ -635,12 +635,12 @@ export function ImportPreviewClient({
                       <div className="import-history-actions">
                         <Link
                           className="link-button"
-                          href={`/imports/review?import=${encodeURIComponent(savedImport.id)}`}
+                          href={`/transactions/review?import=${encodeURIComponent(savedImport.id)}`}
                           onClick={() => router.refresh()}
                         >
                           {savedImport.reviewPendingCount > 0 ? "Review" : "Open queue"}
                         </Link>
-                        <Link className="link-button" href="/expenses">Ledger</Link>
+                        <Link className="link-button" href="/transactions/all">Ledger</Link>
                       </div>
                     </td>
                   </tr>

@@ -36,16 +36,16 @@
     },
     "routeSqlStatementsMax": {
       "/": 190,
-      "/imports": 34,
-      "/imports/review": 51,
-      "/expenses": 39,
+      "/transactions": 34,
+      "/transactions/review": 51,
+      "/transactions/all": 39,
       "/reports": 60
     },
     "routeDatabaseUnitsMax": {
       "/": 88,
-      "/imports": 11,
-      "/imports/review": 20,
-      "/expenses": 14,
+      "/transactions": 11,
+      "/transactions/review": 20,
+      "/transactions/all": 14,
       "/reports": 24
     },
     "bulkSaveSqlStatementsMax": 60,
@@ -54,9 +54,9 @@
   "clientJavaScriptFirstLoadKbMax": {
     "shared": 112,
     "/": 120,
-    "/imports": 130,
-    "/imports/review": 133,
-    "/expenses": 130,
+    "/transactions": 130,
+    "/transactions/review": 133,
+    "/transactions/all": 130,
     "/reports": 130
   },
   "notes": [
