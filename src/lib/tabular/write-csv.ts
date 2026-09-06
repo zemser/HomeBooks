@@ -6,8 +6,16 @@ function needsCsvQuotes(value: string) {
   return /[",\n\r]/.test(value) || value !== value.trim();
 }
 
+function spreadsheetSafeText(value: string) {
+  // Quoting alone does not stop spreadsheet apps from evaluating formulas.
+  return /^\s*[=+@-]|^[\t\r\n]/.test(value) ? `'${value}` : value;
+}
+
 function escapeCsvField(value: string | number) {
-  const text = typeof value === "number" ? serializeCsvNumber(value) : value;
+  // Negative numeric amounts must remain numbers.
+  const text = typeof value === "number"
+    ? serializeCsvNumber(value)
+    : spreadsheetSafeText(value);
 
   if (!needsCsvQuotes(text)) {
     return text;

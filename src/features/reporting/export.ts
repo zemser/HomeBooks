@@ -73,10 +73,14 @@ export function parseReportExportQuery(searchParams: URLSearchParams): ParsedRep
   const monthParam = searchParams.get("month");
   const month = monthParam?.trim() ? monthParam.trim() : undefined;
 
+  if (month && !/^(?!0000)\d{4}-(0[1-9]|1[0-2])(-01)?$/.test(month)) {
+    return { ok: false, error: "Month must use YYYY-MM or YYYY-MM-01." };
+  }
+
   return { ok: true, kind, month, mode };
 }
 
-export function exportScopeColumnKey(scope: SpendingScopeSummary) {
+export function exportScopeColumnKey(scope: Pick<SpendingScopeSummary, "scope" | "memberId">) {
   if (scope.scope === "personal") {
     return scope.memberId ? `personal_${scope.memberId}` : "personal_unassigned";
   }
@@ -102,10 +106,12 @@ export function buildReportExportFilename(input: {
   year: number;
   throughMonth: string;
   mode: ReportingViewMode;
+  workspaceCurrency: string;
 }) {
   const through = input.throughMonth.slice(0, 7);
   const modeSlug = input.mode.replaceAll("_", "-");
-  const prefix = `homebooks-${input.year}-through-${through}-${modeSlug}`;
+  const currency = encodeURIComponent(input.workspaceCurrency.toUpperCase());
+  const prefix = `homebooks-${input.year}-through-${through}-${modeSlug}-${currency}`;
 
   switch (input.kind) {
     case "year_summary":
@@ -187,8 +193,8 @@ function buildCategoryDetailTable(
         month: exportMonthValue(month.month),
         category: category.category,
         ...Object.fromEntries(
-          category.amounts.map((amount, index) => [
-            exportScopeColumnKey(yearReport.totals.scopes[index]!),
+          category.amounts.map((amount) => [
+            exportScopeColumnKey(amount),
             amount.amount,
           ]),
         ),
@@ -203,6 +209,16 @@ function buildCategoryDetailTable(
     columns,
     rows,
   };
+}
+
+export function getYearExportTable(
+  source: YearReportSource,
+  kind: Exclude<ReportExportKind, "workbook">,
+): ExportTable {
+  const yearReport = buildYearReportData(source);
+  return kind === "year_summary"
+    ? buildYearSummaryTable(yearReport)
+    : buildCategoryDetailTable(source, yearReport);
 }
 
 export function getYearExportData(source: YearReportSource): YearExportData {

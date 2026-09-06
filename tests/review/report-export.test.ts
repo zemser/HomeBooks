@@ -6,6 +6,7 @@ import {
   exportScopeColumnKey,
   exportTableToRows,
   getYearExportData,
+  getYearExportTable,
   parseReportExportQuery,
   serializeExportTableCsv,
   serializeReportWorkbook,
@@ -311,7 +312,7 @@ test("Uncategorized is emitted when the category is null", () => {
   assert.equal(exportData.categoryDetail.rows[0]?.household, 12);
 });
 
-test("payment-date and allocated-period exports keep the source reporting mode", () => {
+test("export filenames include the source reporting mode and currency", () => {
   const paymentDate = getYearExportData(twoMemberSource());
   const allocated = getYearExportData({
     ...twoMemberSource(),
@@ -326,8 +327,9 @@ test("payment-date and allocated-period exports keep the source reporting mode",
       year: paymentDate.yearReport.year,
       throughMonth: paymentDate.throughMonth,
       mode: paymentDate.reportingMode,
+      workspaceCurrency: paymentDate.yearReport.workspaceCurrency,
     }),
-    "homebooks-2026-through-2026-04-payment-date-year-summary.csv",
+    "homebooks-2026-through-2026-04-payment-date-ILS-year-summary.csv",
   );
   assert.equal(
     buildReportExportFilename({
@@ -335,8 +337,9 @@ test("payment-date and allocated-period exports keep the source reporting mode",
       year: allocated.yearReport.year,
       throughMonth: allocated.throughMonth,
       mode: allocated.reportingMode,
+      workspaceCurrency: allocated.yearReport.workspaceCurrency,
     }),
-    "homebooks-2026-through-2026-04-allocated-period.xlsx",
+    "homebooks-2026-through-2026-04-allocated-period-ILS.xlsx",
   );
 });
 
@@ -467,4 +470,46 @@ test("unknown export kind and mode are rejected", () => {
 test("export tables do not use in-memory colon scope keys", () => {
   const rows = exportTableToRows(getYearExportData(twoMemberSource()).yearSummary);
   assert.equal(rows[0]?.some((value) => String(value).includes(":")), false);
+});
+
+
+test("CSV neutralizes formula text without changing numeric amounts", () => {
+  const formulaText = ["=1+1", "+1+1", "-1+1", "@SUM(A1)", " =1+1", "\t=1+1", "\r=1+1", "\n=1+1"];
+  const csv = writeCsv([formulaText, [-12.5, 0, 12.5]]);
+  const parsed = readTabularFileFromBuffer({
+    buffer: toArrayBuffer(Buffer.from(csv)), filename: "safe.csv",
+  }).sheets[0]!.rows;
+  assert.deepEqual(parsed[0], formulaText.map((value) => `'${value}`));
+  assert.deepEqual(parsed[1], ["-12.5", "0", "12.5"]);
+
+  const input = twoMemberSource();
+  input.records[0] = record("2026-01-01", "household", 3, { category: "=1+1" });
+  const data = getYearExportData(input);
+  const detail = readTabularFileFromBuffer({
+    buffer: toArrayBuffer(serializeExportTableCsv(data.categoryDetail)), filename: "detail.csv",
+  });
+  assert.ok(detail.sheets[0]!.rows.some((row) => row.includes("'=1+1")));
+  const workbook = readWorkbookFromBuffer({
+    buffer: toArrayBuffer(serializeReportWorkbook(data.yearSummary, data.categoryDetail)),
+    filename: "safe.xlsx",
+  });
+  assert.ok(workbook.sheets[1]!.rows.some((row) => row.includes("=1+1")));
+});
+
+test("export query rejects invalid calendar months before loading data", () => {
+  for (const month of ["garbage", "2026-00", "2026-13", "2026-02-30", "2026-04-15", "0000-01"]) {
+    assert.deepEqual(parseReportExportQuery(new URLSearchParams({kind: "year_summary", month})), {
+      ok: false, error: "Month must use YYYY-MM or YYYY-MM-01.",
+    });
+  }
+  for (const month of ["2026-01", "2026-12-01", " 2026-04 ", ""]) {
+    assert.equal(parseReportExportQuery(new URLSearchParams({kind: "year_summary", month})).ok, true);
+  }
+});
+
+test("single-table exports match the workbook tables", () => {
+  const input = twoMemberSource();
+  const workbook = getYearExportData(input);
+  assert.deepEqual(getYearExportTable(input, "year_summary"), workbook.yearSummary);
+  assert.deepEqual(getYearExportTable(input, "category_detail"), workbook.categoryDetail);
 });

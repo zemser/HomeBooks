@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import {
   buildReportExportFilename,
   getYearExportData,
+  getYearExportTable,
   parseReportExportQuery,
   serializeExportTableCsv,
   serializeReportWorkbook,
@@ -48,15 +49,16 @@ export async function GET(request: Request) {
         db,
       ),
     );
-    const exportData = getYearExportData(source);
     const filename = buildReportExportFilename({
       kind: parsed.kind,
-      year: exportData.yearReport.year,
-      throughMonth: exportData.throughMonth,
-      mode: exportData.reportingMode,
+      year: source.year,
+      throughMonth: source.throughMonth,
+      mode: source.reportingMode,
+      workspaceCurrency: source.workspaceCurrency,
     });
 
     if (parsed.kind === "workbook") {
+      const exportData = getYearExportData(source);
       return new NextResponse(
         new Uint8Array(
           serializeReportWorkbook(exportData.yearSummary, exportData.categoryDetail),
@@ -68,8 +70,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const table =
-      parsed.kind === "year_summary" ? exportData.yearSummary : exportData.categoryDetail;
+    const table = getYearExportTable(source, parsed.kind);
 
     return new NextResponse(new Uint8Array(serializeExportTableCsv(table)), {
       status: 200,
