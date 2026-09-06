@@ -121,8 +121,10 @@ function formatTemplateName(value: string | null | undefined) {
   }
 }
 
+const EMPTY_SAVED_IMPORTS: SavedImportSummary[] = [];
+
 export function ImportPreviewClient({
-  savedImports = [],
+  savedImports = EMPTY_SAVED_IMPORTS,
   workspaceCurrency: initialWorkspaceCurrency,
   mode = "all",
 }: ImportPreviewClientProps) {
