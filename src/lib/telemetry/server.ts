@@ -1,4 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
+import { io } from "next/cache";
 
 type TelemetryValue = boolean | number | string | null;
 type CounterName =
@@ -175,6 +176,9 @@ function logRecord(state: TelemetryState, status: "ok" | "error", error?: unknow
 export async function withTelemetryOperation<T>(input: TelemetryOperationInput, callback: () => Promise<T>) {
   if (currentTelemetry()) return callback();
 
+  // Operation IDs describe live work, not the static prerender. Unlike
+  // connection(), io() also allows this work to run during prefetching.
+  await io();
   const state = buildState(input);
   return telemetryStorage.run(state, async () => {
     try {

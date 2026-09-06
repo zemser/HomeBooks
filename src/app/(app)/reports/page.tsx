@@ -54,6 +54,19 @@ function buildReportsHref(
   return `/reports?${params.toString()}`;
 }
 
+function buildYearExportHref(
+  kind: "year_summary" | "category_detail" | "workbook",
+  month: string,
+  mode: ReportingViewMode,
+) {
+  const params = new URLSearchParams({
+    kind,
+    month: month.slice(0, 7),
+    mode,
+  });
+  return `/api/reports/export?${params.toString()}`;
+}
+
 function ReportViewSwitch({
   view,
   month,
@@ -275,6 +288,26 @@ function YearReportView({
             </div>
           </form>
         </div>
+        <nav className="report-export-actions" aria-label="Download year report">
+          <a
+            className="button button-secondary"
+            href={buildYearExportHref("year_summary", selectedMonth, reportingMode)}
+          >
+            Download year summary
+          </a>
+          <a
+            className="button button-secondary"
+            href={buildYearExportHref("category_detail", selectedMonth, reportingMode)}
+          >
+            Download category detail
+          </a>
+          <a
+            className="button button-secondary"
+            href={buildYearExportHref("workbook", selectedMonth, reportingMode)}
+          >
+            Download Excel workbook
+          </a>
+        </nav>
       </section>
 
       <section className="card stack compact">

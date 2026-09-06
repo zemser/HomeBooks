@@ -1108,6 +1108,20 @@ select.input:focus {
   min-width: 7rem;
 }
 
+.report-export-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.report-export-actions .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 7rem;
+  text-align: center;
+}
+
 .year-report-table th,
 .year-report-table td {
   white-space: nowrap;
