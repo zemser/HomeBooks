@@ -270,44 +270,46 @@ function YearReportView({
                 : " Totals use payment dates."}
             </p>
           </div>
-          <form className="inline-form report-controls-form" method="GET">
-            <input type="hidden" name="view" value="year" />
-            <input type="hidden" name="mode" value={reportingMode} />
-            <label className="field">
-              <span>Year through month</span>
-              <input
-                className="input"
-                type="month"
-                name="month"
-                defaultValue={formatMonthInputValue(selectedMonth)}
-              />
-            </label>
-            <div className="field">
-              <span>&nbsp;</span>
-              <button className="button" type="submit">Load year</button>
-            </div>
-          </form>
+          <div className="report-controls-actions">
+            <form className="inline-form report-controls-form" method="GET">
+              <input type="hidden" name="view" value="year" />
+              <input type="hidden" name="mode" value={reportingMode} />
+              <label className="field">
+                <span>Year through month</span>
+                <input
+                  className="input"
+                  type="month"
+                  name="month"
+                  defaultValue={formatMonthInputValue(selectedMonth)}
+                />
+              </label>
+              <div className="field">
+                <span>&nbsp;</span>
+                <button className="button" type="submit">Load year</button>
+              </div>
+            </form>
+            <nav className="report-export-actions" aria-label="Download year report">
+              <a
+                className="button button-secondary"
+                href={buildYearExportHref("year_summary", selectedMonth, reportingMode)}
+              >
+                Download year summary
+              </a>
+              <a
+                className="button button-secondary"
+                href={buildYearExportHref("category_detail", selectedMonth, reportingMode)}
+              >
+                Download category detail
+              </a>
+              <a
+                className="button button-secondary"
+                href={buildYearExportHref("workbook", selectedMonth, reportingMode)}
+              >
+                Download Excel workbook
+              </a>
+            </nav>
+          </div>
         </div>
-        <nav className="report-export-actions" aria-label="Download year report">
-          <a
-            className="button button-secondary"
-            href={buildYearExportHref("year_summary", selectedMonth, reportingMode)}
-          >
-            Download year summary
-          </a>
-          <a
-            className="button button-secondary"
-            href={buildYearExportHref("category_detail", selectedMonth, reportingMode)}
-          >
-            Download category detail
-          </a>
-          <a
-            className="button button-secondary"
-            href={buildYearExportHref("workbook", selectedMonth, reportingMode)}
-          >
-            Download Excel workbook
-          </a>
-        </nav>
       </section>
 
       <section className="card stack compact">
