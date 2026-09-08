@@ -182,6 +182,17 @@ export type YearReportData = {
   };
 };
 
+export type YearReportSource = {
+  year: number;
+  workspaceCurrency: string;
+  includedMonths: string[];
+  records: YearAggregationRecord[];
+  members: ReportMember[];
+  completeness: MonthCompleteness[];
+  reportingMode: ReportingViewMode;
+  throughMonth: string;
+};
+
 export type ReportingMonthBucket = {
   month: string;
   incomeTotal: number;
@@ -1279,11 +1290,11 @@ export async function getMonthlyReport(
   };
 }
 
-export async function getYearReport(
+export async function loadYearReportSource(
   context: CurrentWorkspaceContext,
   input?: { throughMonth?: string; mode?: ReportingViewMode | string },
   db: DbExecutor = getDb(),
-): Promise<YearReportData> {
+): Promise<YearReportSource> {
   const selectedMonth = normalizeMonthInput(input?.throughMonth);
   const currentMonth = normalizeMonthInput();
   const reportingMode = normalizeReportingModeInput(input?.mode);
@@ -1308,14 +1319,24 @@ export async function getYearReport(
     getMonthCompletenessForMonths(context, includedMonths, db),
   ]);
 
-  return buildYearReportData({
+  return {
     year,
     workspaceCurrency: context.baseCurrency,
     includedMonths,
     records,
     members,
     completeness,
-  });
+    reportingMode,
+    throughMonth: endMonth,
+  };
+}
+
+export async function getYearReport(
+  context: CurrentWorkspaceContext,
+  input?: { throughMonth?: string; mode?: ReportingViewMode | string },
+  db: DbExecutor = getDb(),
+): Promise<YearReportData> {
+  return buildYearReportData(await loadYearReportSource(context, input, db));
 }
 
 export async function getYearToDateReport(
