@@ -112,6 +112,18 @@ export function logRouteError({
   );
 }
 
+function isNextControlFlowError(error: unknown) {
+  if (typeof error !== "object" || error === null || !("digest" in error)) {
+    return false;
+  }
+
+  const digest = error.digest;
+  return (
+    typeof digest === "string" &&
+    (digest.startsWith("NEXT_REDIRECT;") || digest.startsWith("NEXT_HTTP_ERROR_FALLBACK;"))
+  );
+}
+
 export function errorResponse({
   clientMessage,
   error,
@@ -121,6 +133,12 @@ export function errorResponse({
   status = 500,
   context,
 }: ErrorResponseInput) {
+  // redirect() / notFound() throw control-flow errors. Catching them in a
+  // route handler and returning JSON turns sign-in into a 500 page.
+  if (isNextControlFlowError(error)) {
+    throw error;
+  }
+
   if (status >= 500) {
     logRouteError({ error, message, request, route, status, context });
   }

@@ -15,6 +15,8 @@ export function writeWorkbookToBuffer(sheets: WorkbookSheetInput[]) {
       throw new Error("Excel sheet names must be 1-31 characters and cannot include []:*?/\\.");
     }
 
+    // String cells stay strings, including values that start with '='. CSV
+    // formula neutralization lives in write-csv; do not prefix xlsx cells.
     const worksheet = XLSX.utils.aoa_to_sheet(sheet.rows);
     XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
   }
