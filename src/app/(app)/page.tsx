@@ -214,7 +214,15 @@ async function HomeRecentActivity({ searchParams }: HomePageProps) {
         activity.latestImports.map((item) => (
           <div className="activity-row" key={item.id}>
             <div>
-              <strong>{item.originalFilename}</strong>
+              <Link
+                href={
+                  item.reviewPendingCount > 0
+                    ? `/transactions/review?import=${encodeURIComponent(item.id)}`
+                    : `/transactions/all?import=${encodeURIComponent(item.id)}`
+                }
+              >
+                <strong>{item.originalFilename}</strong>
+              </Link>
               <p>
                 {item.reviewPendingCount > 0
                   ? `${item.reviewPendingCount} need review`

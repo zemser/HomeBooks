@@ -153,12 +153,12 @@ test("expense reads and classification commands use the explicit transaction exe
 
   assert.match(queriesSource, /listExpenseTransactions\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(queriesSource, /listWorkspaceMembers\([\s\S]*db: DbExecutor = getDb\(\)/);
-  assert.match(queriesSource, /listReviewQueue\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(queriesSource, /listHistoryPageData\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(classificationsSource, /upsertTransactionClassification\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(classificationsSource, /bulkClassifyTransactions\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(classificationsSource, /undoClassificationDecision\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(expensesPageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(expensesApiSource, /withCurrentWorkspaceDb\(async \(context, db\)/);
+  assert.match(expensesApiSource, /withCurrentWorkspaceDb\(\(context, db\)/);
   assert.match(reviewPageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
 });
 

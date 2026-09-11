@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -6,6 +6,7 @@ import {
   classificationRules,
   imports,
   importSources,
+  manualEntries,
   transactionClassifications,
   transactions,
   users,
@@ -15,6 +16,7 @@ import { listTransactionAllocationStates } from "@/features/expenses/allocation"
 import type {
   ClassificationSuggestion,
   ExpenseTransactionItem,
+  ExpensesPageData,
   ReviewQueueImportSummary,
   ReviewQueueResponse,
   ReviewQueueSummary,
@@ -24,10 +26,24 @@ import {
   buildExactMerchantSuggestions,
   normalizeMerchantRuleValue,
 } from "@/features/expenses/suggestions";
-import { filterAndSortReviewQueue } from "@/features/expenses/review-filtering";
-import { defaultReviewQuery, type ReviewQuery } from "@/features/expenses/review-query";
+import { filterAndSortReviewQueue, reviewImportIsUnscoped } from "@/features/expenses/review-filtering";
+import {
+  defaultReviewQuery,
+  resolveReviewLandingImportId,
+  type ReviewQuery,
+} from "@/features/expenses/review-query";
+import {
+  historyImportIsUnscoped,
+  historyMonthIsUnscoped,
+  isHistoryMonthUnresolved,
+  type HistoryQuery,
+  type ParsedHistoryQuery,
+} from "@/features/expenses/history-query";
+import { listSavedImports } from "@/features/imports/persistence";
+import { getLatestFinancialActivityMonth } from "@/features/reporting/monthly-report";
 import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
+import { addMonths, monthKey } from "@/lib/dates/months";
 
 type RawTransactionRow = {
   id: string;
@@ -189,24 +205,86 @@ async function mapTransactionRows(
   }));
 }
 
-async function listTransactionsByWorkspace(input: {
-  context: CurrentWorkspaceContext;
+function monthWindow(month: string) {
+  const monthStart = `${month}-01`;
+  return {
+    monthStart,
+    nextMonthStart: monthKey(addMonths(new Date(`${monthStart}T00:00:00.000Z`), 1)),
+  };
+}
+
+function escapeLikePattern(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function transactionSearchFilters(searchQuery: string) {
+  const normalized = searchQuery.trim();
+  if (!normalized) return [];
+  const pattern = `%${escapeLikePattern(normalized)}%`;
+  const search = or(
+    ilike(transactions.merchantRaw, pattern),
+    ilike(transactions.description, pattern),
+    ilike(financialAccounts.displayName, pattern),
+    ilike(imports.originalFilename, pattern),
+    ilike(importSources.name, pattern),
+  );
+  return search ? [search] : [];
+}
+
+function buildTransactionListFilters(input: {
   workspaceId: string;
   onlyUnclassified?: boolean;
   transactionId?: string;
-  db: DbExecutor;
+  importId?: string;
+  month?: string;
+  reviewStatus?: HistoryQuery["reviewStatus"];
+  searchQuery?: string;
 }) {
   const filters = [eq(transactions.workspaceId, input.workspaceId)];
 
-  if (input.onlyUnclassified) {
+  if (input.onlyUnclassified || input.reviewStatus === "needs_review") {
     filters.push(isNull(transactionClassifications.id));
+  } else if (input.reviewStatus === "reviewed") {
+    filters.push(isNotNull(transactionClassifications.id));
   }
 
   if (input.transactionId) {
     filters.push(eq(transactions.id, input.transactionId));
   }
 
-  const rows = await input.db
+  if (input.importId && !reviewImportIsUnscoped(input.importId) && !historyImportIsUnscoped(input.importId)) {
+    filters.push(eq(transactions.importId, input.importId));
+  }
+
+  if (input.month && input.month !== "all" && !historyMonthIsUnscoped(input.month)) {
+    const { monthStart, nextMonthStart } = monthWindow(input.month);
+    filters.push(gte(transactions.transactionDate, monthStart));
+    filters.push(lt(transactions.transactionDate, nextMonthStart));
+  }
+
+  if (input.searchQuery) {
+    filters.push(...transactionSearchFilters(input.searchQuery));
+  }
+
+  return filters;
+}
+
+async function listTransactionsByWorkspace(input: {
+  context: CurrentWorkspaceContext;
+  workspaceId: string;
+  onlyUnclassified?: boolean;
+  transactionId?: string;
+  importId?: string;
+  month?: string;
+  reviewStatus?: HistoryQuery["reviewStatus"];
+  searchQuery?: string;
+  limit?: number;
+  offset?: number;
+  db: DbExecutor;
+}) {
+  const filters = buildTransactionListFilters(input);
+
+  const orderedQuery = input.db
     .select({
       id: transactions.id,
       accountId: transactions.accountId,
@@ -246,9 +324,37 @@ async function listTransactionsByWorkspace(input: {
       eq(transactionClassifications.transactionId, transactions.id),
     )
     .where(and(...filters))
-    .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt));
+    .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt), desc(transactions.id));
 
+  const rows =
+    typeof input.limit === "number"
+      ? await orderedQuery.limit(input.limit).offset(input.offset ?? 0)
+      : await orderedQuery;
   return mapTransactionRows(input.context, rows, input.db);
+}
+
+async function countTransactionsByWorkspace(input: {
+  workspaceId: string;
+  onlyUnclassified?: boolean;
+  importId?: string;
+  month?: string;
+  reviewStatus?: HistoryQuery["reviewStatus"];
+  searchQuery?: string;
+  db: DbExecutor;
+}) {
+  const filters = buildTransactionListFilters(input);
+  const [row] = await input.db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(transactions)
+    .innerJoin(financialAccounts, eq(financialAccounts.id, transactions.accountId))
+    .innerJoin(imports, eq(imports.id, transactions.importId))
+    .leftJoin(importSources, eq(importSources.id, imports.importSourceId))
+    .leftJoin(
+      transactionClassifications,
+      eq(transactionClassifications.transactionId, transactions.id),
+    )
+    .where(and(...filters));
+  return Number(row?.count ?? 0);
 }
 
 export async function listExpenseTransactions(
@@ -291,27 +397,45 @@ export async function listReviewQueue(
   context: CurrentWorkspaceContext,
   query: ReviewQuery = defaultReviewQuery(),
   db: DbExecutor = getDb(),
+  options?: { resolveLanding?: boolean },
 ): Promise<ReviewQueueResponse> {
-  const [rawQueue, focusTransaction, members, categoryCatalog, recentCategories, summary] = await Promise.all([
-    listTransactionsByWorkspace({
-      context,
-      workspaceId: context.workspaceId,
-      onlyUnclassified: true,
-      db,
-    }),
-    query.transactionId
-      ? listTransactionsByWorkspace({
-          context,
-          workspaceId: context.workspaceId,
-          transactionId: query.transactionId,
-          db,
-        }).then((rows) => rows[0] ?? null)
-      : Promise.resolve(null),
-    listWorkspaceMembers(context, db),
-    listWorkspaceCategories(context, db),
-    listRecentReviewCategories(context, db),
-    getReviewQueueSummary(context, query.importId, db),
-  ]);
+  const scopedImportId = reviewImportIsUnscoped(query.importId) ? undefined : query.importId;
+  const scopedMonth = query.month !== "all" ? query.month : undefined;
+  const [rawQueue, focusTransaction, members, categoryCatalog, recentCategories, summary, savedImports] =
+    await Promise.all([
+      listTransactionsByWorkspace({
+        context,
+        workspaceId: context.workspaceId,
+        onlyUnclassified: true,
+        importId: scopedImportId,
+        month: scopedMonth,
+        db,
+      }),
+      query.transactionId
+        ? listTransactionsByWorkspace({
+            context,
+            workspaceId: context.workspaceId,
+            transactionId: query.transactionId,
+            db,
+          }).then((rows) => rows[0] ?? null)
+        : Promise.resolve(null),
+      listWorkspaceMembers(context, db),
+      listWorkspaceCategories(context, db),
+      listRecentReviewCategories(context, db),
+      getReviewQueueSummary(context, query, db),
+      listSavedImports(context, { type: "bank" }, db),
+    ]);
+
+  const resolvedImportId = options?.resolveLanding
+    ? resolveReviewLandingImportId(summary.remainingByImport, query)
+    : query.importId;
+  const resolvedQuery = { ...query, importId: resolvedImportId };
+  const statementLibrary = buildStatementLibrary(savedImports, summary.remainingByImport);
+  const selectedImport =
+    summary.selectedImport ??
+    statementLibrary.find((item) => item.importId === resolvedImportId) ??
+    summary.remainingByImport.find((item) => item.importId === resolvedImportId) ??
+    null;
 
   const merchantValues = [
     ...rawQueue.map((transaction) => transaction.merchantRaw),
@@ -347,12 +471,12 @@ export async function listReviewQueue(
         ),
       }
     : focusTransaction;
-  const filteredQueue = filterAndSortReviewQueue(enrichedQueue, query);
+  const filteredQueue = filterAndSortReviewQueue(enrichedQueue, resolvedQuery);
   const filteredCount = filteredQueue.length;
-  const totalPages = Math.max(Math.ceil(filteredCount / query.pageSize), 1);
-  const page = Math.min(query.page, totalPages);
-  const pageStart = (page - 1) * query.pageSize;
-  const queue = filteredQueue.slice(pageStart, pageStart + query.pageSize);
+  const totalPages = Math.max(Math.ceil(filteredCount / resolvedQuery.pageSize), 1);
+  const page = Math.min(resolvedQuery.page, totalPages);
+  const pageStart = (page - 1) * resolvedQuery.pageSize;
+  const queue = filteredQueue.slice(pageStart, pageStart + resolvedQuery.pageSize);
   const months = Array.from(
     new Set(rawQueue.map((transaction) => transaction.transactionDate.slice(0, 7))),
   ).sort((left, right) => right.localeCompare(left));
@@ -376,10 +500,15 @@ export async function listReviewQueue(
     categories,
     categoryCatalog,
     recentCategories,
-    summary,
+    summary: {
+      ...summary,
+      statementLibrary,
+      selectedImport,
+    },
+    resolvedImportId,
     pagination: {
       page,
-      pageSize: query.pageSize,
+      pageSize: resolvedQuery.pageSize,
       filteredCount,
       totalPages,
     },
@@ -389,7 +518,9 @@ export async function listReviewQueue(
         id,
         label: `${label} · ${importRemainingCounts.get(id) ?? 0} left`,
       })).sort((a, b) => a.label.localeCompare(b.label)),
-      accounts: Array.from(accountLabels, ([id, label]) => ({ id, label })).sort((a, b) => a.label.localeCompare(b.label)),
+      accounts: Array.from(accountLabels, ([id, label]) => ({ id, label })).sort((a, b) =>
+        a.label.localeCompare(b.label),
+      ),
     },
   };
 }
@@ -511,15 +642,27 @@ async function listHistoricalClassificationSuggestions(
 
 async function getReviewQueueSummary(
   context: CurrentWorkspaceContext,
-  selectedImportId: string = "all",
+  query: Pick<ReviewQuery, "importId" | "month"> = { importId: "all", month: "all" },
   db: DbExecutor = getDb(),
 ): Promise<ReviewQueueSummary> {
+  const selectedImportId = query.importId;
+  const monthFilters =
+    query.month !== "all"
+      ? (() => {
+          const { monthStart, nextMonthStart } = monthWindow(query.month);
+          return [
+            gte(transactions.transactionDate, monthStart),
+            lt(transactions.transactionDate, nextMonthStart),
+          ];
+        })()
+      : [];
   const [
     totalTransactionCount,
     totalByImportRows,
     remainingByImportRows,
     latestTransactionRow,
     selectedImportRow,
+    selectedMonthRow,
   ] = await Promise.all([
     db.$count(transactions, eq(transactions.workspaceId, context.workspaceId)),
     db
@@ -553,7 +696,7 @@ async function getReviewQueueSummary(
           isNull(transactionClassifications.id),
         ),
       )
-      .groupBy(imports.id, imports.originalFilename, importSources.name)
+      .groupBy(imports.id, imports.originalFilename, importSources.name, imports.createdAt)
       .orderBy(
         desc(sql`max(${transactions.transactionDate})`),
         desc(sql`count(*)`),
@@ -566,7 +709,7 @@ async function getReviewQueueSummary(
       .from(transactions)
       .where(eq(transactions.workspaceId, context.workspaceId))
       .then((rows) => rows[0] ?? null),
-    selectedImportId === "all"
+    reviewImportIsUnscoped(selectedImportId)
       ? Promise.resolve(null)
       : db
           .select({
@@ -592,6 +735,20 @@ async function getReviewQueueSummary(
             ),
           )
           .groupBy(imports.id, imports.originalFilename, importSources.name)
+          .then((rows) => rows[0] ?? null),
+    monthFilters.length === 0
+      ? Promise.resolve(null)
+      : db
+          .select({
+            totalCount: sql<number>`count(*)::int`,
+            remainingCount: sql<number>`count(*) filter (where ${transactionClassifications.id} is null)::int`,
+          })
+          .from(transactions)
+          .leftJoin(
+            transactionClassifications,
+            eq(transactionClassifications.transactionId, transactions.id),
+          )
+          .where(and(eq(transactions.workspaceId, context.workspaceId), ...monthFilters))
           .then((rows) => rows[0] ?? null),
   ]);
 
@@ -633,6 +790,18 @@ async function getReviewQueueSummary(
         latestTransactionDate: selectedImportRow.latestTransactionDate ?? null,
       }
     : null;
+  const selectedMonth =
+    query.month !== "all" && selectedMonthRow
+      ? {
+          month: query.month,
+          totalCount: Number(selectedMonthRow.totalCount),
+          remainingCount: Number(selectedMonthRow.remainingCount),
+          reviewedCount: Math.max(
+            Number(selectedMonthRow.totalCount) - Number(selectedMonthRow.remainingCount),
+            0,
+          ),
+        }
+      : null;
 
   return {
     totalTransactionCount,
@@ -641,6 +810,269 @@ async function getReviewQueueSummary(
     completionPercentage,
     latestTransactionMonth: latestTransactionRow?.latestTransactionDate?.slice(0, 7) ?? null,
     remainingByImport,
+    statementLibrary: [],
     selectedImport,
+    selectedMonth,
+  };
+}
+
+function buildStatementLibrary(
+  savedImports: Array<{
+    id: string;
+    originalFilename: string;
+    sourceName: string | null;
+    transactionCount: number;
+    reviewedTransactionCount: number;
+    reviewPendingCount: number;
+    earliestTransactionDate: string | null;
+    latestTransactionDate: string | null;
+  }>,
+  remainingByImport: ReviewQueueImportSummary[],
+): ReviewQueueImportSummary[] {
+  const remainingOrder = new Map(
+    remainingByImport.map((item, index) => [item.importId, index]),
+  );
+  const mapped = savedImports.map<ReviewQueueImportSummary>((item) => ({
+    importId: item.id,
+    originalFilename: item.originalFilename,
+    sourceName: item.sourceName,
+    totalCount: item.transactionCount,
+    reviewedCount: item.reviewedTransactionCount,
+    remainingCount: item.reviewPendingCount,
+    earliestTransactionDate: item.earliestTransactionDate,
+    latestTransactionDate: item.latestTransactionDate,
+  }));
+  const incomplete = mapped
+    .filter((item) => item.remainingCount > 0)
+    .sort(
+      (left, right) =>
+        (remainingOrder.get(left.importId) ?? Number.MAX_SAFE_INTEGER) -
+        (remainingOrder.get(right.importId) ?? Number.MAX_SAFE_INTEGER),
+    );
+  const complete = mapped.filter((item) => item.remainingCount === 0);
+  return [...incomplete, ...complete];
+}
+
+async function listHistoryFilterOptions(
+  context: CurrentWorkspaceContext,
+  db: DbExecutor,
+) {
+  const [monthRows, manualMonthRows, savedImports] = await Promise.all([
+    db
+      .select({
+        month: sql<string>`to_char(${transactions.transactionDate}, 'YYYY-MM')`,
+      })
+      .from(transactions)
+      .where(eq(transactions.workspaceId, context.workspaceId))
+      .groupBy(sql`to_char(${transactions.transactionDate}, 'YYYY-MM')`)
+      .orderBy(desc(sql`to_char(${transactions.transactionDate}, 'YYYY-MM')`)),
+    db
+      .select({ month: sql<string>`to_char(${manualEntries.eventDate}, 'YYYY-MM')` })
+      .from(manualEntries)
+      .where(eq(manualEntries.workspaceId, context.workspaceId))
+      .groupBy(sql`to_char(${manualEntries.eventDate}, 'YYYY-MM')`),
+    listSavedImports(context, { type: "bank" }, db),
+  ]);
+
+  return {
+    months: Array.from(new Set([...monthRows, ...manualMonthRows].map((row) => row.month)))
+      .sort((left, right) => right.localeCompare(left)),
+    imports: savedImports.map((item) => ({
+      id: item.id,
+      label: item.originalFilename,
+    })),
+  };
+}
+
+async function findHistoryFocusTransaction(
+  context: CurrentWorkspaceContext,
+  transactionId: string,
+  db: DbExecutor,
+) {
+  const rows = await listTransactionsByWorkspace({
+    context,
+    workspaceId: context.workspaceId,
+    transactionId,
+    db,
+  });
+  return rows[0] ?? null;
+}
+
+async function findHistoryPageForTransaction(input: {
+  workspaceId: string;
+  importId?: string;
+  month?: string;
+  reviewStatus?: HistoryQuery["reviewStatus"];
+  searchQuery?: string;
+  transactionId: string;
+  pageSize: number;
+  db: DbExecutor;
+}) {
+  const focus = await input.db
+    .select({
+      id: transactions.id,
+      transactionDate: transactions.transactionDate,
+      // Keep PostgreSQL microseconds; decoding as Date truncates to milliseconds
+      // and makes rows from the same import compare as newer than the focus.
+      createdAt: sql<string>`${transactions.createdAt}::text`,
+    })
+    .from(transactions)
+    .where(
+      and(eq(transactions.workspaceId, input.workspaceId), eq(transactions.id, input.transactionId)),
+    )
+    .then((rows) => rows[0] ?? null);
+  if (!focus) return 1;
+
+  const filters = buildTransactionListFilters({
+    workspaceId: input.workspaceId,
+    importId: input.importId,
+    month: input.month,
+    reviewStatus: input.reviewStatus,
+    searchQuery: input.searchQuery,
+  });
+  const [row] = await input.db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(transactions)
+    .innerJoin(financialAccounts, eq(financialAccounts.id, transactions.accountId))
+    .innerJoin(imports, eq(imports.id, transactions.importId))
+    .leftJoin(importSources, eq(importSources.id, imports.importSourceId))
+    .leftJoin(
+      transactionClassifications,
+      eq(transactionClassifications.transactionId, transactions.id),
+    )
+    .where(
+      and(
+        ...filters,
+        or(
+          gt(transactions.transactionDate, focus.transactionDate),
+          and(
+            eq(transactions.transactionDate, focus.transactionDate),
+            sql`${transactions.createdAt} > ${focus.createdAt}::timestamptz`,
+          ),
+          and(
+            eq(transactions.transactionDate, focus.transactionDate),
+            sql`${transactions.createdAt} = ${focus.createdAt}::timestamptz`,
+            gt(transactions.id, focus.id),
+          ),
+        ),
+      ),
+    );
+  const position = Number(row?.count ?? 0);
+  return Math.floor(position / input.pageSize) + 1;
+}
+
+export async function resolveHistoryQuery(
+  context: CurrentWorkspaceContext,
+  parsed: ParsedHistoryQuery,
+  db: DbExecutor = getDb(),
+  defaultMonth?: string,
+): Promise<HistoryQuery> {
+  let month = parsed.month;
+  let page = parsed.page;
+
+  if (parsed.transactionId && isHistoryMonthUnresolved(parsed.month)) {
+    const focus = await findHistoryFocusTransaction(context, parsed.transactionId, db);
+    const focusMonth = focus?.transactionDate.slice(0, 7) ?? null;
+    if (focusMonth) month = focusMonth;
+  }
+
+  if (isHistoryMonthUnresolved(month) && historyImportIsUnscoped(parsed.importId)) {
+    month =
+      defaultMonth ??
+      (await getLatestFinancialActivityMonth(context, db)).slice(0, 7);
+  }
+
+  if (parsed.transactionId && !parsed.pageSpecified) {
+    page = await findHistoryPageForTransaction({
+      workspaceId: context.workspaceId,
+      importId: parsed.importId,
+      month,
+      reviewStatus: parsed.reviewStatus,
+      searchQuery: parsed.searchQuery,
+      transactionId: parsed.transactionId,
+      pageSize: parsed.pageSize,
+      db,
+    });
+  }
+
+  return {
+    month,
+    importId: parsed.importId,
+    searchQuery: parsed.searchQuery,
+    reviewStatus: parsed.reviewStatus,
+    page,
+    pageSize: parsed.pageSize,
+    transactionId: parsed.transactionId,
+  };
+}
+
+export async function listHistoryPageData(
+  context: CurrentWorkspaceContext,
+  parsed: ParsedHistoryQuery,
+  db: DbExecutor = getDb(),
+): Promise<Omit<ExpensesPageData, "oneTimeManualEntries"> & { defaultMonth: string }> {
+  const defaultMonth = (await getLatestFinancialActivityMonth(context, db)).slice(0, 7);
+  const query = await resolveHistoryQuery(context, parsed, db, defaultMonth);
+  const listInput = {
+    workspaceId: context.workspaceId,
+    importId: query.importId,
+    month: query.month,
+    reviewStatus: query.reviewStatus,
+    searchQuery: query.searchQuery,
+  };
+  const [filteredCount, scopeTotalCount, scopePendingCount, filterOptions, members, categoryCatalog] =
+    await Promise.all([
+      countTransactionsByWorkspace({ ...listInput, db }),
+      countTransactionsByWorkspace({
+        workspaceId: context.workspaceId,
+        importId: query.importId,
+        month: query.month,
+        db,
+      }),
+      countTransactionsByWorkspace({
+        workspaceId: context.workspaceId,
+        importId: query.importId,
+        month: query.month,
+        reviewStatus: "needs_review",
+        db,
+      }),
+      listHistoryFilterOptions(context, db),
+      listWorkspaceMembers(context, db),
+      listWorkspaceCategories(context, db),
+    ]);
+  const totalPages = Math.max(Math.ceil(filteredCount / query.pageSize), 1);
+  const page = Math.min(query.page, totalPages);
+  const transactions = await listTransactionsByWorkspace({
+    context,
+    ...listInput,
+    limit: query.pageSize,
+    offset: (page - 1) * query.pageSize,
+    db,
+  });
+
+  return {
+    transactions,
+    members,
+    categories: categoryCatalog.map((category) => category.name),
+    categoryCatalog,
+    pagination: {
+      page,
+      pageSize: query.pageSize,
+      filteredCount,
+      totalPages,
+    },
+    filterOptions,
+    scope: {
+      month: query.month,
+      importId: query.importId,
+      pendingCount: scopePendingCount,
+      totalCount: scopeTotalCount,
+      defaultMonth,
+    },
+    query: {
+      ...query,
+      page,
+    },
+    defaultMonth,
   };
 }

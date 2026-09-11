@@ -5,7 +5,9 @@ import {
   DEFAULT_REVIEW_PAGE_SIZE,
   MAX_REVIEW_PAGE_SIZE,
   parseReviewQuery,
+  resolveReviewLandingImportId,
 } from "../../src/features/expenses/review-query";
+import { REVIEW_IMPORT_ALL, REVIEW_IMPORT_UNRESOLVED } from "../../src/features/expenses/review-filtering";
 
 test("review query parses filters, focus, and pagination", () => {
   const query = parseReviewQuery(
@@ -30,4 +32,28 @@ test("review query defaults invalid pages and caps page size", () => {
 
   const oversized = parseReviewQuery(new URLSearchParams("pageSize=5000"));
   assert.equal(oversized.pageSize, MAX_REVIEW_PAGE_SIZE);
+});
+
+test("review landing resolves omitted import to the latest incomplete statement", () => {
+  const remaining = [{ importId: "import-2" }, { importId: "import-1" }];
+  assert.equal(
+    resolveReviewLandingImportId(remaining, { importId: REVIEW_IMPORT_UNRESOLVED, month: "all" }),
+    "import-2",
+  );
+  assert.equal(
+    resolveReviewLandingImportId(remaining, { importId: REVIEW_IMPORT_ALL, month: "all" }),
+    REVIEW_IMPORT_ALL,
+  );
+  assert.equal(
+    resolveReviewLandingImportId(remaining, { importId: REVIEW_IMPORT_UNRESOLVED, month: "2026-04" }),
+    REVIEW_IMPORT_UNRESOLVED,
+  );
+  assert.equal(
+    resolveReviewLandingImportId(remaining, { importId: "import-1", month: "all" }),
+    "import-1",
+  );
+  assert.equal(
+    resolveReviewLandingImportId([], { importId: REVIEW_IMPORT_UNRESOLVED, month: "all" }),
+    REVIEW_IMPORT_UNRESOLVED,
+  );
 });

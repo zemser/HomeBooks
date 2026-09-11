@@ -495,8 +495,11 @@ export function ImportPreviewClient({
                     >
                       Upload another statement
                     </button>
-                    <Link className="link-button" href="/transactions/all">
-                      Go to all transactions
+                    <Link
+                      className="link-button"
+                      href={`/transactions/all?import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
+                    >
+                      Open this statement in History
                     </Link>
                   </div>
                 </div>
@@ -642,7 +645,12 @@ export function ImportPreviewClient({
                         >
                           {savedImport.reviewPendingCount > 0 ? "Review" : "Open queue"}
                         </Link>
-                        <Link className="link-button" href="/transactions/all">Ledger</Link>
+                        <Link
+                          className="link-button"
+                          href={`/transactions/all?import=${encodeURIComponent(savedImport.id)}`}
+                        >
+                          History
+                        </Link>
                       </div>
                     </td>
                   </tr>

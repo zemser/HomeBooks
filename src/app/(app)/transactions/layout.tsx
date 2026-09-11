@@ -15,7 +15,7 @@ export default function TransactionsLayout({
           <div>
             <span className="eyebrow">Transactions</span>
             <h1>Transactions</h1>
-            <p>Import statements, review activity, and browse your complete history.</p>
+            <p>Import a statement, review it, and check a month.</p>
           </div>
         </section>
 

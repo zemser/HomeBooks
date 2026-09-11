@@ -6,6 +6,8 @@ import {
   defaultReviewFilterState,
   filterAndSortReviewQueue,
   parseReviewFilterState,
+  REVIEW_IMPORT_ALL,
+  REVIEW_IMPORT_UNRESOLVED,
   serializeReviewFilterState,
 } from "../../src/features/expenses/review-filtering";
 import type { ExpenseTransactionItem } from "../../src/features/expenses/types";
@@ -65,6 +67,23 @@ test("review URL state validates values and preserves unrelated parameters", () 
   assert.equal(params.get("min"), "25");
   assert.equal(params.get("sort"), "amount_desc");
   assert.equal(params.has("view"), false);
+});
+
+test("review URL state distinguishes omitted import from explicit import=all", () => {
+  const omitted = parseReviewFilterState("");
+  assert.equal(omitted.importId, REVIEW_IMPORT_UNRESOLVED);
+
+  const explicitAll = parseReviewFilterState("?import=all");
+  assert.equal(explicitAll.importId, REVIEW_IMPORT_ALL);
+
+  const serializedAll = serializeReviewFilterState("", {
+    ...defaultReviewFilterState,
+    importId: REVIEW_IMPORT_ALL,
+  });
+  assert.equal(new URLSearchParams(serializedAll).get("import"), "all");
+
+  const serializedDefault = serializeReviewFilterState("?import=all", defaultReviewFilterState);
+  assert.equal(new URLSearchParams(serializedDefault).has("import"), false);
 });
 
 test("combined review filters and sorting return only matching rows", () => {

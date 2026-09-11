@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 const workflowItems = [
   { href: "/transactions", label: "Import" },
   { href: "/transactions/review", label: "Review", attention: "review" as const },
-  { href: "/transactions/all", label: "All transactions" },
+  { href: "/transactions/all", label: "History" },
 ];
 
 export function TransactionsWorkflowNav({

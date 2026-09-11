@@ -31,10 +31,12 @@ test("transaction workflow links and import completion use canonical destination
   assert.match(workflow, /href: "\/transactions"/);
   assert.match(workflow, /href: "\/transactions\/review"/);
   assert.match(workflow, /href: "\/transactions\/all"/);
+  assert.match(workflow, /label: "History"/);
   assert.match(importPreview, /`\/transactions\/review\?import=/);
-  assert.match(importPreview, /href="\/transactions\/all"/);
+  assert.match(importPreview, /`\/transactions\/all\?import=/);
   assert.match(reviewQueue, /`\/transactions\/all\?transactionId=/);
-  assert.match(allTransactions, /href="\/transactions\/review"/);
+  assert.match(reviewQueue, /&month=/);
+  assert.match(allTransactions, /parseHistoryQuery/);
 });
 
 test("navigation model carries parent activity, beta, and attention metadata", async () => {
@@ -54,6 +56,23 @@ test("the review URL synchronizer preserves pageSize on canonical routes", async
 
   assert.match(reviewQueue, /window\.location\.pathname/);
   assert.doesNotMatch(reviewQueue, /delete\("pageSize"\)/);
+});
+
+test("Phase 7 Review and History copy no longer promise a lifetime ledger", async () => {
+  const [workflow, layout, reviewQueue, historyClient, importPreview] = await Promise.all([
+    source("src/components/transactions/transactions-workflow-nav.tsx"),
+    source("src/app/(app)/transactions/layout.tsx"),
+    source("src/components/expenses/review-queue-client.tsx"),
+    source("src/components/expenses/expenses-page-client.tsx"),
+    source("src/components/imports/import-preview-client.tsx"),
+  ]);
+
+  assert.doesNotMatch(workflow, /All transactions/);
+  assert.match(layout, /Import a statement, review it, and check a month/);
+  assert.match(reviewQueue, /Open in History/);
+  assert.match(reviewQueue, /All remaining/);
+  assert.doesNotMatch(historyClient, /Visible in ledger|complete history|Open in ledger/);
+  assert.match(importPreview, /Open this statement in History/);
 });
 
 test("transaction surfaces do not retain obsolete expenses copy or review header styles", async () => {
