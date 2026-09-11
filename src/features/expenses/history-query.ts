@@ -117,8 +117,9 @@ export function serializeHistoryQuery(existingSearch: string, state: HistoryQuer
     params.set("import", state.importId);
   }
   setOrDelete("reviewStatus", state.reviewStatus, "all");
-  if (state.page > 1) params.set("page", String(state.page));
-  else params.delete("page");
+  // An omitted page asks the server to locate transactionId on its page.
+  // Serialized state already has a resolved page, including page 1.
+  params.set("page", String(state.page));
   if (state.pageSize !== DEFAULT_HISTORY_PAGE_SIZE) {
     params.set("pageSize", String(state.pageSize));
   } else {

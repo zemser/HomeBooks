@@ -6,6 +6,7 @@ import {
   classificationRules,
   imports,
   importSources,
+  manualEntries,
   transactionClassifications,
   transactions,
   users,
@@ -323,7 +324,7 @@ async function listTransactionsByWorkspace(input: {
       eq(transactionClassifications.transactionId, transactions.id),
     )
     .where(and(...filters))
-    .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt));
+    .orderBy(desc(transactions.transactionDate), desc(transactions.createdAt), desc(transactions.id));
 
   const rows =
     typeof input.limit === "number"
@@ -856,7 +857,7 @@ async function listHistoryFilterOptions(
   context: CurrentWorkspaceContext,
   db: DbExecutor,
 ) {
-  const [monthRows, savedImports] = await Promise.all([
+  const [monthRows, manualMonthRows, savedImports] = await Promise.all([
     db
       .select({
         month: sql<string>`to_char(${transactions.transactionDate}, 'YYYY-MM')`,
@@ -865,11 +866,17 @@ async function listHistoryFilterOptions(
       .where(eq(transactions.workspaceId, context.workspaceId))
       .groupBy(sql`to_char(${transactions.transactionDate}, 'YYYY-MM')`)
       .orderBy(desc(sql`to_char(${transactions.transactionDate}, 'YYYY-MM')`)),
+    db
+      .select({ month: sql<string>`to_char(${manualEntries.eventDate}, 'YYYY-MM')` })
+      .from(manualEntries)
+      .where(eq(manualEntries.workspaceId, context.workspaceId))
+      .groupBy(sql`to_char(${manualEntries.eventDate}, 'YYYY-MM')`),
     listSavedImports(context, { type: "bank" }, db),
   ]);
 
   return {
-    months: monthRows.map((row) => row.month),
+    months: Array.from(new Set([...monthRows, ...manualMonthRows].map((row) => row.month)))
+      .sort((left, right) => right.localeCompare(left)),
     imports: savedImports.map((item) => ({
       id: item.id,
       label: item.originalFilename,
@@ -905,7 +912,9 @@ async function findHistoryPageForTransaction(input: {
     .select({
       id: transactions.id,
       transactionDate: transactions.transactionDate,
-      createdAt: transactions.createdAt,
+      // Keep PostgreSQL microseconds; decoding as Date truncates to milliseconds
+      // and makes rows from the same import compare as newer than the focus.
+      createdAt: sql<string>`${transactions.createdAt}::text`,
     })
     .from(transactions)
     .where(
@@ -938,7 +947,12 @@ async function findHistoryPageForTransaction(input: {
           gt(transactions.transactionDate, focus.transactionDate),
           and(
             eq(transactions.transactionDate, focus.transactionDate),
-            gt(transactions.createdAt, focus.createdAt),
+            sql`${transactions.createdAt} > ${focus.createdAt}::timestamptz`,
+          ),
+          and(
+            eq(transactions.transactionDate, focus.transactionDate),
+            sql`${transactions.createdAt} = ${focus.createdAt}::timestamptz`,
+            gt(transactions.id, focus.id),
           ),
         ),
       ),

@@ -58,3 +58,17 @@ test("history manuals stay hidden unless a calendar month is selected", () => {
   assert.equal(shouldShowHistoryManuals({ month: HISTORY_MONTH_ALL }), false);
   assert.equal(shouldShowHistoryManuals({ month: "2026-04" }), true);
 });
+
+
+test("serialized page 1 remains explicit when a transaction is selected", () => {
+  const query = parseHistoryQuery(new URLSearchParams(
+    "month=2026-04&page=2&transactionId=selected-on-page-2",
+  ));
+  const restored = parseHistoryQuery(new URLSearchParams(
+    serializeHistoryQuery("", { ...query, page: 1 }),
+  ));
+  assert.equal(restored.page, 1);
+  assert.equal(restored.pageSpecified, true);
+  assert.equal(restored.transactionId, "selected-on-page-2");
+  assert.equal(parseHistoryQuery(new URLSearchParams("transactionId=focus")).pageSpecified, false);
+});

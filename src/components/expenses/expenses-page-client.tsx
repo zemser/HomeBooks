@@ -379,7 +379,9 @@ export function ExpensesPageClient({
       setReviewStatusFilter(state.reviewStatus);
       if (!isHistoryMonthUnresolved(state.month)) setMonthFilter(state.month);
       if (!isHistoryImportUnresolved(state.importId)) setImportFilter(state.importId);
-      setPage(state.page);
+      // On initial deep links the server may have located the focused row
+      // beyond page 1 even though the URL did not explicitly specify a page.
+      if (state.pageSpecified) setPage(state.page);
     }
     restoreUrlState();
     setIsUrlStateReady(true);

@@ -130,8 +130,8 @@ test("canonical review deep links retain filters and restore review state", asyn
   });
 
   await page.goto(`/transactions/review?${params.toString()}`);
-  await expect(page.getByRole("button", { name: "High value" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByLabel("Month")).toHaveValue(month);
+  await expect(page.getByRole("button", { name: "High value", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Month").and(page.locator("select"))).toHaveValue(month);
   await expect.poll(() => Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject(
     Object.fromEntries(params),
   );
@@ -270,4 +270,67 @@ test("History import scope keeps the statement across its activity months", asyn
   await page.goto(`/transactions/all?import=${importId}`);
   await expect.poll(() => new URL(page.url()).searchParams.get("import")).toBe(importId);
   expect(new URL(page.url()).searchParams.get("month")).toBeNull();
+});
+
+
+test("History focus deep links preserve the resolved page and can return to page 1", async ({ page }) => {
+  const response = await page.request.get("/api/expenses?month=all&page=2&pageSize=1");
+  expect(response.ok()).toBeTruthy();
+  const data = await response.json();
+  test.skip(data.pagination.totalPages < 2, "Requires at least two imported transactions.");
+  const transaction = data.transactions[0];
+  await page.goto(`/transactions/all?month=all&pageSize=1&transactionId=${transaction.id}`);
+  await expect(page.getByRole("navigation", { name: "History pages" }))
+    .toContainText("Page 2 of");
+  await expect.poll(() => new URL(page.url()).searchParams.get("page")).toBe("2");
+  await expect(page.locator("tr.table-row-active")).toHaveCount(1);
+  await page.getByRole("button", { name: "Previous page" }).click();
+  await expect(page.getByRole("navigation", { name: "History pages" }))
+    .toContainText("Page 1 of");
+  await expect(page.getByRole("button", { name: "Previous page" })).toBeDisabled();
+  await expect.poll(() => new URL(page.url()).searchParams.get("page")).toBe("1");
+});
+
+test("History focus lookup agrees with pagination for same-day imported rows", async ({ request }) => {
+  const response = await request.get("/api/expenses?month=all&pageSize=100");
+  expect(response.ok()).toBeTruthy();
+  const { transactions } = await response.json() as {
+    transactions: Array<{ id: string; transactionDate: string; importId: string }>;
+  };
+  const index = transactions.findIndex((row, i) => i > 0 &&
+    row.transactionDate === transactions[i - 1].transactionDate &&
+    row.importId === transactions[i - 1].importId);
+  test.skip(index < 0, "Requires same-day rows from one import.");
+  const focus = transactions[index];
+  const focusedResponse = await request.get(
+    `/api/expenses?month=all&pageSize=1&transactionId=${focus.id}`,
+  );
+  expect(focusedResponse.ok()).toBeTruthy();
+  const focused = await focusedResponse.json();
+  expect(focused.pagination.page).toBe(index + 1);
+  expect(focused.transactions.map((row: { id: string }) => row.id)).toEqual([focus.id]);
+});
+
+test("History month picker includes a manual-only month", async ({ page, request }) => {
+  const response = await request.get("/api/expenses?month=all");
+  expect(response.ok()).toBeTruthy();
+  const { filterOptions } = await response.json();
+  let year = 1990;
+  while (filterOptions.months.includes(`${year}-02`)) year -= 1;
+  const month = `${year}-02`;
+  const title = "History manual-only month regression fixture";
+  const created = await request.post("/api/manual-entries", { data: {
+    title, eventKind: "expense", classificationType: "household",
+    amount: 10, eventDate: `${month}-15`,
+  } });
+  expect(created.status()).toBe(201);
+  const { manualEntryId } = await created.json();
+  try {
+    await page.goto("/transactions/all?month=all");
+    await expect.poll(() => new URL(page.url()).searchParams.get("page")).toBe("1");
+    await page.getByRole("combobox", { name: "Transaction month", exact: true }).selectOption(month);
+    await expect(page.getByText(title, { exact: true })).toBeVisible();
+  } finally {
+    expect((await request.delete(`/api/manual-entries/${manualEntryId}`)).status()).toBe(200);
+  }
 });
