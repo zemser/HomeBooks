@@ -18,15 +18,24 @@ async function ReviewQueue({ searchParams }: ReviewPageProps) {
   Object.entries(params).forEach(([key, value]) => {
     if (typeof value === "string") urlParams.set(key, value);
   });
-  const query = parseReviewQuery(urlParams);
-  const transactionId = query.transactionId ?? null;
+  const parsedQuery = parseReviewQuery(urlParams);
   const initialData = await withCurrentWorkspaceDb((context, db) =>
-    listReviewQueue(context, query, db),
+    listReviewQueue(context, parsedQuery, db, { resolveLanding: true }),
   );
+  const initialQuery = {
+    ...parsedQuery,
+    importId: initialData.resolvedImportId,
+    page: initialData.pagination.page,
+    pageSize: initialData.pagination.pageSize,
+  };
 
   return (
     <div data-testid="transactions-review-content">
-      <ReviewQueueClient initialData={initialData} initialTransactionId={transactionId} />
+      <ReviewQueueClient
+        initialData={initialData}
+        initialQuery={initialQuery}
+        initialTransactionId={parsedQuery.transactionId ?? null}
+      />
     </div>
   );
 }

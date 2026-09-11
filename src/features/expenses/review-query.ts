@@ -1,8 +1,11 @@
 import {
   defaultReviewFilterState,
+  isReviewImportUnresolved,
   parseReviewFilterState,
+  REVIEW_IMPORT_UNRESOLVED,
   type ReviewFilterState,
 } from "@/features/expenses/review-filtering";
+import type { ReviewQueueImportSummary } from "@/features/expenses/types";
 
 export const DEFAULT_REVIEW_PAGE_SIZE = 50;
 export const MAX_REVIEW_PAGE_SIZE = 100;
@@ -38,4 +41,17 @@ export function defaultReviewQuery(transactionId?: string): ReviewQuery {
     pageSize: DEFAULT_REVIEW_PAGE_SIZE,
     transactionId,
   };
+}
+
+export function resolveReviewLandingImportId(
+  remainingByImport: Array<Pick<ReviewQueueImportSummary, "importId">>,
+  query: Pick<ReviewQuery, "importId" | "month">,
+) {
+  if (!isReviewImportUnresolved(query.importId)) {
+    return query.importId;
+  }
+  if (query.month !== "all") {
+    return query.importId;
+  }
+  return remainingByImport[0]?.importId ?? REVIEW_IMPORT_UNRESOLVED;
 }

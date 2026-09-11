@@ -10,7 +10,20 @@ async function reviewSnapshot(page: Page) {
       transactionDate: string;
       normalizedAmount: string;
     }>;
-    summary: { queueCount: number };
+    summary: {
+      queueCount: number;
+      completionPercentage: number;
+      remainingByImport: Array<{
+        importId: string;
+        originalFilename: string;
+        remainingCount: number;
+      }>;
+      statementLibrary: Array<{
+        importId: string;
+        originalFilename: string;
+        remainingCount: number;
+      }>;
+    };
   }>;
 }
 
@@ -125,20 +138,136 @@ test("canonical review deep links retain filters and restore review state", asyn
   await expect(page).toHaveURL(/\/transactions\/review\?/);
 });
 
-test("review and all-transactions focus links use canonical routes", async ({ page }) => {
+test("review and history focus links use canonical routes", async ({ page }) => {
   const snapshot = await reviewSnapshot(page);
   const transaction = snapshot.queue[0];
   test.skip(!transaction, "The focus-link assertion needs a transaction.");
+  const month = transaction!.transactionDate.slice(0, 7);
 
   await page.goto(`/transactions/review?transactionId=${transaction!.id}`);
-  await expect(page.getByRole("link", { name: "Open in ledger" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "Open in History" })).toHaveAttribute(
     "href",
-    `/transactions/all?transactionId=${transaction!.id}`,
+    `/transactions/all?transactionId=${transaction!.id}&month=${month}`,
   );
 
   await page.goto(`/transactions/all?transactionId=${transaction!.id}`);
-  await expect(page).toHaveURL(`/transactions/all?transactionId=${transaction!.id}`);
+  await expect.poll(() => Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({
+    transactionId: transaction!.id,
+    month,
+  });
   await expect(page.locator("tr.table-row-active")).toHaveCount(1);
   await expect(page.getByRole("link", { name: /Review .* left|Open review queue/ }).first())
-    .toHaveAttribute("href", "/transactions/review");
+    .toHaveAttribute("href", /\/transactions\/review/);
+});
+
+test("workflow History tab keeps the all-transactions URL", async ({ page }) => {
+  await page.goto("/transactions");
+  const history = page.getByRole("navigation", { name: "Transactions workflow" })
+    .getByRole("link", { name: "History", exact: true });
+  await expect(history).toHaveAttribute("href", "/transactions/all");
+  await expect(
+    page.getByRole("navigation", { name: "Transactions workflow" })
+      .getByRole("link", { name: "All transactions", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("bare Review opens the latest incomplete statement", async ({ page }) => {
+  const snapshot = await reviewSnapshot(page);
+  const latest = snapshot.summary.remainingByImport[0];
+  test.skip(!latest, "The default Review landing needs an incomplete statement.");
+
+  await page.goto("/transactions/review");
+  await expect.poll(() => new URL(page.url()).searchParams.get("import")).toBe(latest.importId);
+  await expect(page.getByRole("heading", { name: latest.originalFilename })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All imported statements" })).toHaveCount(0);
+});
+
+test("explicit Review import=all keeps remaining work and does not auto-pick a statement", async ({ page }) => {
+  const snapshot = await reviewSnapshot(page);
+  test.skip(snapshot.summary.queueCount === 0, "The all-remaining assertion needs a non-empty queue.");
+
+  await page.goto("/transactions/review?import=all");
+  await expect.poll(() => new URL(page.url()).searchParams.get("import")).toBe("all");
+  await expect(page.getByRole("progressbar", { name: /review progress/i })).toHaveCount(0);
+  await expect(page.getByText(`${snapshot.summary.queueCount} remaining across`)).toBeVisible();
+});
+
+test("Review month scope does not auto-pick a statement", async ({ page }) => {
+  const snapshot = await reviewSnapshot(page);
+  const transaction = snapshot.queue[0];
+  test.skip(!transaction, "The month-scope assertion needs a queued transaction.");
+  const month = transaction!.transactionDate.slice(0, 7);
+
+  await page.goto(`/transactions/review?month=${month}`);
+  await expect.poll(() => Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject({
+    month,
+  });
+  expect(new URL(page.url()).searchParams.get("import")).toBeNull();
+});
+
+test("Review statement switcher includes complete files without a five-item cap", async ({ page }) => {
+  const snapshot = await reviewSnapshot(page);
+  const library = snapshot.summary.statementLibrary ?? [];
+  test.skip(library.length === 0, "The switcher assertion needs saved statements.");
+
+  await page.goto("/transactions/review?import=all");
+  await page.getByText("Switch statement").click();
+  await expect(page.getByRole("button", { name: "All remaining" })).toBeVisible();
+  const complete = library.filter((item) => item.remainingCount === 0);
+  if (complete[0]) {
+    await expect(page.getByRole("button", { name: new RegExp(complete[0].originalFilename) }).first())
+      .toBeVisible();
+    await expect(page.getByText("Complete", { exact: true }).first()).toBeVisible();
+  }
+  if (library.length > 5) {
+    await expect(page.getByRole("button", { name: /left|statement complete/i })).toHaveCount(library.length);
+  }
+});
+
+test("Clear all filters restores the latest incomplete statement", async ({ page }) => {
+  const snapshot = await reviewSnapshot(page);
+  const latest = snapshot.summary.remainingByImport[0];
+  test.skip(!latest, "Clear-all needs an incomplete statement.");
+
+  await page.goto("/transactions/review?import=all");
+  await expect(page.getByRole("button", { name: "Clear all filters" })).toBeVisible();
+  await page.getByRole("button", { name: "Clear all filters" }).click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("import")).toBe(latest.importId);
+  expect(new URL(page.url()).searchParams.get("import")).not.toBe("all");
+});
+
+test("bare History opens the latest activity month", async ({ page }) => {
+  const snapshot = await reviewSnapshot(page);
+  test.skip(snapshot.queue.length === 0 && snapshot.summary.queueCount === 0, "History landing needs financial activity.");
+
+  await page.goto("/transactions/all");
+  await expect.poll(() => new URL(page.url()).searchParams.get("month")).toMatch(/^\d{4}-\d{2}$/);
+  expect(new URL(page.url()).searchParams.get("month")).not.toBe("all");
+});
+
+test("explicit History month=all stays paginated and is not the landing default", async ({ page }) => {
+  await page.goto("/transactions/all?month=all");
+  await expect.poll(() => new URL(page.url()).searchParams.get("month")).toBe("all");
+  const scoped = await page.request.get("/api/expenses?month=all&pageSize=50");
+  const landing = await page.request.get("/api/expenses");
+  expect(scoped.ok()).toBeTruthy();
+  expect(landing.ok()).toBeTruthy();
+  const scopedBody = await scoped.json() as { transactions: unknown[]; pagination: { pageSize: number; filteredCount: number } };
+  const landingBody = await landing.json() as { query: { month: string }; transactions: unknown[]; pagination: { pageSize: number } };
+  expect(scopedBody.pagination.pageSize).toBeLessThanOrEqual(50);
+  expect(landingBody.query.month).toMatch(/^\d{4}-\d{2}$/);
+  expect(landingBody.transactions.length).toBeLessThanOrEqual(50);
+  if (scopedBody.pagination.filteredCount > 50) {
+    expect(landingBody.transactions.length).toBeLessThan(scopedBody.pagination.filteredCount);
+  }
+});
+
+test("History import scope keeps the statement across its activity months", async ({ page }) => {
+  const snapshot = await reviewSnapshot(page);
+  const importId = snapshot.queue[0]?.importId ?? snapshot.summary.remainingByImport[0]?.importId;
+  test.skip(!importId, "The statement History assertion needs a saved import.");
+
+  await page.goto(`/transactions/all?import=${importId}`);
+  await expect.poll(() => new URL(page.url()).searchParams.get("import")).toBe(importId);
+  expect(new URL(page.url()).searchParams.get("month")).toBeNull();
 });

@@ -77,6 +77,13 @@ export type ReviewQueueImportSummary = {
   latestTransactionDate: string | null;
 };
 
+export type ReviewQueueMonthSummary = {
+  month: string;
+  totalCount: number;
+  reviewedCount: number;
+  remainingCount: number;
+};
+
 export type ReviewQueueSummary = {
   totalTransactionCount: number;
   reviewedCount: number;
@@ -84,7 +91,9 @@ export type ReviewQueueSummary = {
   completionPercentage: number;
   latestTransactionMonth: string | null;
   remainingByImport: ReviewQueueImportSummary[];
+  statementLibrary: ReviewQueueImportSummary[];
   selectedImport: ReviewQueueImportSummary | null;
+  selectedMonth: ReviewQueueMonthSummary | null;
 };
 
 export type ReviewQueueResponse = {
@@ -95,6 +104,7 @@ export type ReviewQueueResponse = {
   categoryCatalog: Array<{ id: string; name: string }>;
   recentCategories: string[];
   summary: ReviewQueueSummary;
+  resolvedImportId: string;
   pagination: {
     page: number;
     pageSize: number;
@@ -108,10 +118,40 @@ export type ReviewQueueResponse = {
   };
 };
 
+export type HistoryPagination = {
+  page: number;
+  pageSize: number;
+  filteredCount: number;
+  totalPages: number;
+};
+
+export type HistoryScope = {
+  month: string;
+  importId: string;
+  pendingCount: number;
+  totalCount: number;
+  defaultMonth: string;
+};
+
 export type ExpensesPageData = {
   transactions: ExpenseTransactionItem[];
   oneTimeManualEntries: OneTimeManualEntryItem[];
   members: WorkspaceMemberOption[];
   categories: string[];
   categoryCatalog: WorkspaceCategoryItem[];
+  pagination: HistoryPagination;
+  filterOptions: {
+    months: string[];
+    imports: Array<{ id: string; label: string }>;
+  };
+  scope: HistoryScope;
+  query: {
+    month: string;
+    importId: string;
+    searchQuery: string;
+    reviewStatus: "all" | "needs_review" | "reviewed";
+    page: number;
+    pageSize: number;
+    transactionId?: string;
+  };
 };

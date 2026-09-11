@@ -31,11 +31,16 @@ import {
 import {
   defaultReviewFilterState,
   hasActiveReviewFilters,
+  REVIEW_IMPORT_ALL,
+  REVIEW_IMPORT_UNRESOLVED,
+  isReviewImportAll,
+  isReviewImportUnresolved,
+  reviewImportIsUnscoped,
   serializeReviewFilterState,
   type ReviewSort,
   type ReviewView,
 } from "@/features/expenses/review-filtering";
-import { DEFAULT_REVIEW_PAGE_SIZE, parseReviewQuery } from "@/features/expenses/review-query";
+import { DEFAULT_REVIEW_PAGE_SIZE, parseReviewQuery, type ReviewQuery } from "@/features/expenses/review-query";
 import type {
   ExpenseTransactionItem,
   ReviewQueueImportSummary,
@@ -46,6 +51,7 @@ import type {
 
 type ReviewQueueClientProps = {
   initialData: ReviewQueueResponse;
+  initialQuery: ReviewQuery;
   initialTransactionId: string | null;
 };
 
@@ -112,7 +118,7 @@ function ImportScopePicker({
       <span id="review-import-scope-label">Import</span>
       <details className="import-scope-picker" ref={detailsRef}>
         <summary aria-labelledby="review-import-scope-label">
-          {value === "all" ? "All imports" : selectedLabel ?? "Selected import"}
+          {value === "all" ? "All remaining" : selectedLabel ?? "Selected import"}
         </summary>
         <div className="import-scope-menu">
           <input
@@ -131,7 +137,7 @@ function ImportScopePicker({
               aria-selected={value === "all"}
               onClick={() => selectImport("all")}
             >
-              All imports
+              All remaining
             </button>
             {filteredImports.map((item) => (
               <button
@@ -178,7 +184,9 @@ const emptyReviewSummary: ReviewQueueSummary = {
   completionPercentage: 100,
   latestTransactionMonth: null,
   remainingByImport: [],
+  statementLibrary: [],
   selectedImport: null,
+  selectedMonth: null,
 };
 
 function getSelectedTransaction(input: {
@@ -229,6 +237,7 @@ function formatReviewReportMonth(value: string) {
 
 export function ReviewQueueClient({
   initialData,
+  initialQuery,
   initialTransactionId,
 }: ReviewQueueClientProps) {
   const [queue, setQueue] = useState<ExpenseTransactionItem[]>(initialData.queue);
@@ -256,14 +265,14 @@ export function ReviewQueueClient({
   const [message, setMessage] = useState<string | null>(null);
   const [lastUndo, setLastUndo] = useState<{ batchId: string; label: string } | null>(null);
   const [isUndoing, setIsUndoing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [monthFilter, setMonthFilter] = useState("all");
-  const [importFilter, setImportFilter] = useState("all");
-  const [accountFilter, setAccountFilter] = useState("all");
-  const [minimumAmount, setMinimumAmount] = useState("");
-  const [maximumAmount, setMaximumAmount] = useState("");
-  const [sort, setSort] = useState<ReviewSort>("newest");
-  const [view, setView] = useState<ReviewView>("all");
+  const [searchQuery, setSearchQuery] = useState(initialQuery.searchQuery);
+  const [monthFilter, setMonthFilter] = useState(initialQuery.month);
+  const [importFilter, setImportFilter] = useState(initialQuery.importId);
+  const [accountFilter, setAccountFilter] = useState(initialQuery.accountId);
+  const [minimumAmount, setMinimumAmount] = useState(initialQuery.minimumAmount);
+  const [maximumAmount, setMaximumAmount] = useState(initialQuery.maximumAmount);
+  const [sort, setSort] = useState<ReviewSort>(initialQuery.sort);
+  const [view, setView] = useState<ReviewView>(initialQuery.view);
   const [isUrlStateReady, setIsUrlStateReady] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -377,6 +386,14 @@ export function ReviewQueueClient({
     setPagination(initialData.pagination);
     setFilterOptions(initialData.filterOptions);
     setPage(initialData.pagination.page);
+    setSearchQuery(initialQuery.searchQuery);
+    setMonthFilter(initialQuery.month);
+    setImportFilter(initialQuery.importId);
+    setAccountFilter(initialQuery.accountId);
+    setMinimumAmount(initialQuery.minimumAmount);
+    setMaximumAmount(initialQuery.maximumAmount);
+    setSort(initialQuery.sort);
+    setView(initialQuery.view);
     setSelectedIds([]);
     setSelectedTransactionId(
       initialTransactionId ??
@@ -386,14 +403,16 @@ export function ReviewQueueClient({
     );
     setError(null);
     setIsLoading(false);
-  }, [initialData, initialTransactionId]);
+  }, [initialData, initialQuery, initialTransactionId]);
 
   useEffect(() => {
     function restoreUrlState() {
       const state = parseReviewQuery(new URLSearchParams(window.location.search));
       setSearchQuery(state.searchQuery);
       setMonthFilter(state.month);
-      setImportFilter(state.importId);
+      if (!isReviewImportUnresolved(state.importId)) {
+        setImportFilter(state.importId);
+      }
       setAccountFilter(state.accountId);
       setMinimumAmount(state.minimumAmount);
       setMaximumAmount(state.maximumAmount);
@@ -470,21 +489,29 @@ export function ReviewQueueClient({
     allQueueIds.length > 0 &&
     allQueueIds.every((transactionId) => selectedIds.includes(transactionId));
   const hasDefinedCategories = categories.length > 0;
-  const filtersActive = hasActiveReviewFilters({
-    searchQuery,
-    month: monthFilter,
-    importId: importFilter,
-    accountId: accountFilter,
-    minimumAmount,
-    maximumAmount,
-    sort,
-    view,
-  });
+  const defaultImportId = summary.remainingByImport[0]?.importId ?? REVIEW_IMPORT_UNRESOLVED;
+  const filtersActive = hasActiveReviewFilters(
+    {
+      searchQuery,
+      month: monthFilter,
+      importId: importFilter,
+      accountId: accountFilter,
+      minimumAmount,
+      maximumAmount,
+      sort,
+      view,
+    },
+    { defaultImportId },
+  );
   const activeFilterChips = useMemo(() => {
     const chips: Array<{ key: ActiveFilterKey; label: string }> = [];
     if (searchQuery.trim()) chips.push({ key: "search", label: `Search: ${searchQuery.trim()}` });
     if (monthFilter !== "all") chips.push({ key: "month", label: `Month: ${formatReviewReportMonth(monthFilter)}` });
-    if (importFilter !== "all") {
+    if (
+      importFilter !== REVIEW_IMPORT_ALL &&
+      !isReviewImportUnresolved(importFilter) &&
+      importFilter !== defaultImportId
+    ) {
       chips.push({
         key: "import",
         label: `Import: ${availableImports.find((item) => item.id === importFilter)?.label ?? importFilter}`,
@@ -519,7 +546,7 @@ export function ReviewQueueClient({
       chips.push({ key: "view", label: `View: ${viewLabels[view]}` });
     }
     return chips;
-  }, [accountFilter, availableAccounts, availableImports, importFilter, maximumAmount, minimumAmount, monthFilter, searchQuery, sort, view]);
+  }, [accountFilter, availableAccounts, availableImports, defaultImportId, importFilter, maximumAmount, minimumAmount, monthFilter, searchQuery, sort, view]);
 
   useEffect(() => {
     if (visibleQueue.length === 0) return;
@@ -573,7 +600,7 @@ export function ReviewQueueClient({
   function clearFilters() {
     setSearchQuery(defaultReviewFilterState.searchQuery);
     setMonthFilter(defaultReviewFilterState.month);
-    setImportFilter(defaultReviewFilterState.importId);
+    setImportFilter(defaultImportId);
     setAccountFilter(defaultReviewFilterState.accountId);
     setMinimumAmount(defaultReviewFilterState.minimumAmount);
     setMaximumAmount(defaultReviewFilterState.maximumAmount);
@@ -632,7 +659,7 @@ export function ReviewQueueClient({
   function clearFilter(key: ActiveFilterKey) {
     if (key === "search") setSearchQuery(defaultReviewFilterState.searchQuery);
     if (key === "month") setMonthFilter(defaultReviewFilterState.month);
-    if (key === "import") setImportFilter(defaultReviewFilterState.importId);
+    if (key === "import") setImportFilter(REVIEW_IMPORT_ALL);
     if (key === "account") setAccountFilter(defaultReviewFilterState.accountId);
     if (key === "minimum") setMinimumAmount(defaultReviewFilterState.minimumAmount);
     if (key === "maximum") setMaximumAmount(defaultReviewFilterState.maximumAmount);
@@ -968,8 +995,13 @@ export function ReviewQueueClient({
   const selectedTransactionCurrencyState = selectedTransaction
     ? getCurrencyNormalizationDisplayState(selectedTransaction)
     : null;
-  const selectedLedgerHref = selectedTransaction
-    ? `/transactions/all?transactionId=${selectedTransaction.id}`
+  const selectedHistoryHref = selectedTransaction
+    ? `/transactions/all?transactionId=${encodeURIComponent(selectedTransaction.id)}&month=${encodeURIComponent(selectedTransaction.transactionDate.slice(0, 7))}`
+    : summary.latestTransactionMonth
+      ? `/transactions/all?month=${encodeURIComponent(summary.latestTransactionMonth)}`
+      : "/transactions/all";
+  const queueClearHistoryHref = summary.latestTransactionMonth
+    ? `/transactions/all?month=${encodeURIComponent(summary.latestTransactionMonth)}`
     : "/transactions/all";
   const selectedReportTargets = selectedTransaction
     ? buildTransactionReportTargets(selectedTransaction)
@@ -980,16 +1012,53 @@ export function ReviewQueueClient({
   const queueClearReportLabel = summary.latestTransactionMonth
     ? `Open ${formatReviewReportMonth(summary.latestTransactionMonth)} report`
     : "Open reports";
-  const activeImportSummary = importFilter === "all" ? null : summary.selectedImport;
-  const activeReviewTotal = activeImportSummary?.totalCount ?? summary.totalTransactionCount;
-  const activeReviewHandled = activeImportSummary?.reviewedCount ?? summary.reviewedCount;
-  const activeReviewRemaining = activeImportSummary?.remainingCount ?? summary.queueCount;
+  const activeImportSummary = reviewImportIsUnscoped(importFilter) ? null : summary.selectedImport;
+  const monthSummary = summary.selectedMonth;
+  const explicitAllRemaining = isReviewImportAll(importFilter);
+  const monthScoped = monthFilter !== "all" && reviewImportIsUnscoped(importFilter);
+  const statementCount = summary.remainingByImport.length;
+  const activeReviewTotal = activeImportSummary?.totalCount
+    ?? (monthScoped ? monthSummary?.totalCount : null)
+    ?? summary.totalTransactionCount;
+  const activeReviewHandled = activeImportSummary?.reviewedCount
+    ?? (monthScoped ? monthSummary?.reviewedCount : null)
+    ?? summary.reviewedCount;
+  const activeReviewRemaining = activeImportSummary?.remainingCount
+    ?? (monthScoped ? monthSummary?.remainingCount : null)
+    ?? summary.queueCount;
   const activeReviewPercentage = activeReviewTotal === 0
     ? 100
     : Math.round((activeReviewHandled / activeReviewTotal) * 100);
+  const showLifetimeMeter = Boolean(activeImportSummary) || monthScoped;
+  const statementLibrary =
+    summary.statementLibrary.length > 0 ? summary.statementLibrary : summary.remainingByImport;
+  const reviewHero = activeImportSummary
+    ? {
+        eyebrow: "Statement review",
+        title: activeImportSummary.originalFilename,
+        helper: `${activeImportSummary.sourceName ?? "Imported statement"} · ${formatReviewImportRange(activeImportSummary)}`,
+      }
+    : monthScoped
+      ? {
+          eyebrow: "Month review",
+          title: formatReviewReportMonth(monthFilter),
+          helper: `${activeReviewRemaining} remaining in this month`,
+        }
+      : explicitAllRemaining
+        ? {
+            eyebrow: "Remaining work",
+            title: `${summary.queueCount} remaining across ${statementCount} statement${statementCount === 1 ? "" : "s"}`,
+            helper: `${summary.reviewedCount} handled of ${summary.totalTransactionCount} imported overall`,
+          }
+        : {
+            eyebrow: "Review queue",
+            title: "Imported statements",
+            helper: `${statementCount} statement${statementCount === 1 ? "" : "s"} still in progress`,
+          };
   const advancedFilterCount = [
     monthFilter !== "all",
-    importFilter !== "all",
+    explicitAllRemaining ||
+      (!reviewImportIsUnscoped(importFilter) && importFilter !== defaultImportId),
     accountFilter !== "all",
     Boolean(minimumAmount),
     Boolean(maximumAmount),
@@ -1070,25 +1139,22 @@ export function ReviewQueueClient({
       <article className="card stack compact">
         <div className="review-scope-header">
           <div>
-            <span className="eyebrow">{activeImportSummary ? "Statement review" : "Review queue"}</span>
-            <h2>{activeImportSummary?.originalFilename ?? "All imported statements"}</h2>
-            <p className="helper-text">
-              {activeImportSummary
-                ? `${activeImportSummary.sourceName ?? "Imported statement"} · ${formatReviewImportRange(activeImportSummary)}`
-                : `${summary.remainingByImport.length} statement${summary.remainingByImport.length === 1 ? "" : "s"} still in progress`}
-            </p>
+            <span className="eyebrow">{reviewHero.eyebrow}</span>
+            <h2>{reviewHero.title}</h2>
+            <p className="helper-text">{reviewHero.helper}</p>
           </div>
           <div className="review-scope-stats" aria-label="Review progress">
             <span><strong>{activeReviewRemaining}</strong> remaining</span>
-            <span><strong>{activeReviewHandled}</strong> handled</span>
-            <span><strong>{activeReviewPercentage}%</strong> complete</span>
+            {showLifetimeMeter ? <span><strong>{activeReviewHandled}</strong> handled</span> : null}
+            {showLifetimeMeter ? <span><strong>{activeReviewPercentage}%</strong> complete</span> : null}
           </div>
         </div>
 
+        {showLifetimeMeter ? (
         <div
           className="progress-meter"
           role="progressbar"
-          aria-label="Statement review progress"
+          aria-label={monthScoped ? "Month review progress" : "Statement review progress"}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={activeReviewPercentage}
@@ -1098,27 +1164,32 @@ export function ReviewQueueClient({
             style={{ width: `${activeReviewPercentage}%` }}
           />
         </div>
+        ) : null}
 
-        {summary.remainingByImport.length > 0 ? (
+        {statementLibrary.length > 0 ? (
           <details className="review-import-switcher disclosure">
             <summary>Switch statement</summary>
             <div className="stack compact">
             <button
-              className={`activity-row review-import-row ${importFilter === "all" ? "is-active" : ""}`}
+              className={`activity-row review-import-row ${explicitAllRemaining ? "is-active" : ""}`}
               type="button"
-              aria-pressed={importFilter === "all"}
-              onClick={() => selectImportForReview("all")}
+              aria-pressed={explicitAllRemaining}
+              onClick={() => selectImportForReview(REVIEW_IMPORT_ALL)}
             >
-              <div><strong>All statements</strong><p>{summary.queueCount} transactions remaining</p></div>
+              <div><strong>All remaining</strong><p>{summary.queueCount} transactions remaining</p></div>
             </button>
-            {summary.remainingByImport.slice(0, 5).map((item) => (
+            {statementLibrary.map((item) => (
               <button
                 className={`activity-row review-import-row ${
                   importFilter === item.importId ? "is-active" : ""
                 }`}
                 type="button"
                 aria-pressed={importFilter === item.importId}
-                aria-label={`Review ${item.originalFilename}, ${item.remainingCount} transactions left`}
+                aria-label={
+                  item.remainingCount > 0
+                    ? `Review ${item.originalFilename}, ${item.remainingCount} transactions left`
+                    : `Open ${item.originalFilename}, statement complete`
+                }
                 onClick={() => selectImportForReview(item.importId)}
                 key={item.importId}
               >
@@ -1132,21 +1203,19 @@ export function ReviewQueueClient({
                 <div className="activity-meta">
                   <span
                     className={`badge ${
-                      item.reviewedCount > 0 ? "badge-warning" : "badge-neutral"
+                      item.remainingCount === 0
+                        ? "badge-success"
+                        : item.reviewedCount > 0
+                          ? "badge-warning"
+                          : "badge-neutral"
                     }`}
                   >
-                    {item.reviewedCount > 0 ? "In progress" : "Unstarted"}
+                    {item.remainingCount === 0 ? "Complete" : item.reviewedCount > 0 ? "In progress" : "Unstarted"}
                   </span>
                   <span>{formatReviewImportRange(item)}</span>
                 </div>
               </button>
             ))}
-            {summary.remainingByImport.length > 5 ? (
-              <p className="helper-text">
-                {summary.remainingByImport.length - 5} more incomplete import
-                {summary.remainingByImport.length - 5 === 1 ? "" : "s"}. Use the Import filter to find one.
-              </p>
-            ) : null}
             </div>
           </details>
         ) : null}
@@ -1356,8 +1425,8 @@ export function ReviewQueueClient({
                 {activeImportSummary.reviewedCount} transaction{activeImportSummary.reviewedCount === 1 ? "" : "s"} handled. Nothing from this statement still needs review.
               </p>
               <div className="action-row">
-                <button className="button" type="button" onClick={() => selectImportForReview("all")}>
-                  Review another statement
+                <button className="button" type="button" onClick={() => selectImportForReview(REVIEW_IMPORT_ALL)}>
+                  Review remaining work
                 </button>
                 <Link className="button button-secondary" href={queueClearReportHref}>
                   {queueClearReportLabel}
@@ -1373,15 +1442,15 @@ export function ReviewQueueClient({
                 <h3>All imported transactions are reviewed.</h3>
                 <p>
                   {summary.reviewedCount} reviewed transaction
-                  {summary.reviewedCount === 1 ? "" : "s"} are ready for the ledger and the
+                  {summary.reviewedCount === 1 ? "" : "s"} are ready for History and the
                   matching report month.
                 </p>
                 <div className="action-row">
                   <Link className="button" href={queueClearReportHref}>
                     {queueClearReportLabel}
                   </Link>
-                  <Link className="button button-secondary" href="/transactions/all">
-                    Open ledger
+                  <Link className="button button-secondary" href={queueClearHistoryHref}>
+                    Open History
                   </Link>
                 </div>
               </div>
@@ -1531,14 +1600,14 @@ export function ReviewQueueClient({
               <h2>Selected transaction</h2>
               <p className="muted-text">
                 Save one row at a time here. You can also open already-classified items from
-                All transactions to correct them.
+                History to correct them.
               </p>
             </div>
           </div>
 
           {!selectedTransaction ? (
             <p className="empty-state">
-              Select a queue row to review it. If you came from All transactions, the chosen
+              Select a queue row to review it. If you came from History, the chosen
               transaction will appear here automatically.
             </p>
           ) : (
@@ -1763,8 +1832,8 @@ export function ReviewQueueClient({
                 </button>
                 {previousTransactionId ? <button className="button button-secondary" type="button" onClick={() => setSelectedTransactionId(previousTransactionId)}>Previous</button> : null}
                 {nextTransactionId ? <button className="link-button" type="button" onClick={() => { setSelectedTransactionId(nextTransactionId); setMessage("Skipped for now. No classification was saved."); }}>Skip for now <kbd>S</kbd></button> : null}
-                <Link className="button button-secondary" href={selectedLedgerHref}>
-                  Open in ledger
+                <Link className="button button-secondary" href={selectedHistoryHref}>
+                  Open in History
                 </Link>
               </div>
 

@@ -1,33 +1,19 @@
 import { NextResponse } from "next/server";
 
-import { listExpenseTransactions, listWorkspaceMembers } from "@/features/expenses/queries";
-import { listOneTimeManualEntries } from "@/features/manual-entries/service";
-import { listWorkspaceCategories } from "@/features/workspaces/categories";
+import { parseHistoryQuery } from "@/features/expenses/history-query";
+import { listHistoryPage } from "@/features/expenses/history";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
 
-
 export async function GET(request: Request) {
   try {
-    const { transactions, oneTimeManualEntries, members, categoryCatalog } =
-      await withCurrentWorkspaceDb(async (context, db) => {
-        const [transactions, oneTimeManualEntries, members, categoryCatalog] = await Promise.all([
-          listExpenseTransactions(context, db),
-          listOneTimeManualEntries(context, db),
-          listWorkspaceMembers(context, db),
-          listWorkspaceCategories(context, db),
-        ]);
+    const { searchParams } = new URL(request.url);
+    const parsedQuery = parseHistoryQuery(searchParams);
+    const data = await withCurrentWorkspaceDb((context, db) =>
+      listHistoryPage(context, parsedQuery, db),
+    );
 
-        return { transactions, oneTimeManualEntries, members, categoryCatalog };
-      });
-
-    return NextResponse.json({
-      transactions,
-      oneTimeManualEntries,
-      members,
-      categories: categoryCatalog.map((category) => category.name),
-      categoryCatalog,
-    });
+    return NextResponse.json(data);
   } catch (error) {
     return errorResponse({
       error,

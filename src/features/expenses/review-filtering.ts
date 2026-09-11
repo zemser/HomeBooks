@@ -4,6 +4,9 @@ import { getTransactionMerchant } from "@/features/expenses/presentation";
 export type ReviewSort = "newest" | "oldest" | "amount_desc" | "amount_asc" | "merchant";
 export type ReviewView = "all" | "suggested" | "no_suggestion" | "repeated" | "high_value";
 
+export const REVIEW_IMPORT_ALL = "all";
+export const REVIEW_IMPORT_UNRESOLVED = "default";
+
 export type ReviewFilterState = {
   searchQuery: string;
   month: string;
@@ -18,7 +21,7 @@ export type ReviewFilterState = {
 export const defaultReviewFilterState: ReviewFilterState = {
   searchQuery: "",
   month: "all",
-  importId: "all",
+  importId: REVIEW_IMPORT_UNRESOLVED,
   accountId: "all",
   minimumAmount: "",
   maximumAmount: "",
@@ -41,15 +44,30 @@ const reviewViews = new Set<ReviewView>([
   "high_value",
 ]);
 
+export function isReviewImportUnresolved(importId: string) {
+  return importId === REVIEW_IMPORT_UNRESOLVED;
+}
+
+export function isReviewImportAll(importId: string) {
+  return importId === REVIEW_IMPORT_ALL;
+}
+
+export function reviewImportIsUnscoped(importId: string) {
+  return isReviewImportAll(importId) || isReviewImportUnresolved(importId);
+}
+
 export function parseReviewFilterState(search: string): ReviewFilterState {
   const params = new URLSearchParams(search);
   const requestedSort = params.get("sort") as ReviewSort | null;
   const requestedView = params.get("view") as ReviewView | null;
+  const importParam = params.get("import");
 
   return {
     searchQuery: params.get("q") ?? "",
     month: params.get("month") ?? "all",
-    importId: params.get("import") ?? "all",
+    importId: params.has("import")
+      ? importParam?.trim() || REVIEW_IMPORT_ALL
+      : REVIEW_IMPORT_UNRESOLVED,
     accountId: params.get("account") ?? "all",
     minimumAmount: params.get("min") ?? "",
     maximumAmount: params.get("max") ?? "",
@@ -70,7 +88,13 @@ export function serializeReviewFilterState(
 
   setOrDelete("q", state.searchQuery);
   setOrDelete("month", state.month, "all");
-  setOrDelete("import", state.importId, "all");
+  if (isReviewImportAll(state.importId)) {
+    params.set("import", REVIEW_IMPORT_ALL);
+  } else if (isReviewImportUnresolved(state.importId) || !state.importId) {
+    params.delete("import");
+  } else {
+    params.set("import", state.importId);
+  }
   setOrDelete("account", state.accountId, "all");
   setOrDelete("min", state.minimumAmount);
   setOrDelete("max", state.maximumAmount);
@@ -79,11 +103,18 @@ export function serializeReviewFilterState(
   return params.toString();
 }
 
-export function hasActiveReviewFilters(state: ReviewFilterState) {
+export function hasActiveReviewFilters(
+  state: ReviewFilterState,
+  options?: { defaultImportId?: string | null },
+) {
+  const importIsActive =
+    isReviewImportAll(state.importId) ||
+    (!reviewImportIsUnscoped(state.importId) && state.importId !== options?.defaultImportId);
+
   return (
     Boolean(state.searchQuery.trim()) ||
     state.month !== "all" ||
-    state.importId !== "all" ||
+    importIsActive ||
     state.accountId !== "all" ||
     Boolean(state.minimumAmount) ||
     Boolean(state.maximumAmount) ||
@@ -123,7 +154,7 @@ export function filterAndSortReviewQueue(
     return (
       matchesSearch &&
       (state.month === "all" || transaction.transactionDate.startsWith(state.month)) &&
-      (state.importId === "all" || transaction.importId === state.importId) &&
+      (reviewImportIsUnscoped(state.importId) || transaction.importId === state.importId) &&
       (state.accountId === "all" || transaction.accountId === state.accountId) &&
       (minimum === null || Number.isNaN(minimum) || amount >= minimum) &&
       (maximum === null || Number.isNaN(maximum) || amount <= maximum) &&

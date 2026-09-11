@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useState, useTransition } from "react";
+import { useDeferredValue, useEffect, useRef, useState, useTransition } from "react";
 
 import {
   AllocationEditor,
@@ -32,6 +32,19 @@ import {
   formatMoneyDisplay,
   getTransactionMerchant,
 } from "@/features/expenses/presentation";
+import {
+  DEFAULT_HISTORY_PAGE_SIZE,
+  HISTORY_IMPORT_ALL,
+  HISTORY_IMPORT_UNRESOLVED,
+  HISTORY_MONTH_ALL,
+  historyImportIsUnscoped,
+  historyMonthIsUnscoped,
+  isHistoryImportUnresolved,
+  isHistoryMonthUnresolved,
+  parseHistoryQuery,
+  serializeHistoryQuery,
+  shouldShowHistoryManuals,
+} from "@/features/expenses/history-query";
 import type {
   ExpenseTransactionItem,
   ExpensesPageData,
@@ -46,7 +59,6 @@ import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
 
 type ExpensesPageClientProps = {
   initialData: ExpensesPageData;
-  initialTransactionId: string | null;
 };
 
 type ExpensesResponse = Partial<ExpensesPageData> & {
@@ -169,10 +181,6 @@ function allocationSuccessMessage(form: AllocationFormState) {
     : "Allocation reset to payment month.";
 }
 
-function transactionMonth(value: string) {
-  return value.slice(0, 7);
-}
-
 function formatLedgerMonthLabel(value: string) {
   return new Intl.DateTimeFormat("en", {
     month: "long",
@@ -183,7 +191,6 @@ function formatLedgerMonthLabel(value: string) {
 
 export function ExpensesPageClient({
   initialData,
-  initialTransactionId,
 }: ExpensesPageClientProps) {
   const [transactions, setTransactions] = useState<ExpenseTransactionItem[]>(
     initialData.transactions,
@@ -194,9 +201,13 @@ export function ExpensesPageClient({
   const [members, setMembers] = useState<WorkspaceMemberOption[]>(initialData.members);
   const [categories, setCategories] = useState<string[]>(initialData.categories);
   const [categoryCatalog, setCategoryCatalog] = useState(initialData.categoryCatalog);
+  const [pagination, setPagination] = useState(initialData.pagination);
+  const [filterOptions, setFilterOptions] = useState(initialData.filterOptions);
+  const [scope, setScope] = useState(initialData.scope);
+  const [page, setPage] = useState(initialData.query.page);
   const [selectedManualEntryId, setSelectedManualEntryId] = useState<string | null>(null);
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(
-    initialTransactionId,
+    initialData.query.transactionId ?? null,
   );
   const [manualEntryForm, setManualEntryForm] = useState<ManualEntryFormState>(
     createInitialManualEntryFormState(),
@@ -205,10 +216,13 @@ export function ExpensesPageClient({
     useState<AllocationFormState>(emptyAllocationForm);
   const [transactionAllocationForm, setTransactionAllocationForm] =
     useState<AllocationFormState>(emptyAllocationForm);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [reviewStatusFilter, setReviewStatusFilter] = useState<ReviewStatusFilter>("all");
-  const [monthFilter, setMonthFilter] = useState("all");
-  const [importFilter, setImportFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState(initialData.query.searchQuery);
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<ReviewStatusFilter>(
+    initialData.query.reviewStatus,
+  );
+  const [monthFilter, setMonthFilter] = useState(initialData.query.month);
+  const [importFilter, setImportFilter] = useState(initialData.query.importId);
+  const [isUrlStateReady, setIsUrlStateReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isManualEntryModalOpen, setIsManualEntryModalOpen] = useState(false);
   const [isAllocationModalOpen, setIsAllocationModalOpen] = useState(false);
@@ -240,6 +254,10 @@ export function ExpensesPageClient({
     setMembers(nextMembers);
     setCategories(nextCategories);
     setCategoryCatalog(nextCategoryCatalog);
+    setPagination(data.pagination);
+    setFilterOptions(data.filterOptions);
+    setScope(data.scope);
+    setPage(data.query.page);
     setSelectedManualEntryId((current) => {
       if (options?.manualEntryId !== undefined) {
         return options.manualEntryId &&
@@ -257,12 +275,30 @@ export function ExpensesPageClient({
         return options.transactionId &&
           nextTransactions.some((transaction) => transaction.id === options.transactionId)
           ? options.transactionId
-          : null;
+          : data.query.transactionId ?? null;
       }
 
       return current && nextTransactions.some((transaction) => transaction.id === current)
         ? current
-        : null;
+        : data.query.transactionId ?? nextTransactions[0]?.id ?? null;
+    });
+  }
+
+  function historySearchParams(overrides?: {
+    page?: number;
+    searchQuery?: string;
+    transactionId?: string | null;
+  }) {
+    return serializeHistoryQuery("", {
+      month: monthFilter,
+      importId: importFilter,
+      searchQuery: overrides?.searchQuery ?? searchQuery,
+      reviewStatus: reviewStatusFilter,
+      page: overrides?.page ?? page,
+      pageSize: pagination.pageSize || DEFAULT_HISTORY_PAGE_SIZE,
+      transactionId: overrides?.transactionId === undefined
+        ? (selectedTransactionId ?? undefined)
+        : (overrides.transactionId ?? undefined),
     });
   }
 
@@ -270,7 +306,10 @@ export function ExpensesPageClient({
     setError(null);
 
     try {
-      const response = await fetch("/api/expenses");
+      const params = historySearchParams({
+        transactionId: options?.transactionId,
+      });
+      const response = await fetch(`/api/expenses?${params}`);
       const data = (await response.json()) as ExpensesResponse;
 
       if (!response.ok) {
@@ -284,6 +323,18 @@ export function ExpensesPageClient({
           members: data.members ?? [],
           categories: data.categories ?? [],
           categoryCatalog: data.categoryCatalog ?? [],
+          pagination: data.pagination ?? pagination,
+          filterOptions: data.filterOptions ?? filterOptions,
+          scope: data.scope ?? scope,
+          query: data.query ?? {
+            month: monthFilter,
+            importId: importFilter,
+            searchQuery,
+            reviewStatus: reviewStatusFilter,
+            page,
+            pageSize: pagination.pageSize,
+            transactionId: options?.transactionId ?? undefined,
+          },
         },
         options,
       );
@@ -307,11 +358,88 @@ export function ExpensesPageClient({
     setMembers(initialData.members);
     setCategories(initialData.categories);
     setCategoryCatalog(initialData.categoryCatalog);
+    setPagination(initialData.pagination);
+    setFilterOptions(initialData.filterOptions);
+    setScope(initialData.scope);
+    setPage(initialData.query.page);
+    setSearchQuery(initialData.query.searchQuery);
+    setReviewStatusFilter(initialData.query.reviewStatus);
+    setMonthFilter(initialData.query.month);
+    setImportFilter(initialData.query.importId);
     setSelectedManualEntryId(null);
-    setSelectedTransactionId(initialTransactionId);
+    setSelectedTransactionId(initialData.query.transactionId ?? null);
     setError(null);
     setIsLoading(false);
-  }, [initialData, initialTransactionId]);
+  }, [initialData]);
+
+  useEffect(() => {
+    function restoreUrlState() {
+      const state = parseHistoryQuery(new URLSearchParams(window.location.search));
+      setSearchQuery(state.searchQuery);
+      setReviewStatusFilter(state.reviewStatus);
+      if (!isHistoryMonthUnresolved(state.month)) setMonthFilter(state.month);
+      if (!isHistoryImportUnresolved(state.importId)) setImportFilter(state.importId);
+      setPage(state.page);
+    }
+    restoreUrlState();
+    setIsUrlStateReady(true);
+    window.addEventListener("popstate", restoreUrlState);
+    return () => window.removeEventListener("popstate", restoreUrlState);
+  }, []);
+
+  const previousServerQueryRef = useRef<string | null>(null);
+  const previousServerFilterRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!isUrlStateReady) return;
+    const nextQuery = serializeHistoryQuery("", {
+      month: monthFilter,
+      importId: importFilter,
+      searchQuery,
+      reviewStatus: reviewStatusFilter,
+      page,
+      pageSize: pagination.pageSize || DEFAULT_HISTORY_PAGE_SIZE,
+      transactionId: selectedTransactionId ?? undefined,
+    });
+    window.history.replaceState(null, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+  }, [
+    importFilter,
+    isUrlStateReady,
+    monthFilter,
+    page,
+    pagination.pageSize,
+    reviewStatusFilter,
+    searchQuery,
+    selectedTransactionId,
+  ]);
+
+  useEffect(() => {
+    if (!isUrlStateReady) return;
+    const filterSignature = JSON.stringify({
+      searchQuery: deferredSearchQuery,
+      monthFilter,
+      importFilter,
+      reviewStatusFilter,
+    });
+    const querySignature = `${filterSignature}:${page}`;
+    if (previousServerQueryRef.current === null) {
+      previousServerFilterRef.current = filterSignature;
+      previousServerQueryRef.current = querySignature;
+      return;
+    }
+    if (previousServerFilterRef.current !== filterSignature && page !== 1) {
+      previousServerFilterRef.current = filterSignature;
+      setPage(1);
+      return;
+    }
+    if (previousServerQueryRef.current === querySignature) return;
+    previousServerFilterRef.current = filterSignature;
+    previousServerQueryRef.current = querySignature;
+    setIsLoading(true);
+    void loadExpenses({ transactionId: selectedTransactionId });
+    // Filter changes refetch the scoped page; selected row changes only update the URL.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deferredSearchQuery, importFilter, isUrlStateReady, monthFilter, page, reviewStatusFilter]);
 
   const selectedManualEntry =
     oneTimeManualEntries.find((entry) => entry.id === selectedManualEntryId) ?? null;
@@ -319,7 +447,8 @@ export function ExpensesPageClient({
     oneTimeManualEntries.find((entry) => entry.id === deleteConfirmationId) ?? null;
   const selectedTransaction =
     transactions.find((transaction) => transaction.id === selectedTransactionId) ?? null;
-  const reviewCount = transactions.filter((transaction) => !transaction.classification).length;
+  const reviewCount = scope.pendingCount;
+  const showManualsTable = shouldShowHistoryManuals({ month: monthFilter, importId: importFilter });
   const isEditingManualEntry = Boolean(selectedManualEntry);
   const manualEntryClassificationOptions = listClassificationOptions(manualEntryForm.eventKind);
   const hasDefinedCategories = categories.length > 0;
@@ -333,56 +462,30 @@ export function ExpensesPageClient({
         0.000001 ||
         manualEntryForm.eventDate !== selectedManualEntry.eventDate),
   );
-  const normalizedSearchQuery = deferredSearchQuery.trim().toLowerCase();
-  const visibleTransactions = transactions.filter((transaction) => {
-    const matchesReviewStatus =
-      reviewStatusFilter === "all" ||
-      (reviewStatusFilter === "needs_review" && !transaction.classification) ||
-      (reviewStatusFilter === "reviewed" && Boolean(transaction.classification));
-    const matchesMonth =
-      monthFilter === "all" || transactionMonth(transaction.transactionDate) === monthFilter;
-    const matchesImport =
-      importFilter === "all" || transaction.importId === importFilter;
-    const matchesSearch =
-      normalizedSearchQuery.length === 0 ||
-      [
-        getTransactionMerchant(transaction),
-        transaction.description,
-        transaction.accountDisplayName,
-        transaction.importSourceName ?? "",
-        transaction.importOriginalFilename,
-        transaction.classification?.category ?? "",
-        transaction.classification?.personalOwnerName ?? "",
-        transaction.classification?.paidByName ?? "",
-        transaction.classification?.receivedByName ?? "",
-      ]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedSearchQuery);
-
-    return matchesReviewStatus && matchesMonth && matchesImport && matchesSearch;
-  });
-  const availableMonths = Array.from(
-    new Set(transactions.map((transaction) => transactionMonth(transaction.transactionDate))),
-  ).sort((left, right) => right.localeCompare(left));
-  const availableImports = Array.from(
-    transactions.reduce((imports, transaction) => {
-      const current = imports.get(transaction.importId) ?? {
-        label: transaction.importOriginalFilename,
-        count: 0,
-      };
-      current.count += 1;
-      imports.set(transaction.importId, current);
-      return imports;
-    }, new Map<string, { label: string; count: number }>()),
-  )
-    .map(([id, item]) => ({ id, ...item }))
-    .sort((left, right) => left.label.localeCompare(right.label));
+  const visibleTransactions = transactions;
+  const availableMonths = filterOptions.months;
+  const availableImports = filterOptions.imports;
   const filtersActive =
     searchQuery.trim().length > 0 ||
     reviewStatusFilter !== "all" ||
-    monthFilter !== "all" ||
-    importFilter !== "all";
+    monthFilter === HISTORY_MONTH_ALL ||
+    (!historyMonthIsUnscoped(monthFilter) && monthFilter !== scope.defaultMonth) ||
+    !historyImportIsUnscoped(importFilter);
+  const monthSelectValue = historyMonthIsUnscoped(monthFilter) ? HISTORY_MONTH_ALL : monthFilter;
+  const importSelectValue = historyImportIsUnscoped(importFilter) ? HISTORY_IMPORT_ALL : importFilter;
+  const reportsHref = !historyMonthIsUnscoped(monthFilter)
+    ? `/reports?month=${monthFilter}&mode=payment_date`
+    : "/reports";
+  const reviewHref = !historyImportIsUnscoped(importFilter)
+    ? `/transactions/review?import=${encodeURIComponent(importFilter)}`
+    : !historyMonthIsUnscoped(monthFilter)
+      ? `/transactions/review?month=${encodeURIComponent(monthFilter)}`
+      : "/transactions/review";
+  const scopeLabel = !historyMonthIsUnscoped(monthFilter)
+    ? formatLedgerMonthLabel(monthFilter)
+    : !historyImportIsUnscoped(importFilter)
+      ? (availableImports.find((item) => item.id === importFilter)?.label ?? "this statement")
+      : "this view";
   useEffect(() => {
     setManualEntryForm(
       selectedManualEntry
@@ -473,11 +576,12 @@ export function ExpensesPageClient({
     }));
   }
 
-  function clearLedgerFilters() {
+  function clearHistoryFilters() {
     setSearchQuery("");
     setReviewStatusFilter("all");
-    setMonthFilter("all");
-    setImportFilter("all");
+    setMonthFilter(scope.defaultMonth);
+    setImportFilter(HISTORY_IMPORT_UNRESOLVED);
+    setPage(1);
   }
 
   function handleManualEntryKindChange(eventKind: OneTimeManualEntryEventKind) {
@@ -694,15 +798,15 @@ export function ExpensesPageClient({
       <article className="card">
         <div className="summary-strip">
           <div>
-            <strong>{transactions.length}</strong>
-            <span>Persisted transactions</span>
+            <strong>{scope.totalCount}</strong>
+            <span>In this scope</span>
           </div>
           <div>
-            <strong>{visibleTransactions.length}</strong>
-            <span>Visible in ledger</span>
+            <strong>{pagination.filteredCount}</strong>
+            <span>Matching rows</span>
           </div>
           <div>
-            <strong>{oneTimeManualEntries.length}</strong>
+            <strong>{showManualsTable ? oneTimeManualEntries.length : 0}</strong>
             <span>One-time manual entries</span>
           </div>
           <div>
@@ -714,19 +818,19 @@ export function ExpensesPageClient({
 
       {reviewCount > 0 ? (
         <p className="status warning">
-          {reviewCount} imported transaction{reviewCount === 1 ? "" : "s"} still need review.
-          Use the filters below to focus on the rows you&apos;ve already checked, or jump back to
-          the queue when you want to keep clearing it.
+          {reviewCount} imported transaction{reviewCount === 1 ? "" : "s"} in {scopeLabel} still
+          need review.{" "}
+          <Link href={reviewHref}>
+            Review {reviewCount} left
+          </Link>
         </p>
-      ) : transactions.length > 0 ? (
+      ) : scope.totalCount > 0 ? (
         <div className="home-focus-card">
-          <span className="badge badge-neutral">Queue clear</span>
-          <h3>Imported transactions no longer need review.</h3>
-          <p>
-            The ledger is now the place to spot-check transactions and reporting periods.
-          </p>
+          <span className="badge badge-neutral">This scope is reviewed</span>
+          <h3>Imported rows in {scopeLabel} no longer need review.</h3>
+          <p>Open reports for this month, or keep browsing History.</p>
           <div className="action-row">
-            <Link className="button" href="/reports">Open reports</Link>
+            <Link className="button" href={reportsHref}>Open reports</Link>
           </div>
         </div>
       ) : null}
@@ -1001,14 +1105,21 @@ export function ExpensesPageClient({
 
           {isLoading ? <p className="status">Loading manual entries...</p> : null}
 
-          {!isLoading && oneTimeManualEntries.length === 0 ? (
+          {!showManualsTable ? (
+            <p className="empty-state">
+              Manual entries belong to a calendar month. Choose a month to see saved one-time
+              entries, or add one with an event date.
+            </p>
+          ) : null}
+
+          {showManualsTable && !isLoading && oneTimeManualEntries.length === 0 ? (
             <p className="empty-state">
               No one-time manual entries exist yet. Create shared reimbursements, rent
               corrections, bonuses, or other non-imported items here.
             </p>
           ) : null}
 
-          {!isLoading && oneTimeManualEntries.length > 0 ? (
+          {!isLoading && showManualsTable && oneTimeManualEntries.length > 0 ? (
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -1106,15 +1217,9 @@ export function ExpensesPageClient({
           <div>
             <h2>Imported transactions</h2>
             <p className="muted-text">
-              Classification still lives in the review queue, while reportable transactions
-              can have their reporting period adjusted from this complete history.
+              Classification still lives in Review. History is for looking up a month or
+              statement and adjusting reporting details.
             </p>
-          </div>
-          <div className="action-row">
-            <Link className="button button-secondary" href="/transactions/review">
-              {reviewCount > 0 ? `Review ${reviewCount} left` : "Open review queue"}
-            </Link>
-            <Link className="button" href="/reports">Open reports</Link>
           </div>
         </div>
 
@@ -1147,7 +1252,7 @@ export function ExpensesPageClient({
                 <span>Transaction month</span>
               <select
                 className="input"
-                value={monthFilter}
+                value={monthSelectValue}
                 onChange={(event) => setMonthFilter(event.target.value)}
               >
                 <option value="all">All months</option>
@@ -1162,13 +1267,13 @@ export function ExpensesPageClient({
               <span>Import</span>
               <select
                 className="input"
-                value={importFilter}
+                value={importSelectValue}
                 onChange={(event) => setImportFilter(event.target.value)}
               >
                 <option value="all">All imports</option>
                 {availableImports.map((item) => (
                   <option key={item.id} value={item.id}>
-                    {item.label} · {item.count} row{item.count === 1 ? "" : "s"}
+                    {item.label}
                   </option>
                 ))}
               </select>
@@ -1177,11 +1282,11 @@ export function ExpensesPageClient({
 
           <div className="page-actions">
             <p className="helper-text">
-              Showing {visibleTransactions.length} of {transactions.length} imported
-              transaction{transactions.length === 1 ? "" : "s"}.
+              Showing {visibleTransactions.length} of {pagination.filteredCount} imported
+              transaction{pagination.filteredCount === 1 ? "" : "s"} in this scope.
             </p>
             {filtersActive ? (
-              <button className="link-button" type="button" onClick={clearLedgerFilters}>
+              <button className="link-button" type="button" onClick={clearHistoryFilters}>
                 Clear filters
               </button>
             ) : null}
@@ -1192,13 +1297,9 @@ export function ExpensesPageClient({
 
         {!isLoading && transactions.length === 0 ? (
           <p className="empty-state">
-            No persisted transactions yet. Save an import first and they will show up here.
-          </p>
-        ) : null}
-
-        {!isLoading && transactions.length > 0 && visibleTransactions.length === 0 ? (
-          <p className="empty-state">
-            No imported rows match the current search or filters.
+            {scope.totalCount === 0
+              ? "No imported transactions in this scope yet. Save an import first and they will show up here."
+              : "No imported rows match the current search or filters."}
           </p>
         ) : null}
 
@@ -1341,6 +1442,30 @@ export function ExpensesPageClient({
           </div>
         ) : null}
 
+        {!isLoading && pagination.filteredCount > 0 ? (
+          <nav className="review-pagination" aria-label="History pages">
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={pagination.page <= 1}
+              onClick={() => setPage((current) => Math.max(current - 1, 1))}
+            >
+              Previous page
+            </button>
+            <p aria-live="polite">
+              Page <strong>{pagination.page}</strong> of <strong>{pagination.totalPages}</strong>
+            </p>
+            <button
+              className="button button-secondary"
+              type="button"
+              disabled={pagination.page >= pagination.totalPages}
+              onClick={() => setPage((current) => Math.min(current + 1, pagination.totalPages))}
+            >
+              Next page
+            </button>
+          </nav>
+        ) : null}
+
       </article>
 
       <Modal
@@ -1348,7 +1473,7 @@ export function ExpensesPageClient({
         onClose={() => setIsClassificationModalOpen(false)}
         size="wide"
         title={selectedTransaction?.classification ? "Edit classification" : "Classify transaction"}
-        description="Update how this transaction should be treated in the household ledger."
+        description="Update how this transaction should be treated in reports."
       >
         {selectedTransaction ? (
           <div className="stack compact">

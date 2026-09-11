@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import { manualEntries, manualEntryOverrides, workspaceMembers } from "@/db/schema";
@@ -15,6 +15,7 @@ import {
   normalizeOptionalWorkspaceCategoryName,
   resolveWorkspaceCategory,
 } from "@/features/workspaces/categories";
+import { addMonths, monthKey } from "@/lib/dates/months";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import type {
   OneTimeManualEntryClassificationType,
@@ -124,7 +125,23 @@ function validateOneTimeManualEntry(input: {
 export async function listOneTimeManualEntries(
   context: CurrentWorkspaceContext,
   db: DbExecutor = getDb(),
+  options?: { month?: string },
 ): Promise<OneTimeManualEntryItem[]> {
+  const filters = [
+    eq(manualEntries.workspaceId, context.workspaceId),
+    eq(manualEntries.sourceType, "one_time_manual"),
+    inArray(
+      manualEntries.classificationType,
+      ONE_TIME_MANUAL_ENTRY_CLASSIFICATION_TYPES,
+    ),
+  ];
+  if (options?.month && /^\d{4}-\d{2}$/.test(options.month)) {
+    const monthStart = `${options.month}-01`;
+    const nextMonthStart = monthKey(addMonths(new Date(`${monthStart}T00:00:00.000Z`), 1));
+    filters.push(gte(manualEntries.eventDate, monthStart));
+    filters.push(lt(manualEntries.eventDate, nextMonthStart));
+  }
+
   const entries = await db
     .select({
       id: manualEntries.id,
@@ -143,16 +160,7 @@ export async function listOneTimeManualEntries(
       eventDate: manualEntries.eventDate,
     })
     .from(manualEntries)
-    .where(
-      and(
-        eq(manualEntries.workspaceId, context.workspaceId),
-        eq(manualEntries.sourceType, "one_time_manual"),
-        inArray(
-          manualEntries.classificationType,
-          ONE_TIME_MANUAL_ENTRY_CLASSIFICATION_TYPES,
-        ),
-      ),
-    )
+    .where(and(...filters))
     .orderBy(desc(manualEntries.eventDate), desc(manualEntries.createdAt));
   const [members, allocationStatesByManualEntryId] = await Promise.all([
     listWorkspaceMembers(context, db),
