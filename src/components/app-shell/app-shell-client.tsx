@@ -3,11 +3,16 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import {
+  AccountControl,
+  type AccountControlProps,
+} from "@/components/app-shell/account-control";
 import type { AppNavigation, AppNavItem } from "@/components/app-shell/nav";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { PRODUCT_NAME } from "@/lib/brand";
 
 type AppShellClientProps = {
+  account: AccountControlProps;
   navigation: AppNavigation;
   reviewBadge: React.ReactNode;
   children: React.ReactNode;
@@ -65,7 +70,34 @@ function MobileNavItem({
   );
 }
 
+function DesktopNavLink({
+  item,
+  pathname,
+  reviewBadge,
+}: {
+  item: AppNavItem;
+  pathname: string;
+  reviewBadge: React.ReactNode;
+}) {
+  const active = isActivePath(pathname, item);
+
+  return (
+    <Link
+      className={`app-nav-link ${active ? "app-nav-link-active" : ""}`}
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+    >
+      <span>{item.label}</span>
+      <span className="app-nav-meta">
+        {item.betaLabel ? <span className="nav-chip">{item.betaLabel}</span> : null}
+        <AttentionBadge item={item} reviewBadge={reviewBadge} />
+      </span>
+    </Link>
+  );
+}
+
 export function AppShellClient({
+  account,
   navigation,
   reviewBadge,
   children,
@@ -90,28 +122,22 @@ export function AppShellClient({
               <div className="app-nav-section" key={section.title}>
                 <p className="app-nav-title">{section.title}</p>
                 <div className="app-nav-list">
-                  {section.items.map((item) => {
-                    const active = isActivePath(pathname, item);
-
-                    return (
-                      <Link
-                        className={`app-nav-link ${active ? "app-nav-link-active" : ""}`}
-                        href={item.href}
-                        aria-current={active ? "page" : undefined}
-                        key={item.href}
-                      >
-                        <span>{item.label}</span>
-                        <span className="app-nav-meta">
-                          {item.betaLabel ? <span className="nav-chip">{item.betaLabel}</span> : null}
-                          <AttentionBadge item={item} reviewBadge={reviewBadge} />
-                        </span>
-                      </Link>
-                    );
-                  })}
+                  {section.items.map((item) => (
+                    <DesktopNavLink
+                      item={item}
+                      key={item.href}
+                      pathname={pathname}
+                      reviewBadge={reviewBadge}
+                    />
+                  ))}
                 </div>
               </div>
             ))}
           </nav>
+
+          <div className="app-sidebar-footer">
+            <AccountControl {...account} />
+          </div>
         </div>
       </aside>
 
@@ -121,6 +147,7 @@ export function AppShellClient({
             <p className="app-kicker">{PRODUCT_NAME}</p>
             <h1>{currentItem?.label ?? "Home"}</h1>
           </div>
+          <AccountControl {...account} />
         </header>
 
         <div className="app-main-scroll">{children}</div>

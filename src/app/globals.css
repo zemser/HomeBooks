@@ -70,9 +70,9 @@ main {
 
 .app-sidebar-inner {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 1.25rem;
   height: 100%;
-  align-content: start;
 }
 
 .app-brand {
@@ -141,6 +141,9 @@ main {
 .app-nav {
   display: grid;
   gap: 1.25rem;
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
 }
 
 .app-nav-section {
@@ -192,6 +195,82 @@ main {
   display: inline-flex;
   gap: 0.45rem;
   align-items: center;
+}
+
+.app-sidebar-footer {
+  min-width: 0;
+}
+
+.app-account {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  min-width: 0;
+  padding: 0.45rem 0.55rem 0.45rem 0.45rem;
+  border-radius: 1rem;
+  color: inherit;
+  transform-origin: center;
+  transition:
+    background 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 100ms ease-out;
+}
+
+.app-account:active {
+  transform: scale(0.97);
+}
+
+.app-account-avatar {
+  display: inline-grid;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1;
+}
+
+.app-account-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.app-account-copy strong {
+  overflow: hidden;
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-account-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-account-active {
+  background: var(--accent-soft);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .app-account:hover {
+    background: rgba(255, 255, 255, 0.72);
+  }
+
+  .app-account-active:hover {
+    background: var(--accent-soft);
+  }
 }
 
 .nav-chip,
@@ -836,11 +915,14 @@ select.input:focus {
 
 @media (prefers-reduced-motion: reduce) {
   .app-brand,
+  .app-account,
+  .app-nav-link,
   .button {
     transition: none;
   }
 
   .app-brand:active,
+  .app-account:active,
   .button:active:not(:disabled) {
     transform: none;
   }
@@ -854,6 +936,11 @@ select.input:focus {
   .app-brand-mark {
     background: var(--accent);
     box-shadow: none;
+  }
+
+  .app-mobile-header {
+    background: var(--background);
+    backdrop-filter: none;
   }
 }
 
@@ -2741,20 +2828,47 @@ kbd {
   }
 
   .app-mobile-header {
-    display: grid;
+    display: flex;
     gap: 0.9rem;
+    align-items: center;
+    justify-content: space-between;
     position: sticky;
     top: 0;
     z-index: 20;
-    padding: 1rem;
-    border-bottom: 1px solid var(--border);
-    background: rgba(251, 250, 246, 0.94);
-    backdrop-filter: blur(16px);
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid transparent;
+    background: rgba(251, 250, 246, 0.72);
+    backdrop-filter: blur(20px) saturate(180%);
+    box-shadow: 0 1px 0 rgba(230, 223, 210, 0.85);
+  }
+
+  .app-mobile-header > div:first-child {
+    min-width: 0;
   }
 
   .app-mobile-header h1 {
     margin: 0.25rem 0 0;
     font-size: 1.25rem;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
+  }
+
+  .app-mobile-header .app-account {
+    flex: none;
+    width: 2.75rem;
+    height: 2.75rem;
+    padding: 0;
+    border-radius: 999px;
+    justify-content: center;
+  }
+
+  .app-mobile-header .app-account-copy {
+    display: none;
+  }
+
+  .app-mobile-header .app-account-avatar {
+    width: 2.25rem;
+    height: 2.25rem;
   }
 
   .app-mobile-nav {
@@ -2791,5 +2905,13 @@ kbd {
   .app-mobile-nav-item-active {
     background: var(--accent-soft);
     color: var(--accent);
+  }
+}
+
+@media (max-width: 1024px) and (prefers-reduced-transparency: reduce) {
+  .app-mobile-header,
+  .app-mobile-nav {
+    background: var(--background);
+    backdrop-filter: none;
   }
 }
