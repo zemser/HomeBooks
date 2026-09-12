@@ -89,13 +89,9 @@ main {
   transform: scale(0.97);
 }
 
-.app-brand strong,
-.workspace-glance h2 {
+.app-brand strong {
   display: block;
   margin: 0;
-}
-
-.app-brand strong {
   font-weight: 700;
   letter-spacing: -0.03em;
   line-height: 1.15;
@@ -131,21 +127,6 @@ main {
   display: block;
   width: 56%;
   height: 56%;
-}
-
-.workspace-glance {
-  display: grid;
-  gap: 0.65rem;
-  padding: 1rem;
-  border: 1px solid var(--border);
-  border-radius: 1.25rem;
-  background: rgba(255, 255, 255, 0.7);
-}
-
-.workspace-glance p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.5;
 }
 
 .app-kicker {

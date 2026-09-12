@@ -9,7 +9,6 @@ import { PRODUCT_NAME } from "@/lib/brand";
 
 type AppShellClientProps = {
   navigation: AppNavigation;
-  workspaceGlance: React.ReactNode;
   reviewBadge: React.ReactNode;
   children: React.ReactNode;
 };
@@ -68,7 +67,6 @@ function MobileNavItem({
 
 export function AppShellClient({
   navigation,
-  workspaceGlance,
   reviewBadge,
   children,
 }: AppShellClientProps) {
@@ -86,8 +84,6 @@ export function AppShellClient({
               <small>Shared household money</small>
             </span>
           </Link>
-
-          {workspaceGlance}
 
           <nav className="app-nav" aria-label="Primary application">
             {navigation.desktopSections.map((section) => (
