@@ -2,12 +2,13 @@
 
 import { randomUUID } from "node:crypto";
 
-import { eq, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { redirect } from "next/navigation";
 
 import { withDbTransaction } from "@/db";
-import { users, workspaceMembers, workspaces } from "@/db/schema";
+import { workspaceMembers, workspaces } from "@/db/schema";
 import { requireAal2Context } from "@/features/auth/supabase-user";
+import { displayNameFromAuth, ensureAppUser } from "@/features/workspaces/app-user";
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 
 function getString(formData: FormData, key: string) {
@@ -21,9 +22,7 @@ export async function createFirstWorkspaceAction(formData: FormData) {
   const workspaceName = getString(formData, "workspaceName") || "Household Workspace";
   const displayName =
     getString(formData, "displayName")
-    || (typeof authUser.userMetadata?.name === "string" ? authUser.userMetadata.name : "")
-    || authUser.email?.split("@")[0]
-    || "Finance user";
+    || displayNameFromAuth(authUser);
   const baseCurrency = (getString(formData, "baseCurrency") || "ILS").toUpperCase();
 
   if (!/^[A-Z]{3}$/.test(baseCurrency)) {
@@ -33,33 +32,7 @@ export async function createFirstWorkspaceAction(formData: FormData) {
   await withDbTransaction(authUser.userId, async (tx) => {
       await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${authUser.userId}))`);
 
-      let user = await tx.query.users.findFirst({
-        where: eq(users.id, authUser.userId),
-      });
-
-      if (!user) {
-        const [insertedUser] = await tx
-          .insert(users)
-          .values({
-            id: authUser.userId,
-            email: authUser.email ?? `${authUser.userId}@supabase.local`,
-            displayName,
-          })
-          .onConflictDoNothing({
-            target: users.id,
-          })
-          .returning();
-
-        user =
-          insertedUser
-          ?? await tx.query.users.findFirst({
-        where: eq(users.id, authUser.userId),
-          });
-      }
-
-      if (!user) {
-        throw new Error("Could not create or load the authenticated app user.");
-      }
+      const user = await ensureAppUser(tx, authUser, displayName);
 
       const existingMember = await tx.query.workspaceMembers.findFirst({
         where: (members, { and, eq }) => and(

@@ -179,6 +179,31 @@ Constraints:
 
 - unique `(workspace_id, user_id)`
 
+### `workspace_invites`
+
+Pending and resolved email invites onto a workspace. Membership is created when the invited account accepts. A user may belong to more than one workspace.
+
+```text
+id uuid pk
+workspace_id uuid fk -> workspaces.id not null
+invited_email text not null
+invited_by_user_id uuid fk -> users.id not null
+role text not null default member
+status text not null default pending
+workspace_name_snapshot text not null
+invited_by_display_name text not null
+accepted_by_user_id uuid fk -> users.id nullable
+created_at timestamptz not null
+updated_at timestamptz not null
+```
+
+Constraints:
+
+- unique pending `(workspace_id, invited_email)` where `status = pending`
+- `invited_email` stored lowercase
+- `status` in `pending`, `accepted`, `declined`, `revoked`
+- `role` in `owner`, `member`
+
 ## Imports
 
 ### `import_sources`

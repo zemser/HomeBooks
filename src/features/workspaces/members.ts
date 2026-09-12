@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { and, asc, eq } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
@@ -33,6 +31,7 @@ function toSettingsItem(row: {
   id: string;
   displayNameOverride: string | null;
   userDisplayName: string;
+  email: string;
   isActive: boolean;
   role: string;
 }) {
@@ -41,6 +40,7 @@ function toSettingsItem(row: {
     displayName: row.displayNameOverride?.trim() || row.userDisplayName,
     displayNameOverride: row.displayNameOverride?.trim() || null,
     userDisplayName: row.userDisplayName,
+    email: row.email,
     isActive: row.isActive,
     role: normalizeRole(row.role),
   } satisfies WorkspaceMemberSettingsItem;
@@ -55,6 +55,7 @@ export async function listWorkspaceMembersForSettings(
       id: workspaceMembers.id,
       displayNameOverride: workspaceMembers.displayNameOverride,
       userDisplayName: users.displayName,
+      email: users.email,
       isActive: workspaceMembers.isActive,
       role: workspaceMembers.role,
     })
@@ -81,48 +82,6 @@ export async function listWorkspaceMembersForSettings(
     });
 }
 
-export async function createWorkspaceMember(
-  context: CurrentWorkspaceContext,
-  db: DbExecutor = getDb(),
-  input: {
-    displayName: string;
-  },
-) {
-  const displayName = normalizeDisplayName(input.displayName);
-
-  const [createdUser] = await db
-      .insert(users)
-      .values({
-        email: `member-${randomUUID()}@placeholder.finapp.local`,
-        displayName,
-      })
-      .returning({
-        id: users.id,
-        displayName: users.displayName,
-      });
-
-    const [createdMember] = await db
-      .insert(workspaceMembers)
-      .values({
-        workspaceId: context.workspaceId,
-        userId: createdUser.id,
-        role: "member",
-        displayNameOverride: null,
-        isActive: true,
-      })
-      .returning({
-        id: workspaceMembers.id,
-        displayNameOverride: workspaceMembers.displayNameOverride,
-        isActive: workspaceMembers.isActive,
-        role: workspaceMembers.role,
-      });
-
-  return toSettingsItem({
-      ...createdMember,
-      userDisplayName: createdUser.displayName,
-  });
-}
-
 export async function updateWorkspaceMember(
   context: CurrentWorkspaceContext,
   db: DbExecutor = getDb(),
@@ -141,6 +100,7 @@ export async function updateWorkspaceMember(
         isActive: workspaceMembers.isActive,
         displayNameOverride: workspaceMembers.displayNameOverride,
         userDisplayName: users.displayName,
+        email: users.email,
       })
       .from(workspaceMembers)
       .innerJoin(users, eq(users.id, workspaceMembers.userId))
@@ -209,5 +169,6 @@ export async function updateWorkspaceMember(
   return toSettingsItem({
       ...updatedMember,
       userDisplayName: existing.userDisplayName,
+      email: existing.email,
   });
 }

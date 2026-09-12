@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { ConfirmationModal } from "@/components/shared/confirmation-modal";
 import type {
   WorkspaceCategoryItem,
+  WorkspaceInviteItem,
   WorkspaceMemberRole,
   WorkspaceMemberSettingsItem,
   WorkspaceSettingsSnapshot,
@@ -28,10 +29,18 @@ type WorkspaceCategoryMutationResponse = {
   error?: string;
 };
 
+type WorkspaceInvitesResponse = {
+  invites?: WorkspaceInviteItem[];
+  error?: string;
+};
+
 type SettingsPageClientProps = {
+  currentMemberRole: WorkspaceMemberRole;
   initialSettings: WorkspaceSettingsSnapshot;
   initialMembers: WorkspaceMemberSettingsItem[];
   initialCategories: WorkspaceCategoryItem[];
+  initialInvites: WorkspaceInviteItem[];
+  initialIncomingInvites: WorkspaceInviteItem[];
 };
 
 function buildNameDrafts(members: WorkspaceMemberSettingsItem[]) {
@@ -47,13 +56,18 @@ function buildCategoryDrafts(categories: WorkspaceCategoryItem[]) {
 }
 
 export function SettingsPageClient({
+  currentMemberRole,
   initialSettings,
   initialMembers,
   initialCategories,
+  initialInvites,
+  initialIncomingInvites,
 }: SettingsPageClientProps) {
   const [settings, setSettings] = useState(initialSettings);
   const [members, setMembers] = useState<WorkspaceMemberSettingsItem[]>(initialMembers);
   const [categories, setCategories] = useState<WorkspaceCategoryItem[]>(initialCategories);
+  const [invites, setInvites] = useState<WorkspaceInviteItem[]>(initialInvites);
+  const [incomingInvites, setIncomingInvites] = useState<WorkspaceInviteItem[]>(initialIncomingInvites);
   const [draftNames, setDraftNames] = useState<Record<string, string>>(() => buildNameDrafts(initialMembers));
   const [draftRoles, setDraftRoles] = useState<Record<string, WorkspaceMemberRole>>(
     () => buildRoleDrafts(initialMembers),
@@ -64,15 +78,17 @@ export function SettingsPageClient({
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [baseCurrencyDraft, setBaseCurrencyDraft] = useState(initialSettings.baseCurrency);
   const [newCategoryName, setNewCategoryName] = useState("");
-  const [newMemberName, setNewMemberName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [pendingMemberId, setPendingMemberId] = useState<string | null>(null);
+  const [pendingInviteId, setPendingInviteId] = useState<string | null>(null);
   const [pendingCategoryId, setPendingCategoryId] = useState<string | null>(null);
   const [categoryPendingDeletion, setCategoryPendingDeletion] = useState<WorkspaceCategoryItem | null>(null);
   const [isSavingBaseCurrency, setIsSavingBaseCurrency] = useState(false);
   const [isSavingCategory, setIsSavingCategory] = useState(false);
   const [isSaving, startSaving] = useTransition();
+  const canInvite = currentMemberRole === "owner";
 
   async function loadMembers() {
     setError(null);
@@ -121,34 +137,106 @@ export function SettingsPageClient({
     }
   }
 
-  async function handleCreateMember() {
+  async function loadInvites() {
+    setError(null);
+
+    try {
+      const response = await fetch("/api/workspace-invites");
+      const payload = (await response.json()) as WorkspaceInvitesResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "Could not load workspace invites.");
+      }
+
+      setInvites(payload.invites ?? []);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Could not load workspace invites.",
+      );
+    }
+  }
+
+  async function handleCreateInvite() {
     setError(null);
     setMessage(null);
-    setPendingMemberId("new");
+    setPendingInviteId("new");
 
-    const response = await fetch("/api/workspace-members", {
+    const response = await fetch("/api/workspace-invites", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        displayName: newMemberName,
+        email: inviteEmail,
       }),
     });
     const payload = (await response.json().catch(() => ({}))) as {
       error?: string;
     };
 
-    setPendingMemberId(null);
+    setPendingInviteId(null);
 
     if (!response.ok) {
-      setError(payload.error ?? "Could not create workspace member.");
+      setError(payload.error ?? "Could not send the invite.");
       return;
     }
 
-    setNewMemberName("");
-    await loadMembers();
-    setMessage("Workspace member created.");
+    setInviteEmail("");
+    await loadInvites();
+    setMessage("Invite saved. They can join after signing in with that email.");
+  }
+
+  async function handleRevokeInvite(inviteId: string) {
+    setError(null);
+    setMessage(null);
+    setPendingInviteId(inviteId);
+
+    const response = await fetch(`/api/workspace-invites/${inviteId}`, {
+      method: "DELETE",
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+
+    setPendingInviteId(null);
+
+    if (!response.ok) {
+      setError(payload.error ?? "Could not revoke the invite.");
+      return;
+    }
+
+    await loadInvites();
+    setMessage("Invite revoked.");
+  }
+
+  async function handleIncomingInvite(inviteId: string, action: "accept" | "decline") {
+    setError(null);
+    setMessage(null);
+    setPendingInviteId(inviteId);
+
+    const response = await fetch(`/api/workspace-invites/${inviteId}/${action}`, {
+      method: "POST",
+    });
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+    };
+
+    setPendingInviteId(null);
+
+    if (!response.ok) {
+      setError(payload.error ?? `Could not ${action} the invite.`);
+      return;
+    }
+
+    if (action === "accept") {
+      window.location.assign("/");
+      return;
+    }
+
+    setIncomingInvites((current) => current.filter((invite) => invite.id !== inviteId));
+    setMessage("Invite declined.");
   }
 
   async function handleCreateCategory() {
@@ -590,7 +678,7 @@ export function SettingsPageClient({
             <h2>Optional shared settlements</h2>
             <p className="muted-text">
               The rest of the app works fine for one person. Shared settlements only matter if
-              you later want to split expenses with another active member.
+              you later want to split expenses with someone who has joined.
             </p>
           </div>
         </div>
@@ -618,51 +706,163 @@ export function SettingsPageClient({
           {settlementReady
             ? "Shared settlements are available if you want to use them."
             : activeMembers.length < 2
-              ? "Solo use is fully supported. Add another active member only if you want shared settlements later."
+              ? "Solo use is fully supported. Invite someone later if you want shared settlements."
               : "You have more than one active member, so shared settlements are available if you need them."}
         </p>
       </article>
+
+      {incomingInvites.length > 0 ? (
+        <article className="card stack compact">
+          <div className="page-actions">
+            <div>
+              <h2>Invites for you</h2>
+              <p className="muted-text">
+                Accepting joins that household. The most recently joined workspace is the one
+                you see until we add a switcher.
+              </p>
+            </div>
+          </div>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Workspace</th>
+                  <th>Invited by</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {incomingInvites.map((invite) => (
+                  <tr key={invite.id}>
+                    <td>
+                      <strong>{invite.workspaceName}</strong>
+                      <div className="table-note">{invite.invitedEmail}</div>
+                    </td>
+                    <td>{invite.invitedByDisplayName}</td>
+                    <td>
+                      <div className="action-row">
+                        <button
+                          className="button"
+                          type="button"
+                          disabled={pendingInviteId === invite.id}
+                          onClick={() =>
+                            startSaving(() => {
+                              void handleIncomingInvite(invite.id, "accept");
+                            })
+                          }
+                        >
+                          {pendingInviteId === invite.id ? "Joining..." : "Join"}
+                        </button>
+                        <button
+                          className="button button-secondary"
+                          type="button"
+                          disabled={pendingInviteId === invite.id}
+                          onClick={() =>
+                            startSaving(() => {
+                              void handleIncomingInvite(invite.id, "decline");
+                            })
+                          }
+                        >
+                          Decline
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      ) : null}
 
       <article className="card stack compact">
         <div className="page-actions">
           <div>
             <h2>Household members</h2>
             <p className="muted-text">
-              Add or rename people here if you want collaborators in the workspace. Solo
-              users can ignore this section.
+              Invite someone with their email. They join after signing in with that same
+              address. No email is sent from the app.
             </p>
           </div>
         </div>
 
-        <form
-          className="inline-form"
-          onSubmit={(event) => {
-            event.preventDefault();
-            startSaving(() => {
-              void handleCreateMember();
-            });
-          }}
-        >
-          <label className="field">
-            <span>New member display name</span>
-            <input
-              className="input"
-              value={newMemberName}
-              onChange={(event) => setNewMemberName(event.target.value)}
-              placeholder="Alex"
-            />
-          </label>
-          <div className="field">
-            <span>&nbsp;</span>
-            <button
-              className="button"
-              type="submit"
-              disabled={isSaving || pendingMemberId === "new"}
-            >
-              {pendingMemberId === "new" ? "Creating..." : "Add member"}
-            </button>
+        {canInvite ? (
+          <form
+            className="inline-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              startSaving(() => {
+                void handleCreateInvite();
+              });
+            }}
+          >
+            <label className="field">
+              <span>Invite email</span>
+              <input
+                autoCapitalize="none"
+                autoComplete="email"
+                className="input"
+                onChange={(event) => setInviteEmail(event.target.value)}
+                placeholder="alex@example.com"
+                type="email"
+                value={inviteEmail}
+              />
+            </label>
+            <div className="field">
+              <span>&nbsp;</span>
+              <button
+                className="button"
+                disabled={isSaving || pendingInviteId === "new"}
+                type="submit"
+              >
+                {pendingInviteId === "new" ? "Saving..." : "Invite"}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <p className="muted-text">Ask an owner if you want to invite someone else.</p>
+        )}
+
+        {invites.length > 0 ? (
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Pending invite</th>
+                  <th>Invited by</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {invites.map((invite) => (
+                  <tr key={invite.id}>
+                    <td>
+                      <strong>{invite.invitedEmail}</strong>
+                      <div className="table-note">Waiting for them to sign in and join</div>
+                    </td>
+                    <td>{invite.invitedByDisplayName}</td>
+                    <td>
+                      {canInvite ? (
+                        <button
+                          className="button button-secondary"
+                          disabled={pendingInviteId === invite.id}
+                          onClick={() =>
+                            startSaving(() => {
+                              void handleRevokeInvite(invite.id);
+                            })
+                          }
+                          type="button"
+                        >
+                          {pendingInviteId === invite.id ? "Revoking..." : "Revoke"}
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </form>
+        ) : null}
 
         {members.length === 0 ? (
           <p className="empty-state">No workspace members found yet.</p>
@@ -697,7 +897,7 @@ export function SettingsPageClient({
                   <tr key={member.id}>
                     <td>
                       <strong>{member.displayName}</strong>
-                      <div className="table-note">Account name: {member.userDisplayName}</div>
+                      <div className="table-note">{member.email}</div>
                     </td>
                     <td className="member-status-cell">
                       <span className={`badge ${member.isActive ? "badge-neutral" : "badge-warning"}`}>
@@ -775,7 +975,7 @@ export function SettingsPageClient({
 
         <p className="muted-text">
           At least one active owner and one active household member must remain. That keeps the
-          workspace usable even if you never add anyone else.
+          workspace usable even if you never invite anyone else.
         </p>
       </article>
     </section>

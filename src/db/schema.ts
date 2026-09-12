@@ -14,6 +14,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -128,6 +129,51 @@ export const workspaceMembers = pgTable(
   },
   (table) => ({
     workspaceUserUnique: unique().on(table.workspaceId, table.userId),
+  }),
+);
+
+export const workspaceInvites = pgTable(
+  "workspace_invites",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    workspaceId: uuid("workspace_id")
+      .notNull()
+      .references(() => workspaces.id),
+    invitedEmail: text("invited_email").notNull(),
+    invitedByUserId: uuid("invited_by_user_id")
+      .notNull()
+      .references(() => users.id),
+    role: text("role").notNull().default("member"),
+    status: text("status").notNull().default("pending"),
+    workspaceNameSnapshot: text("workspace_name_snapshot").notNull(),
+    invitedByDisplayName: text("invited_by_display_name").notNull(),
+    acceptedByUserId: uuid("accepted_by_user_id").references(() => users.id),
+    ...timestamps,
+  },
+  (table) => ({
+    pendingEmailUnique: uniqueIndex("workspace_invites_pending_email_unique")
+      .on(table.workspaceId, table.invitedEmail)
+      .where(sql`${table.status} = 'pending'`),
+    emailStatusIdx: index("workspace_invites_email_status_idx").on(
+      table.invitedEmail,
+      table.status,
+    ),
+    workspaceCreatedIdx: index("workspace_invites_workspace_created_idx").on(
+      table.workspaceId,
+      table.createdAt,
+    ),
+    statusCheck: check(
+      "workspace_invites_status_check",
+      sql`${table.status} in ('pending', 'accepted', 'declined', 'revoked')`,
+    ),
+    roleCheck: check(
+      "workspace_invites_role_check",
+      sql`${table.role} in ('owner', 'member')`,
+    ),
+    emailLowerCheck: check(
+      "workspace_invites_email_lower_check",
+      sql`${table.invitedEmail} = lower(${table.invitedEmail})`,
+    ),
   }),
 );
 

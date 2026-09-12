@@ -15,6 +15,10 @@ const membersPath = new URL(
   "../../src/features/workspaces/members.ts",
   import.meta.url,
 );
+const invitesPath = new URL(
+  "../../src/features/workspaces/invites.ts",
+  import.meta.url,
+);
 const settingsPath = new URL(
   "../../src/features/workspaces/settings.ts",
   import.meta.url,
@@ -98,17 +102,20 @@ test("workspace context and onboarding use the explicit transaction boundary", a
 });
 
 test("workspace settings and member services accept an explicit executor", async () => {
-  const [membersSource, settingsSource, contextSource] = await Promise.all([
+  const [membersSource, settingsSource, contextSource, invitesSource] = await Promise.all([
     readFile(membersPath, "utf8"),
     readFile(settingsPath, "utf8"),
     readFile(contextPath, "utf8"),
+    readFile(invitesPath, "utf8"),
   ]);
 
   assert.match(contextSource, /export async function withCurrentWorkspaceDb/);
   assert.match(membersSource, /db: DbExecutor = getDb\(\)/);
   assert.match(settingsSource, /db: DbExecutor = getDb\(\)/);
+  assert.match(invitesSource, /db: DbExecutor = getDb\(\)/);
   assert.doesNotMatch(membersSource, /db\.transaction\(/);
   assert.doesNotMatch(settingsSource, /db\.transaction\(/);
+  assert.doesNotMatch(invitesSource, /db\.transaction\(/);
 });
 
 test("home and app-shell reads use the explicit transaction executor", async () => {
