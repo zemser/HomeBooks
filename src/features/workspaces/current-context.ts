@@ -8,7 +8,7 @@ import { runWithDatabaseUser } from "@/db/request-context";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
 import {
   AuthContextError,
-  requireAal2Context,
+  requireAuthenticatedContext,
   type VerifiedAuthContext,
 } from "@/features/auth/supabase-user";
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
@@ -212,10 +212,10 @@ async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestC
 async function resolveSupabaseRequestContext(): Promise<AuthenticatedRequestContext> {
   let authContext;
   try {
-    authContext = await requireAal2Context();
+    authContext = await requireAuthenticatedContext();
   } catch (error) {
     if (error instanceof AuthContextError) {
-      redirect(error.status === 401 ? "/sign-in" : "/mfa");
+      redirect("/sign-in");
     }
     throw error;
   }

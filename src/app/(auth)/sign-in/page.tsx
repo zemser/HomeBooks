@@ -28,7 +28,7 @@ async function SignInForm({ searchParams }: SignInPageProps) {
       }
       testId="sign-in-shell"
       title="Welcome back"
-      trustLine="Then you’ll confirm a second-factor code. Data stays in this workspace."
+      trustLine="Data stays in this workspace."
     >
       <GoogleContinueForm from="sign-in" next={next} />
 
