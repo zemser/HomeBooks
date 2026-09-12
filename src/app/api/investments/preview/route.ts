@@ -5,12 +5,12 @@ import { parseInvestmentWorkbookToPreview } from "@/features/investments/parse-i
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 import { getFinappAuthMode } from "@/lib/supabase/config";
-import { requireAal2Context } from "@/features/auth/supabase-user";
+import { requireAuthenticatedContext } from "@/features/auth/supabase-user";
 
 
 export async function POST(request: Request) {
   if (getFinappAuthMode() === "supabase") {
-    await requireAal2Context();
+    await requireAuthenticatedContext();
   }
 
   const formData = await request.formData();

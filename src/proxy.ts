@@ -3,11 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getFinappAuthMode, getSupabasePublicConfig } from "@/lib/supabase/config";
 import { noRealtimeOptions } from "@/lib/supabase/noop-websocket";
-import {
-  MFA_PATH_PREFIXES,
-  PUBLIC_AUTH_PATH_PREFIXES,
-  matchesPathPrefix,
-} from "@/lib/routing/request-path";
+import { PUBLIC_AUTH_PATH_PREFIXES, matchesPathPrefix } from "@/lib/routing/request-path";
 
 function isPublicPath(pathname: string) {
   return matchesPathPrefix(pathname, PUBLIC_AUTH_PATH_PREFIXES);
@@ -15,10 +11,6 @@ function isPublicPath(pathname: string) {
 
 function isApiPath(pathname: string) {
   return pathname.startsWith("/api/");
-}
-
-function isMfaPath(pathname: string) {
-  return matchesPathPrefix(pathname, MFA_PATH_PREFIXES);
 }
 
 export async function proxy(request: NextRequest) {
@@ -66,19 +58,6 @@ export async function proxy(request: NextRequest) {
     redirectUrl.pathname = "/";
     redirectUrl.search = "";
     return NextResponse.redirect(redirectUrl);
-  }
-
-  if (user && !isMfaPath(pathname)) {
-    if (user.aal !== "aal2") {
-      if (isApiPath(pathname)) {
-        return NextResponse.json({ error: "Multi-factor authentication required." }, { status: 403 });
-      }
-
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/mfa";
-      redirectUrl.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
-      return NextResponse.redirect(redirectUrl);
-    }
   }
 
   return response;

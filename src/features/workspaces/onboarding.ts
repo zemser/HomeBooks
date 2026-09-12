@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 
 import { withDbTransaction } from "@/db";
 import { users, workspaceMembers, workspaces } from "@/db/schema";
-import { requireAal2Context } from "@/features/auth/supabase-user";
+import { requireAuthenticatedContext } from "@/features/auth/supabase-user";
 import { seedStarterWorkspaceCategories } from "@/features/workspaces/categories";
 
 function getString(formData: FormData, key: string) {
@@ -16,7 +16,7 @@ function getString(formData: FormData, key: string) {
 }
 
 export async function createFirstWorkspaceAction(formData: FormData) {
-  const authUser = await requireAal2Context();
+  const authUser = await requireAuthenticatedContext();
 
   const workspaceName = getString(formData, "workspaceName") || "Household Workspace";
   const displayName =

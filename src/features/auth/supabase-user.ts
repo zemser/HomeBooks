@@ -20,15 +20,11 @@ export class AuthContextError extends Error {
   }
 }
 
-export function assertAal2Claims(
+export function assertAuthenticatedClaims(
   claims: Pick<JwtPayload, "sub" | "aal"> | null,
 ): asserts claims is Pick<JwtPayload, "sub" | "aal"> {
   if (!claims?.sub) {
     throw new AuthContextError(401, "Authentication required.");
-  }
-
-  if (claims.aal !== "aal2") {
-    throw new AuthContextError(403, "Multi-factor authentication required.");
   }
 }
 
@@ -55,15 +51,12 @@ export const getSupabaseAuthContext = cache(async function getSupabaseAuthContex
   };
 });
 
-export async function requireAal2Context(): Promise<VerifiedAuthContext> {
+export async function requireAuthenticatedContext(): Promise<VerifiedAuthContext> {
   const context = await getSupabaseAuthContext();
 
   if (!context) {
-    assertAal2Claims(null);
-    throw new Error("Unreachable authentication state.");
+    throw new AuthContextError(401, "Authentication required.");
   }
-
-  assertAal2Claims({ sub: context.userId, aal: context.aal });
 
   return context;
 }
