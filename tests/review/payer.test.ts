@@ -11,6 +11,7 @@ import {
   compatibilityMemberOwnerId,
   getEventKindClassificationValidationMessage,
   getMemberAttributionValidationMessage,
+  importedMemberAttribution,
   memberAttributionFromSnapshot,
   normalizeClassificationForEventKind,
   reportScopeMemberId,
@@ -143,6 +144,83 @@ test("transfer and ignore never accept member fields", () => {
   }
 });
 
+test("imported attribution glues paid-by to the account and allows a personal-owner exception", () => {
+  assert.deepEqual(
+    importedMemberAttribution({
+      classificationType: "personal",
+      accountOwnerMemberId: "lee",
+    }),
+    {
+      personalOwnerMemberId: "lee",
+      paidByMemberId: "lee",
+      receivedByMemberId: null,
+    },
+  );
+  assert.deepEqual(
+    importedMemberAttribution({
+      classificationType: "personal",
+      accountOwnerMemberId: "lee",
+      personalOwnerMemberId: "izzy",
+      paidByMemberId: "izzy",
+    }),
+    {
+      personalOwnerMemberId: "izzy",
+      paidByMemberId: "lee",
+      receivedByMemberId: null,
+    },
+  );
+  assert.deepEqual(
+    importedMemberAttribution({
+      classificationType: "shared",
+      accountOwnerMemberId: "lee",
+      paidByMemberId: "izzy",
+    }),
+    {
+      personalOwnerMemberId: null,
+      paidByMemberId: "lee",
+      receivedByMemberId: null,
+    },
+  );
+  assert.deepEqual(
+    importedMemberAttribution({
+      classificationType: "income",
+      accountOwnerMemberId: "lee",
+      receivedByMemberId: "izzy",
+    }),
+    {
+      personalOwnerMemberId: null,
+      paidByMemberId: null,
+      receivedByMemberId: "lee",
+    },
+  );
+  assert.deepEqual(
+    importedMemberAttribution({
+      classificationType: "personal",
+      accountOwnerMemberId: "izzy",
+      personalOwnerMemberId: "lee",
+      selectedAccountOwnerMemberId: "lee",
+    }),
+    {
+      personalOwnerMemberId: "izzy",
+      paidByMemberId: "izzy",
+      receivedByMemberId: null,
+    },
+  );
+  assert.deepEqual(
+    importedMemberAttribution({
+      classificationType: "personal",
+      accountOwnerMemberId: null,
+      personalOwnerMemberId: "izzy",
+      paidByMemberId: "lee",
+    }),
+    {
+      personalOwnerMemberId: "izzy",
+      paidByMemberId: "lee",
+      receivedByMemberId: null,
+    },
+  );
+});
+
 test("imported default payer comes from the account owner and stays null when missing", () => {
   assert.equal(
     resolveImportedPaidByMemberId({
@@ -164,7 +242,7 @@ test("imported default payer comes from the account owner and stays null when mi
       paidByMemberId: "izzy",
       accountOwnerMemberId: "lee",
     }),
-    "izzy",
+    "lee",
   );
   assert.equal(
     resolveImportedPaidByMemberId({
@@ -172,7 +250,7 @@ test("imported default payer comes from the account owner and stays null when mi
       paidByMemberId: null,
       accountOwnerMemberId: "lee",
     }),
-    null,
+    "lee",
   );
   assert.equal(
     resolveImportedPaidByMemberId({

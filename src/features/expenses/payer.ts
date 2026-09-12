@@ -188,11 +188,39 @@ export function resolveImportedPaidByMemberId(input: {
     return null;
   }
 
+  if (input.accountOwnerMemberId) {
+    return input.accountOwnerMemberId;
+  }
+
   if (input.paidByMemberId !== undefined) {
     return input.paidByMemberId;
   }
 
-  return input.accountOwnerMemberId;
+  return null;
+}
+
+export function importedMemberAttribution(input: {
+  classificationType: ClassificationType;
+  accountOwnerMemberId: string | null;
+  personalOwnerMemberId?: string | null;
+  paidByMemberId?: string | null;
+  receivedByMemberId?: string | null;
+  selectedAccountOwnerMemberId?: string | null;
+}): MemberAttribution {
+  const requestedPersonalOwner = input.personalOwnerMemberId ?? null;
+  const selectedAccountOwner =
+    input.selectedAccountOwnerMemberId ?? input.accountOwnerMemberId;
+  const personalOwnerFollowsAccount =
+    !requestedPersonalOwner || requestedPersonalOwner === selectedAccountOwner;
+
+  return normalizeMemberAttribution({
+    classificationType: input.classificationType,
+    personalOwnerMemberId: personalOwnerFollowsAccount
+      ? input.accountOwnerMemberId ?? requestedPersonalOwner
+      : requestedPersonalOwner,
+    paidByMemberId: input.accountOwnerMemberId ?? input.paidByMemberId ?? null,
+    receivedByMemberId: input.accountOwnerMemberId ?? input.receivedByMemberId ?? null,
+  });
 }
 
 export function backfillImportedMemberAttribution(input: {

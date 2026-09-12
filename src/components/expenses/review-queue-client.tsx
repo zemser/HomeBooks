@@ -563,16 +563,20 @@ export function ReviewQueueClient({
       return;
     }
 
+    const accountOwnerMemberId = selectedTransaction.accountOwnerMemberId ?? "";
+    const classification = selectedTransaction.classification;
     setSingleForm({
-      classificationType: selectedTransaction.classification?.classificationType ?? "",
-      category: selectedTransaction.classification?.category ?? "",
-      categoryId: selectedTransaction.classification?.categoryId ?? "",
-      personalOwnerMemberId: selectedTransaction.classification?.personalOwnerMemberId ?? "",
-      paidByMemberId:
-        selectedTransaction.classification?.paidByMemberId ??
-        selectedTransaction.accountOwnerMemberId ??
-        "",
-      receivedByMemberId: selectedTransaction.classification?.receivedByMemberId ?? "",
+      classificationType: classification?.classificationType ?? "",
+      category: classification?.category ?? "",
+      categoryId: classification?.categoryId ?? "",
+      personalOwnerMemberId:
+        classification?.personalOwnerMemberId
+        ?? (classification?.classificationType && classification.classificationType !== "personal"
+          ? ""
+          : accountOwnerMemberId),
+      paidByMemberId: accountOwnerMemberId || classification?.paidByMemberId || "",
+      receivedByMemberId:
+        accountOwnerMemberId || classification?.receivedByMemberId || "",
       createRule: false,
       applyToSimilar: false,
     });
@@ -772,7 +776,11 @@ export function ReviewQueueClient({
         ?.focus();
       return;
     }
-    if (singleForm.classificationType === "personal" && !singleForm.personalOwnerMemberId) {
+    if (
+      singleForm.classificationType === "personal"
+      && !singleForm.personalOwnerMemberId
+      && !selectedTransaction.accountOwnerMemberId
+    ) {
       setError("Choose whose personal expense this is before saving.");
       memberSelectRef.current?.focus();
       return;
@@ -844,7 +852,14 @@ export function ReviewQueueClient({
       setError("Choose a classification type before applying a bulk update.");
       return;
     }
-    if (bulkForm.classificationType === "personal" && !bulkForm.personalOwnerMemberId) {
+    if (
+      bulkForm.classificationType === "personal"
+      && !bulkForm.personalOwnerMemberId
+      && selectedIds.some((transactionId) => {
+        const transaction = queue.find((item) => item.id === transactionId);
+        return !transaction?.accountOwnerMemberId;
+      })
+    ) {
       setError("Choose whose personal expenses these are before applying the bulk update.");
       return;
     }
@@ -993,6 +1008,15 @@ export function ReviewQueueClient({
         )
         .map((transaction) => transaction.id)
     : [];
+  const selectedQueueTransactions = queue.filter((transaction) => selectedIds.includes(transaction.id));
+  const bulkLockPayerToAccount = selectedQueueTransactions.length > 0
+    && selectedQueueTransactions.every((transaction) => Boolean(transaction.accountOwnerMemberId));
+  const bulkAccountOwnerMemberId = selectedQueueTransactions.length > 0
+    && selectedQueueTransactions.every(
+      (transaction) => transaction.accountOwnerMemberId === selectedQueueTransactions[0]?.accountOwnerMemberId,
+    )
+    ? selectedQueueTransactions[0]?.accountOwnerMemberId ?? null
+    : null;
   const selectedQueuePosition =
     selectedTransactionInQueue && selectedTransaction && visibleQueue.some((transaction) => transaction.id === selectedTransaction.id)
       ? visibleQueue.findIndex((transaction) => transaction.id === selectedTransaction.id) + 1
@@ -1009,9 +1033,12 @@ export function ReviewQueueClient({
   const ruleException = singleForm.classificationType ? merchantRuleExceptionMessage({
     classificationType: singleForm.classificationType,
     accountOwnerMemberId: selectedTransaction?.accountOwnerMemberId ?? null,
-    personalOwnerMemberId: singleForm.personalOwnerMemberId || null,
-    paidByMemberId: singleForm.paidByMemberId || null,
-    receivedByMemberId: singleForm.receivedByMemberId || null,
+    personalOwnerMemberId:
+      singleForm.personalOwnerMemberId || selectedTransaction?.accountOwnerMemberId || null,
+    paidByMemberId:
+      selectedTransaction?.accountOwnerMemberId || singleForm.paidByMemberId || null,
+    receivedByMemberId:
+      selectedTransaction?.accountOwnerMemberId || singleForm.receivedByMemberId || null,
   }) : "Choose a classification first.";
   const merchantCanCreateRule = Boolean(selectedTransaction?.merchantRaw?.trim()) && !ruleException;
   const allocationEditable =
@@ -1404,7 +1431,11 @@ export function ReviewQueueClient({
                   setBulkForm((current) => ({
                     ...current,
                     classificationType,
-                    ...memberAttributionForClassificationType(classificationType, current),
+                    ...memberAttributionForClassificationType(
+                      classificationType,
+                      current,
+                      bulkAccountOwnerMemberId ?? "",
+                    ),
                   }))
                 }
                 legend="Apply which treatment?"
@@ -1428,6 +1459,8 @@ export function ReviewQueueClient({
                   classificationType={bulkForm.classificationType}
                   value={bulkForm}
                   members={members}
+                  accountOwnerMemberId={bulkAccountOwnerMemberId}
+                  lockPayerToAccount={bulkLockPayerToAccount}
                   onChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
                 />
               ) : null}
@@ -1787,6 +1820,8 @@ export function ReviewQueueClient({
                     classificationType={singleForm.classificationType}
                     value={singleForm}
                     members={members}
+                    accountOwnerMemberId={selectedTransaction.accountOwnerMemberId}
+                    lockPayerToAccount={Boolean(selectedTransaction.accountOwnerMemberId)}
                     onChange={(next) => setSingleForm((current) => ({ ...current, ...next }))}
                     personalOwnerSelectRef={memberSelectRef}
                   />

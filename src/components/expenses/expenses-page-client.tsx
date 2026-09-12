@@ -518,19 +518,20 @@ export function ExpensesPageClient({
   }, [selectedTransaction]);
 
   useEffect(() => {
+    const classification = selectedTransaction?.classification;
+    const accountOwnerMemberId = selectedTransaction?.accountOwnerMemberId ?? "";
     setClassificationForm(
-      selectedTransaction?.classification
+      classification
         ? {
-            classificationType: selectedTransaction.classification.classificationType,
-            category: selectedTransaction.classification.category ?? "",
-            categoryId: selectedTransaction.classification.categoryId ?? "",
+            classificationType: classification.classificationType,
+            category: classification.category ?? "",
+            categoryId: classification.categoryId ?? "",
             personalOwnerMemberId:
-              selectedTransaction.classification.personalOwnerMemberId ?? "",
-            paidByMemberId:
-              selectedTransaction.classification.paidByMemberId ??
-              selectedTransaction.accountOwnerMemberId ??
-              "",
-            receivedByMemberId: selectedTransaction.classification.receivedByMemberId ?? "",
+              classification.personalOwnerMemberId
+              ?? (classification.classificationType === "personal" ? accountOwnerMemberId : ""),
+            paidByMemberId: accountOwnerMemberId || classification.paidByMemberId || "",
+            receivedByMemberId:
+              accountOwnerMemberId || classification.receivedByMemberId || "",
           }
         : emptyClassificationForm,
     );
@@ -755,7 +756,11 @@ export function ExpensesPageClient({
       return false;
     }
 
-    if (classificationForm.classificationType === "personal" && !classificationForm.personalOwnerMemberId) {
+    if (
+      classificationForm.classificationType === "personal"
+      && !classificationForm.personalOwnerMemberId
+      && !selectedTransaction.accountOwnerMemberId
+    ) {
       setError("Choose whose personal expense this is before saving.");
       return false;
     }
@@ -1521,6 +1526,8 @@ export function ExpensesPageClient({
                 classificationType={classificationForm.classificationType}
                 value={classificationForm}
                 members={members}
+                accountOwnerMemberId={selectedTransaction.accountOwnerMemberId}
+                lockPayerToAccount={Boolean(selectedTransaction.accountOwnerMemberId)}
                 onChange={(next) =>
                   setClassificationForm((current) => ({ ...current, ...next }))
                 }
