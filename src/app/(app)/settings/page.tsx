@@ -1,27 +1,58 @@
+import { Suspense } from "react";
+
+import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { SettingsPageClient } from "@/components/settings/settings-page-client";
 import { signOutAction } from "@/features/auth/actions";
 import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
+import {
+  listPendingInvitesForEmail,
+  listWorkspaceInvites,
+} from "@/features/workspaces/invites";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { getWorkspaceSettingsSnapshot } from "@/features/workspaces/settings";
+import type { WorkspaceCategoryItem, WorkspaceInviteItem, WorkspaceMemberRole, WorkspaceMemberSettingsItem, WorkspaceSettingsSnapshot } from "@/features/workspaces/types";
 import { getFinappAuthMode } from "@/lib/supabase/config";
 
-
 async function SettingsData() {
-  const [settings, members, categories] = await withCurrentWorkspaceDb((context, db) =>
-    Promise.all([
-      getWorkspaceSettingsSnapshot(context, db),
-      listWorkspaceMembersForSettings(context, db),
-      listWorkspaceCategories(context, db),
-    ]),
-  );
+  const { settings, members, categories, outgoingInvites, incomingInvites, currentMemberRole } =
+    await withCurrentWorkspaceDb(async (context, db): Promise<{
+      settings: WorkspaceSettingsSnapshot;
+      members: WorkspaceMemberSettingsItem[];
+      categories: WorkspaceCategoryItem[];
+      outgoingInvites: WorkspaceInviteItem[];
+      incomingInvites: WorkspaceInviteItem[];
+      currentMemberRole: WorkspaceMemberRole;
+    }> => {
+      const [settings, members, categories, outgoingInvites, incomingInvites] = await Promise.all([
+        getWorkspaceSettingsSnapshot(context, db),
+        listWorkspaceMembersForSettings(context, db),
+        listWorkspaceCategories(context, db),
+        listWorkspaceInvites(context, db),
+        listPendingInvitesForEmail(db, context.appUser.email),
+      ]);
+
+      return {
+        settings,
+        members,
+        categories,
+        outgoingInvites,
+        incomingInvites,
+        currentMemberRole: (context.membership.role === "owner"
+          ? "owner"
+          : "member") satisfies WorkspaceMemberRole,
+      };
+    });
 
   return (
     <div data-testid="settings-content">
         <SettingsPageClient
-          initialSettings={settings}
-          initialMembers={members}
+          currentMemberRole={currentMemberRole}
           initialCategories={categories}
+          initialIncomingInvites={incomingInvites}
+          initialInvites={outgoingInvites}
+          initialMembers={members}
+          initialSettings={settings}
         />
     </div>
   );
@@ -50,6 +81,3 @@ export default function SettingsPage() {
     </main>
   );
 }
-import { Suspense } from "react";
-
-import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";

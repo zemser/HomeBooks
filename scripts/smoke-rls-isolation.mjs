@@ -397,6 +397,63 @@ async function main() {
       `,
       [second.expenseEventId],
     );
+    await expectPolicyBlock(
+      client,
+      "user cannot join another workspace without an invite",
+      `
+        insert into workspace_members (workspace_id, user_id, role)
+        values ($1, $2, 'member')
+      `,
+      [second.workspaceId, first.userId],
+    );
+
+    const invitedEmail = `${testLabel("invitee")}@example.test`;
+    const invitee = await insertOne(
+      client,
+      `
+        insert into users (id, email, display_name)
+        values ($1, $2, $3)
+        returning id
+      `,
+      [randomUUID(), invitedEmail, "Invitee"],
+    );
+
+    await setCurrentUser(client, first.userId);
+    const invite = await insertOne(
+      client,
+      `
+        insert into workspace_invites (
+          workspace_id,
+          invited_email,
+          invited_by_user_id,
+          role,
+          status,
+          workspace_name_snapshot,
+          invited_by_display_name
+        )
+        values ($1, $2, $3, 'member', 'pending', $4, 'Owner')
+        returning id
+      `,
+      [first.workspaceId, invitedEmail, first.userId, testLabel("invite-workspace")],
+    );
+
+    await setCurrentUser(client, second.userId);
+    await expectNoRows(
+      client,
+      "user cannot read another workspace invite",
+      "select id from workspace_invites where id = $1",
+      [invite.id],
+    );
+
+    await setCurrentUser(client, invitee.id);
+    const visibleInvite = await client.query(
+      "select id from workspace_invites where id = $1",
+      [invite.id],
+    );
+    if (visibleInvite.rowCount !== 1) {
+      throw new Error(`invitee cannot read matching invite: expected 1 row, saw ${visibleInvite.rowCount}.`);
+    }
+    console.log("ok - invitee can read matching invite");
 
     await setCurrentUser(client, null);
     await expectNoRows(

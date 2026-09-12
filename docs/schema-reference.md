@@ -17,6 +17,7 @@ Use this file for table/enum/constraint-level details. Keep product direction in
 - `0001_special_tattoo.sql`
 - `0002_lethal_ironclad.sql`
 - `0003_high_hemingway.sql`
+- `0014_plain_grim_reaper.sql`
 
 ## Enums
 
@@ -52,6 +53,11 @@ Use this file for table/enum/constraint-level details. Keep product direction in
   - PK: `id`
   - FK: `workspace_id -> workspaces.id`, `user_id -> users.id`
   - unique: `(workspace_id, user_id)`
+- `workspace_invites`
+  - PK: `id`
+  - FK: `workspace_id -> workspaces.id`, `invited_by_user_id -> users.id`, optional `accepted_by_user_id -> users.id`
+  - unique pending: `(workspace_id, invited_email)` where `status = pending`
+  - index: `(invited_email, status)`, `(workspace_id, created_at)`
 - `workspace_categories`
   - PK: `id`
   - FK: `workspace_id -> workspaces.id`
@@ -171,7 +177,7 @@ Use this file for table/enum/constraint-level details. Keep product direction in
 
 ## RLS status
 
-RLS is now represented by migration `src/db/migrations/0004_hosted_rls_foundation.sql`.
+RLS is now represented by migrations `src/db/migrations/0004_hosted_rls_foundation.sql` and `src/db/migrations/0014_plain_grim_reaper.sql`.
 
 That migration adds:
 

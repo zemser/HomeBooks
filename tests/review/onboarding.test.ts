@@ -8,10 +8,14 @@ const actionPath = new URL(
 );
 
 test("onboarding owns the serialized bootstrap mutation", async () => {
-  const source = await readFile(actionPath, "utf8");
+  const [source, appUserSource] = await Promise.all([
+    readFile(actionPath, "utf8"),
+    readFile(new URL("../../src/features/workspaces/app-user.ts", import.meta.url), "utf8"),
+  ]);
 
   assert.match(source, /pg_advisory_xact_lock\(hashtext\(\$\{authUser\.userId\}\)\)/);
-  assert.match(source, /onConflictDoNothing\(\{\s*target: users\.id/);
+  assert.match(source, /ensureAppUser\(tx, authUser, displayName\)/);
+  assert.match(appUserSource, /onConflictDoNothing\(\{\s*target: users\.id/);
   assert.match(source, /seedStarterWorkspaceCategories\(workspaceId, tx\)/);
   assert.match(source, /eq\(members\.isActive, true\)/);
 });

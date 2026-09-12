@@ -581,7 +581,7 @@ async function getPairwiseMembers(context: CurrentWorkspaceContext, db: DbExecut
   const blockingReason =
     members.length === 2
       ? null
-      : "Shared settlements are optional and only become useful after you add another active household member.";
+      : "Shared settlements are optional and only become useful after someone else joins this workspace.";
 
   return {
     activeMembers: members,

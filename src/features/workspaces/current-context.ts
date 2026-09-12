@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
@@ -102,9 +102,7 @@ async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestC
 
     if (!user) return null;
 
-    const existingMember = await tx.query.workspaceMembers.findFirst({
-      where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
-    });
+    const existingMember = await findCurrentMembership(tx, user.id);
 
     if (!existingMember) return null;
 
@@ -145,9 +143,7 @@ async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestC
         .returning();
     }
 
-    const existingMember = await tx.query.workspaceMembers.findFirst({
-      where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
-    });
+    const existingMember = await findCurrentMembership(tx, user.id);
 
     if (existingMember) {
       const workspace = await tx.query.workspaces.findFirst({
@@ -243,9 +239,7 @@ async function loadWorkspaceContext(
   authContext: Pick<VerifiedAuthContext, "userId" | "aal">,
   user: typeof users.$inferSelect,
 ): Promise<AuthenticatedRequestContext | null> {
-  const member = await tx.query.workspaceMembers.findFirst({
-    where: and(eq(workspaceMembers.userId, user.id), eq(workspaceMembers.isActive, true)),
-  });
+  const member = await findCurrentMembership(tx, user.id);
 
   if (!member) return null;
 
@@ -278,4 +272,15 @@ function createAuthenticatedRequestContext(
     memberId: membership.id,
     baseCurrency: workspace.baseCurrency,
   };
+}
+
+async function findCurrentMembership(tx: DbExecutor, userId: string) {
+  const [member] = await tx
+    .select()
+    .from(workspaceMembers)
+    .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.isActive, true)))
+    .orderBy(desc(workspaceMembers.updatedAt), desc(workspaceMembers.createdAt))
+    .limit(1);
+
+  return member ?? null;
 }
