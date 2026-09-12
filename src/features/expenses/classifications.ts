@@ -229,6 +229,7 @@ export async function upsertTransactionClassification(
   const accountOwnerByTransactionId = new Map(
     matchingTransactions.map((item) => [item.id, item.accountOwnerMemberId]),
   );
+  const selectedAccountOwnerMemberId = transaction.accountOwnerMemberId;
   function attributionFor(accountOwnerMemberId: string | null) {
     return attributionForImportedRow({
       classificationType: input.classificationType,
@@ -236,7 +237,7 @@ export async function upsertTransactionClassification(
       paidByMemberId,
       receivedByMemberId,
       accountOwnerMemberId,
-      selectedAccountOwnerMemberId: transaction.accountOwnerMemberId,
+      selectedAccountOwnerMemberId,
     });
   }
   const primaryAttribution = attributionFor(transaction.accountOwnerMemberId);
