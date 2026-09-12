@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import type { AppNavigation, AppNavItem } from "@/components/app-shell/nav";
+import { BrandMark } from "@/components/brand/brand-mark";
+import { PRODUCT_NAME } from "@/lib/brand";
 
 type AppShellClientProps = {
   navigation: AppNavigation;
@@ -78,9 +80,9 @@ export function AppShellClient({
       <aside className="app-sidebar">
         <div className="app-sidebar-inner">
           <Link className="app-brand" href="/">
-            <span className="app-brand-mark">FA</span>
+            <BrandMark />
             <span>
-              <strong>Fin App</strong>
+              <strong>{PRODUCT_NAME}</strong>
               <small>Shared household money</small>
             </span>
           </Link>
@@ -120,7 +122,7 @@ export function AppShellClient({
       <div className="app-main">
         <header className="app-mobile-header">
           <div>
-            <p className="app-kicker">Fin App</p>
+            <p className="app-kicker">{PRODUCT_NAME}</p>
             <h1>{currentItem?.label ?? "Home"}</h1>
           </div>
         </header>

@@ -79,6 +79,14 @@ main {
   display: inline-flex;
   gap: 0.85rem;
   align-items: center;
+  transform-origin: left center;
+  border-radius: 0.85rem;
+  color: inherit;
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.app-brand:active {
+  transform: scale(0.97);
 }
 
 .app-brand strong,
@@ -87,22 +95,42 @@ main {
   margin: 0;
 }
 
+.app-brand strong {
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
 .app-brand small {
+  display: block;
+  margin-top: 0.12rem;
   color: var(--muted);
+  font-size: 0.78rem;
+  letter-spacing: 0;
+  line-height: 1.35;
 }
 
 .app-brand-mark {
   display: inline-flex;
+  flex: none;
   align-items: center;
   justify-content: center;
   width: 2.5rem;
   height: 2.5rem;
-  border-radius: 0.95rem;
-  background: var(--accent);
-  color: white;
-  font-size: 0.95rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
+  border-radius: 27%;
+  color: #fff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 46%),
+    var(--accent);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 1px 2px rgba(31, 42, 31, 0.08);
+}
+
+.app-brand-glyph {
+  display: block;
+  width: 56%;
+  height: 56%;
 }
 
 .workspace-glance {
@@ -370,18 +398,34 @@ main {
 
 .auth-brand {
   display: grid;
-  gap: 0.7rem;
+  gap: 0.9rem;
   justify-items: center;
   text-align: center;
 }
 
 .auth-brand .app-brand-mark {
-  width: 3rem;
-  height: 3rem;
-  font-size: 1rem;
+  width: 3.5rem;
+  height: 3.5rem;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    0 10px 28px -12px rgba(39, 93, 76, 0.55);
 }
 
-.auth-brand p {
+.auth-brand-copy {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: center;
+}
+
+.auth-brand-name {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+}
+
+.auth-brand-tagline {
   margin: 0;
   max-width: 28ch;
   color: var(--muted);
@@ -810,16 +854,25 @@ select.input:focus {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .app-brand,
   .button {
     transition: none;
   }
 
+  .app-brand:active,
   .button:active:not(:disabled) {
     transform: none;
   }
 
   .password-toggle:active {
     transform: translateY(-50%);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .app-brand-mark {
+    background: var(--accent);
+    box-shadow: none;
   }
 }
 
