@@ -103,7 +103,7 @@ function AccountMenu({ displayName, email }: Omit<AccountControlProps, "canSignO
   const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
   const wrapRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
-  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const blurTimeoutRef = useRef<number | undefined>(undefined);
   const menuId = useId();
   const buttonId = useId();
   const [open, setOpen] = useState(false);
