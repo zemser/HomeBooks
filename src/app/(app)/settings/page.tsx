@@ -2,7 +2,6 @@ import { Suspense } from "react";
 
 import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { SettingsPageClient } from "@/components/settings/settings-page-client";
-import { signOutAction } from "@/features/auth/actions";
 import { listWorkspaceCategories } from "@/features/workspaces/categories";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import {
@@ -12,7 +11,6 @@ import {
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { getWorkspaceSettingsSnapshot } from "@/features/workspaces/settings";
 import type { WorkspaceCategoryItem, WorkspaceInviteItem, WorkspaceMemberRole, WorkspaceMemberSettingsItem, WorkspaceSettingsSnapshot } from "@/features/workspaces/types";
-import { getFinappAuthMode } from "@/lib/supabase/config";
 
 async function SettingsData() {
   const { settings, members, categories, outgoingInvites, incomingInvites, currentMemberRole } =
@@ -68,11 +66,6 @@ export default function SettingsPage() {
             <h1>Workspace settings</h1>
             <p>Manage currency, categories, and household members in one place.</p>
           </div>
-          {getFinappAuthMode() === "supabase" ? (
-            <form action={signOutAction}>
-              <button className="button button-secondary" type="submit">Sign out</button>
-            </form>
-          ) : null}
         </section>
         <Suspense fallback={<RouteDataFallback label="Workspace settings" />}>
           <SettingsData />

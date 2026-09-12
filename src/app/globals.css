@@ -201,14 +201,25 @@ main {
   min-width: 0;
 }
 
+.app-account-wrap {
+  position: relative;
+  min-width: 0;
+}
+
 .app-account {
   display: flex;
   gap: 0.75rem;
   align-items: center;
   min-width: 0;
+  width: 100%;
   padding: 0.45rem 0.55rem 0.45rem 0.45rem;
+  border: 0;
   border-radius: 1rem;
+  background: transparent;
   color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   transform-origin: center;
   transition:
     background 140ms cubic-bezier(0.23, 1, 0.32, 1),
@@ -236,7 +247,19 @@ main {
 
 .app-account-copy {
   display: grid;
+  flex: 1;
   min-width: 0;
+}
+
+.app-account-caret {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+  transition: transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.app-account[aria-expanded="true"] .app-account-caret {
+  transform: rotate(180deg);
 }
 
 .app-account-skeleton {
@@ -284,6 +307,87 @@ main {
   background: var(--accent-soft);
 }
 
+.app-account-menu {
+  position: absolute;
+  z-index: 30;
+  display: none;
+  gap: 0.15rem;
+  min-width: 100%;
+  padding: 0.4rem;
+  border: 1px solid rgba(230, 223, 210, 0.92);
+  border-radius: 1rem;
+  background: rgba(255, 253, 247, 0.92);
+  box-shadow: 0 16px 40px rgba(35, 54, 43, 0.12);
+  backdrop-filter: blur(20px) saturate(180%);
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.96);
+  transform-origin: var(--account-menu-origin, 12% 100%);
+  transition:
+    display 120ms,
+    opacity 120ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition-behavior: allow-discrete;
+}
+
+.app-account-menu[data-open="true"] {
+  display: grid;
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1);
+  transition-duration: 180ms;
+
+  @starting-style {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.app-sidebar-footer .app-account-menu {
+  right: 0;
+  bottom: calc(100% + 0.45rem);
+  left: 0;
+  --account-menu-origin: 12% 100%;
+}
+
+.app-account-menu a,
+.app-account-menu button {
+  display: block;
+  width: 100%;
+  padding: 0.7rem 0.8rem;
+  border: 0;
+  border-radius: 0.75rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 650;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 140ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 100ms ease-out;
+}
+
+.app-account-menu a:active,
+.app-account-menu button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.app-account-menu form {
+  margin: 0;
+  padding-top: 0.15rem;
+  border-top: 1px solid rgba(230, 223, 210, 0.92);
+}
+
+.app-account-menu button[type="submit"] {
+  color: #8d2f25;
+}
+
+.app-account-menu button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .app-account:hover {
     background: rgba(255, 255, 255, 0.72);
@@ -291,6 +395,11 @@ main {
 
   .app-account-active:hover {
     background: var(--accent-soft);
+  }
+
+  .app-account-menu a:hover,
+  .app-account-menu button:hover:not(:disabled) {
+    background: rgba(39, 93, 76, 0.08);
   }
 }
 
@@ -937,6 +1046,10 @@ select.input:focus {
 @media (prefers-reduced-motion: reduce) {
   .app-brand,
   .app-account,
+  .app-account-caret,
+  .app-account-menu,
+  .app-account-menu a,
+  .app-account-menu button,
   .app-nav-link,
   .button {
     transition: none;
@@ -944,8 +1057,20 @@ select.input:focus {
 
   .app-brand:active,
   .app-account:active,
+  .app-account-menu a:active,
+  .app-account-menu button:active,
   .button:active:not(:disabled) {
     transform: none;
+  }
+
+  .app-account-menu,
+  .app-account-menu[data-open="true"] {
+    transform: none;
+
+    @starting-style {
+      opacity: 0;
+      transform: none;
+    }
   }
 
   .password-toggle:active {
@@ -959,7 +1084,8 @@ select.input:focus {
     box-shadow: none;
   }
 
-  .app-mobile-header {
+  .app-mobile-header,
+  .app-account-menu {
     background: var(--background);
     backdrop-filter: none;
   }
@@ -2874,8 +3000,11 @@ kbd {
     line-height: 1.15;
   }
 
-  .app-mobile-header .app-account {
+  .app-mobile-header .app-account-wrap {
     flex: none;
+  }
+
+  .app-mobile-header .app-account {
     width: 2.75rem;
     height: 2.75rem;
     padding: 0;
@@ -2890,6 +3019,18 @@ kbd {
   .app-mobile-header .app-account-avatar {
     width: 2.25rem;
     height: 2.25rem;
+  }
+
+  .app-mobile-header .app-account-menu {
+    top: calc(100% + 0.45rem);
+    right: 0;
+    left: auto;
+    width: max(12.5rem, 100%);
+    --account-menu-origin: calc(100% - 1.375rem) 0;
+  }
+
+  .app-mobile-header .app-account-caret {
+    display: none;
   }
 
   .app-mobile-nav {
@@ -2931,7 +3072,8 @@ kbd {
 
 @media (max-width: 1024px) and (prefers-reduced-transparency: reduce) {
   .app-mobile-header,
-  .app-mobile-nav {
+  .app-mobile-nav,
+  .app-account-menu {
     background: var(--background);
     backdrop-filter: none;
   }
