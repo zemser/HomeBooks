@@ -8,7 +8,7 @@ Accepted for implementation after product review: simple account-based attributi
 
 An exact merchant rule stores classification type and category. It applies workspace-wide across members' accounts. It never stores payer, personal owner, or income recipient from the reviewed transaction.
 
-The account owner and the uploader are different concepts. Import preview asks the user to confirm **This account belongs to**. Existing ownership is shown; new accounts require an explicit choice. **Joint or unknown** leaves ownership empty. Saving confirms this account's owner for future imports and does not rewrite existing classifications.
+The account owner and the uploader are different concepts. Import preview asks the user to confirm **This account belongs to**. New accounts default to the uploader and can be changed. Existing ownership is shown when the account is already known. **Joint or unknown** leaves ownership empty. Saving confirms this account's owner for future imports and does not rewrite existing classifications.
 
 ## Automatic application
 
@@ -52,6 +52,7 @@ Apply Drizzle migration `0013_merchant_rule_reuse.sql` before deploying the appl
 ## Acceptance checks
 
 - Alex uploads Sam's statement: Sam is payer and personal owner when Sam owns the account.
+- A new account preview defaults **This account belongs to** to the uploader, and can be changed to the other member or joint.
 - A shared merchant rule works on either member's account without replaying the rule creator's payer.
 - Joint/unknown accounts remain pending for personal, household, shared and income rules.
 - Personal-owner and payer exceptions stay on the reviewed transaction; a type/category rule can still be saved and later matches follow each account owner.
