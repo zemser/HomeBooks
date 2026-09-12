@@ -25,17 +25,19 @@ export function emptyMemberAttributionFormValue(): MemberAttributionFormValue {
 export function memberAttributionForClassificationType(
   classificationType: ClassificationType,
   current: MemberAttributionFormValue,
-  fallbackPaidByMemberId = "",
+  accountOwnerMemberId = "",
 ): MemberAttributionFormValue {
+  const accountOwner = accountOwnerMemberId || "";
+
   return {
     personalOwnerMemberId: classificationAllowsPersonalOwner(classificationType)
-      ? current.personalOwnerMemberId
+      ? current.personalOwnerMemberId || accountOwner
       : "",
     paidByMemberId: classificationAllowsPayer(classificationType)
-      ? current.paidByMemberId || fallbackPaidByMemberId
+      ? accountOwner || current.paidByMemberId
       : "",
     receivedByMemberId: classificationAllowsRecipient(classificationType)
-      ? current.receivedByMemberId
+      ? current.receivedByMemberId || accountOwner
       : "",
   };
 }
@@ -46,20 +48,33 @@ export function MemberAttributionFields({
   members,
   onChange,
   personalOwnerSelectRef,
+  accountOwnerMemberId = null,
+  accountOwnerLabel = null,
+  lockPayerToAccount = false,
 }: {
   classificationType: ClassificationType | "";
   value: MemberAttributionFormValue;
   members: WorkspaceMemberOption[];
   onChange: (value: MemberAttributionFormValue) => void;
   personalOwnerSelectRef?: Ref<HTMLSelectElement>;
+  accountOwnerMemberId?: string | null;
+  accountOwnerLabel?: string | null;
+  lockPayerToAccount?: boolean;
 }) {
   if (!classificationType || classificationType === "transfer" || classificationType === "ignore") {
     return null;
   }
 
+  const showPersonalOwner = classificationAllowsPersonalOwner(classificationType);
+  const showPaidBy = classificationAllowsPayer(classificationType) && !lockPayerToAccount;
+  const showReceivedBy = classificationAllowsRecipient(classificationType) && !lockPayerToAccount;
+  const ownerLabel = accountOwnerLabel
+    ?? members.find((member) => member.id === accountOwnerMemberId)?.displayName
+    ?? null;
+
   return (
     <>
-      {classificationAllowsPersonalOwner(classificationType) ? (
+      {showPersonalOwner ? (
         <label className="field">
           <span>Whose personal expense?</span>
           <select
@@ -70,17 +85,26 @@ export function MemberAttributionFields({
               onChange({ ...value, personalOwnerMemberId: event.target.value })
             }
           >
-            <option value="">Unassigned</option>
+            {!accountOwnerMemberId ? (
+              <option value="">{lockPayerToAccount ? "Each account owner" : "Unassigned"}</option>
+            ) : null}
             {members.map((member) => (
               <option key={member.id} value={member.id}>
                 {member.displayName}
               </option>
             ))}
           </select>
+          {lockPayerToAccount ? (
+            <span className="helper-text">
+              {ownerLabel
+                ? `This account belongs to ${ownerLabel}. Change this only if the expense was for someone else.`
+                : "Leave this as each account owner unless these expenses were for someone else."}
+            </span>
+          ) : null}
         </label>
       ) : null}
 
-      {classificationAllowsPayer(classificationType) ? (
+      {showPaidBy ? (
         <label className="field">
           <span>Paid by</span>
           <select
@@ -98,7 +122,7 @@ export function MemberAttributionFields({
         </label>
       ) : null}
 
-      {classificationAllowsRecipient(classificationType) ? (
+      {showReceivedBy ? (
         <label className="field">
           <span>Received by</span>
           <select
@@ -114,6 +138,18 @@ export function MemberAttributionFields({
             ))}
           </select>
         </label>
+      ) : null}
+
+      {lockPayerToAccount && !showPersonalOwner && classificationAllowsPayer(classificationType) ? (
+        <p className="helper-text">
+          {ownerLabel ? `Paid from ${ownerLabel}’s account.` : "Paid from each selected account."}
+        </p>
+      ) : null}
+
+      {lockPayerToAccount && classificationAllowsRecipient(classificationType) ? (
+        <p className="helper-text">
+          {ownerLabel ? `Received into ${ownerLabel}’s account.` : "Received into each selected account."}
+        </p>
       ) : null}
     </>
   );

@@ -14,9 +14,8 @@ import type { ClassificationType } from "@/features/expenses/constants";
 import {
   compatibilityMemberOwnerId,
   getMemberAttributionValidationMessage,
+  importedMemberAttribution,
   memberAttributionFromSnapshot,
-  normalizeMemberAttribution,
-  resolveImportedPaidByMemberId,
   type MemberAttribution,
 } from "@/features/expenses/payer";
 import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
@@ -125,23 +124,15 @@ export function validateClassificationInput(input: {
   }
 }
 
-function importedAttributionForAccount(input: {
+function attributionForImportedRow(input: {
   classificationType: ClassificationType;
   personalOwnerMemberId: string | null;
   paidByMemberId?: string | null;
   receivedByMemberId: string | null;
   accountOwnerMemberId: string | null;
+  selectedAccountOwnerMemberId?: string | null;
 }): MemberAttribution {
-  return normalizeMemberAttribution({
-    classificationType: input.classificationType,
-    personalOwnerMemberId: input.personalOwnerMemberId,
-    paidByMemberId: resolveImportedPaidByMemberId({
-      classificationType: input.classificationType,
-      paidByMemberId: input.paidByMemberId,
-      accountOwnerMemberId: input.accountOwnerMemberId,
-    }),
-    receivedByMemberId: input.receivedByMemberId,
-  });
+  return importedMemberAttribution(input);
 }
 
 function classificationWriteValues(input: {
@@ -179,22 +170,6 @@ export async function upsertTransactionClassification(
   const paidByMemberId = optionalMemberInput(input.paidByMemberId);
   const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
-  const previewAttribution = importedAttributionForAccount({
-    classificationType: input.classificationType,
-    personalOwnerMemberId,
-    paidByMemberId,
-    receivedByMemberId,
-    accountOwnerMemberId: null,
-  });
-
-  validateClassificationInput({
-    classificationType: input.classificationType,
-    personalOwnerMemberId: previewAttribution.personalOwnerMemberId,
-    paidByMemberId: paidByMemberId === undefined ? previewAttribution.paidByMemberId : paidByMemberId,
-    receivedByMemberId: previewAttribution.receivedByMemberId,
-    category,
-    categoryId: input.categoryId,
-  });
   await assertWorkspaceMembers(
     context.workspaceId,
     [personalOwnerMemberId, paidByMemberId, receivedByMemberId],
@@ -254,13 +229,17 @@ export async function upsertTransactionClassification(
   const accountOwnerByTransactionId = new Map(
     matchingTransactions.map((item) => [item.id, item.accountOwnerMemberId]),
   );
-  const primaryAttribution = importedAttributionForAccount({
-    classificationType: input.classificationType,
-    personalOwnerMemberId,
-    paidByMemberId,
-    receivedByMemberId,
-    accountOwnerMemberId: transaction.accountOwnerMemberId,
-  });
+  function attributionFor(accountOwnerMemberId: string | null) {
+    return attributionForImportedRow({
+      classificationType: input.classificationType,
+      personalOwnerMemberId,
+      paidByMemberId,
+      receivedByMemberId,
+      accountOwnerMemberId,
+      selectedAccountOwnerMemberId: transaction.accountOwnerMemberId,
+    });
+  }
+  const primaryAttribution = attributionFor(transaction.accountOwnerMemberId);
   if (input.createRule) {
     const message = merchantRuleExceptionMessage({
       classificationType: input.classificationType,
@@ -269,22 +248,18 @@ export async function upsertTransactionClassification(
     });
     if (message) throw new ClassificationInputError(message);
   }
-  validateClassificationInput({
-    classificationType: input.classificationType,
-    ...primaryAttribution,
-    category,
-    categoryId: input.categoryId,
-  });
+  for (const item of matchingTransactions) {
+    validateClassificationInput({
+      classificationType: input.classificationType,
+      ...attributionFor(item.accountOwnerMemberId),
+      category,
+      categoryId: input.categoryId,
+    });
+  }
   await assertWorkspaceMembers(
     context.workspaceId,
     matchingTransactions.flatMap((item) => {
-      const attribution = importedAttributionForAccount({
-        classificationType: input.classificationType,
-        personalOwnerMemberId,
-        paidByMemberId,
-        receivedByMemberId,
-        accountOwnerMemberId: item.accountOwnerMemberId,
-      });
+      const attribution = attributionFor(item.accountOwnerMemberId);
       return [
         attribution.personalOwnerMemberId,
         attribution.paidByMemberId,
@@ -350,13 +325,9 @@ export async function upsertTransactionClassification(
     await tx
       .insert(transactionClassifications)
       .values(requestedTransactionIds.map((transactionId) => {
-        const attribution = importedAttributionForAccount({
-          classificationType: input.classificationType,
-          personalOwnerMemberId,
-          paidByMemberId,
-          receivedByMemberId,
-          accountOwnerMemberId: accountOwnerByTransactionId.get(transactionId) ?? null,
-        });
+        const attribution = attributionFor(
+          accountOwnerByTransactionId.get(transactionId) ?? null,
+        );
 
         return {
           transactionId,
@@ -485,21 +456,6 @@ export async function bulkClassifyTransactions(
     throw new ClassificationInputError("Select at least one transaction to classify.");
   }
 
-  const previewAttribution = importedAttributionForAccount({
-    classificationType: input.classificationType,
-    personalOwnerMemberId,
-    paidByMemberId,
-    receivedByMemberId,
-    accountOwnerMemberId: null,
-  });
-  validateClassificationInput({
-    classificationType: input.classificationType,
-    personalOwnerMemberId: previewAttribution.personalOwnerMemberId,
-    paidByMemberId: paidByMemberId === undefined ? previewAttribution.paidByMemberId : paidByMemberId,
-    receivedByMemberId: previewAttribution.receivedByMemberId,
-    category,
-    categoryId: input.categoryId,
-  });
   await assertWorkspaceMembers(
     context.workspaceId,
     [personalOwnerMemberId, paidByMemberId, receivedByMemberId],
@@ -532,16 +488,19 @@ export async function bulkClassifyTransactions(
   const accountOwnerByTransactionId = new Map(
     matchingTransactions.map((item) => [item.id, item.accountOwnerMemberId]),
   );
+  function attributionFor(accountOwnerMemberId: string | null) {
+    return attributionForImportedRow({
+      classificationType: input.classificationType,
+      personalOwnerMemberId,
+      paidByMemberId,
+      receivedByMemberId,
+      accountOwnerMemberId,
+    });
+  }
   await assertWorkspaceMembers(
     context.workspaceId,
     matchingTransactions.flatMap((item) => {
-      const attribution = importedAttributionForAccount({
-        classificationType: input.classificationType,
-        personalOwnerMemberId,
-        paidByMemberId,
-        receivedByMemberId,
-        accountOwnerMemberId: item.accountOwnerMemberId,
-      });
+      const attribution = attributionFor(item.accountOwnerMemberId);
       return [
         attribution.personalOwnerMemberId,
         attribution.paidByMemberId,
@@ -551,16 +510,9 @@ export async function bulkClassifyTransactions(
     db,
   );
   for (const item of matchingTransactions) {
-    const attribution = importedAttributionForAccount({
-      classificationType: input.classificationType,
-      personalOwnerMemberId,
-      paidByMemberId,
-      receivedByMemberId,
-      accountOwnerMemberId: item.accountOwnerMemberId,
-    });
     validateClassificationInput({
       classificationType: input.classificationType,
-      ...attribution,
+      ...attributionFor(item.accountOwnerMemberId),
       category,
       categoryId: input.categoryId,
     });
@@ -609,13 +561,9 @@ export async function bulkClassifyTransactions(
       .insert(transactionClassifications)
       .values(
         transactionIds.map((transactionId) => {
-          const attribution = importedAttributionForAccount({
-            classificationType: input.classificationType,
-            personalOwnerMemberId,
-            paidByMemberId,
-            receivedByMemberId,
-            accountOwnerMemberId: accountOwnerByTransactionId.get(transactionId) ?? null,
-          });
+          const attribution = attributionFor(
+            accountOwnerByTransactionId.get(transactionId) ?? null,
+          );
 
           return {
             transactionId,

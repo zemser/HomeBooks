@@ -4,6 +4,7 @@ type ReviewResponse = {
   queue: Array<{
     id: string;
     merchantRaw: string | null;
+    accountOwnerMemberId: string | null;
   }>;
   categoryCatalog: Array<{
     id: string;
@@ -80,7 +81,7 @@ test.describe("transaction review workflow", () => {
     await expect(page.locator('.review-table td[data-label="Suggestion"]')).toHaveCount(0);
   });
 
-  test("review form shows owner and payer as separate controls", async ({ page }) => {
+  test("review form infers payer from the account and only asks whose personal expense", async ({ page }) => {
     const before = await loadReviewData(page);
     test.skip(before.queue.length === 0, "The member-control test needs a review row.");
 
@@ -89,24 +90,34 @@ test.describe("transaction review workflow", () => {
       has: page.getByRole("heading", { name: "Selected transaction" }),
     });
     await expect(panel).toBeVisible();
+    const hasAccountOwner = Boolean(before.queue[0]?.accountOwnerMemberId);
 
     await panel.getByRole("radio", { name: /Personal/ }).check();
     await expect(panel.getByRole("radio", { name: /Personal/ })).toBeChecked();
     await expect(panel.getByLabel("Whose personal expense?")).toBeVisible();
-    await expect(panel.getByLabel("Paid by")).toBeVisible();
+    await expect(panel.getByLabel("Paid by")).toHaveCount(hasAccountOwner ? 0 : 1);
     await expect(panel.getByLabel("Received by")).toHaveCount(0);
+    if (hasAccountOwner) {
+      await expect(panel.getByText(/This account belongs to/)).toBeVisible();
+    }
 
     await panel.getByRole("radio", { name: /Household/ }).check();
     await expect(panel.getByRole("radio", { name: /Household/ })).toBeChecked();
     await expect(panel.getByLabel("Whose personal expense?")).toHaveCount(0);
-    await expect(panel.getByLabel("Paid by")).toBeVisible();
+    await expect(panel.getByLabel("Paid by")).toHaveCount(hasAccountOwner ? 0 : 1);
     await expect(panel.getByLabel("Received by")).toHaveCount(0);
+    if (hasAccountOwner) {
+      await expect(panel.getByText(/Paid from /)).toBeVisible();
+    }
 
     await panel.getByRole("radio", { name: /Income/ }).check();
     await expect(panel.getByRole("radio", { name: /Income/ })).toBeChecked();
     await expect(panel.getByLabel("Whose personal expense?")).toHaveCount(0);
     await expect(panel.getByLabel("Paid by")).toHaveCount(0);
-    await expect(panel.getByLabel("Received by")).toBeVisible();
+    await expect(panel.getByLabel("Received by")).toHaveCount(hasAccountOwner ? 0 : 1);
+    if (hasAccountOwner) {
+      await expect(panel.getByText(/Received into /)).toBeVisible();
+    }
   });
 
   test("keyboard shortcuts choose a type, select a category, and skip without saving", async ({
@@ -462,7 +473,9 @@ test.describe("transaction review workflow", () => {
         focusTransaction?: { classification?: { paidByMemberId?: string; classificationType?: string } };
       };
       expect(focused.focusTransaction?.classification?.classificationType).toBe("shared");
-      expect(focused.focusTransaction?.classification?.paidByMemberId).toBe(member!.id);
+      expect(focused.focusTransaction?.classification?.paidByMemberId).toBe(
+        transaction!.accountOwnerMemberId ?? member!.id,
+      );
     } finally {
       if (undoBatchId) {
         const cleanup = await page.request.post("/api/transaction-classifications/undo", {
@@ -476,8 +489,8 @@ test.describe("transaction review workflow", () => {
   test("personal owner and payer can differ without changing spending scope", async ({ page }) => {
     const before = await loadReviewData(page);
     const transaction = before.queue[0];
-    const owner = before.members[0];
-    const payer = before.members[1] ?? before.members[0];
+    const accountOwnerId = transaction?.accountOwnerMemberId;
+    const owner = before.members.find((member) => member.id !== accountOwnerId) ?? before.members[0];
     test.skip(!transaction || !owner, "The personal attribution test needs a review row and member.");
 
     let undoBatchId: string | undefined;
@@ -487,7 +500,7 @@ test.describe("transaction review workflow", () => {
           transactionId: transaction!.id,
           classificationType: "personal",
           personalOwnerMemberId: owner!.id,
-          paidByMemberId: payer!.id,
+          paidByMemberId: before.members[0]?.id,
         },
       });
       expect(response.ok()).toBeTruthy();
@@ -508,7 +521,9 @@ test.describe("transaction review workflow", () => {
       };
       expect(focused.focusTransaction?.classification?.classificationType).toBe("personal");
       expect(focused.focusTransaction?.classification?.personalOwnerMemberId).toBe(owner!.id);
-      expect(focused.focusTransaction?.classification?.paidByMemberId).toBe(payer!.id);
+      expect(focused.focusTransaction?.classification?.paidByMemberId).toBe(
+        accountOwnerId ?? before.members[0]?.id,
+      );
     } finally {
       if (undoBatchId) {
         const cleanup = await page.request.post("/api/transaction-classifications/undo", {
