@@ -58,7 +58,7 @@ export type ClassificationSuggestion = {
   matchingTransactionCount: number;
   supportingTransactionCount: number;
   confidence: "strong" | "likely";
-  source: "merchant_history";
+  source: "merchant_history" | "saved_rule";
 };
 
 export type WorkspaceMemberOption = {
@@ -149,7 +149,7 @@ export type ExpensesPageData = {
     month: string;
     importId: string;
     searchQuery: string;
-    reviewStatus: "all" | "needs_review" | "reviewed";
+    reviewStatus: "all" | "needs_review" | "reviewed" | "automatic";
     page: number;
     pageSize: number;
     transactionId?: string;

@@ -92,6 +92,13 @@
       "when": 1788619226936,
       "tag": "0012_square_the_order",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789211249546,
+      "tag": "0013_merchant_rule_reuse",
+      "breakpoints": true
     }
   ]
 }

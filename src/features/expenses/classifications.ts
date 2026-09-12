@@ -1,3 +1,4 @@
+import { merchantRuleExceptionMessage } from "@/features/expenses/merchant-rules";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
@@ -260,6 +261,14 @@ export async function upsertTransactionClassification(
     receivedByMemberId,
     accountOwnerMemberId: transaction.accountOwnerMemberId,
   });
+  if (input.createRule) {
+    const message = merchantRuleExceptionMessage({
+      classificationType: input.classificationType,
+      accountOwnerMemberId: transaction.accountOwnerMemberId,
+      ...primaryAttribution,
+    });
+    if (message) throw new ClassificationInputError(message);
+  }
   validateClassificationInput({
     classificationType: input.classificationType,
     ...primaryAttribution,
@@ -403,7 +412,7 @@ export async function upsertTransactionClassification(
       .orderBy(asc(classificationRules.createdAt));
       const ruleValues = ruleWriteValues({
         classificationType: input.classificationType,
-        attribution: primaryAttribution,
+        attribution: { personalOwnerMemberId: null, paidByMemberId: null, receivedByMemberId: null },
       });
 
       if (existingRules.length === 0) {
@@ -774,4 +783,17 @@ export async function undoClassificationDecision(
 
     return { restoredCount: batch.transactionIds.length };
   });
+}
+
+export async function stopMerchantRule(context: CurrentWorkspaceContext, transactionId: string, db: DbExecutor = getDb()) {
+  const transaction = await db.query.transactions.findFirst({
+    where: and(eq(transactions.workspaceId, context.workspaceId), eq(transactions.id, transactionId)),
+  });
+  if (!transaction?.merchantRaw?.trim()) throw new ClassificationInputError("Transaction has no merchant rule.");
+  await db.update(classificationRules).set({ active: false, updatedAt: new Date() }).where(and(
+    eq(classificationRules.workspaceId, context.workspaceId),
+    eq(classificationRules.matchType, "exact"),
+    eq(classificationRules.matchValue, normalizeMerchantRuleValue(transaction.merchantRaw)),
+  ));
+  return { stopped: true };
 }

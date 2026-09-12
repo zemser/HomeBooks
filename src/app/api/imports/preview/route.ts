@@ -1,3 +1,4 @@
+import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -80,9 +81,10 @@ export async function POST(request: Request) {
       workbook,
       workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),
     });
-    const importPlan = await withCurrentWorkspaceDb((context, db) =>
-      analyzeParsedBankImport({ context, parsed: result.parsed, db }),
-    );
+    const { importPlan, members } = await withCurrentWorkspaceDb(async (context, db) => ({
+      importPlan: await analyzeParsedBankImport({ context, parsed: result.parsed, db }),
+      members: await listWorkspaceMembersForSettings(context, db),
+    }));
 
     return NextResponse.json({
       detectedTemplate,
@@ -92,6 +94,10 @@ export async function POST(request: Request) {
       newTransactionCount: importPlan.newTransactionCount,
       duplicateTransactionCount: importPlan.duplicateTransactionCount,
       automaticRuleCount: importPlan.automaticRuleCount,
+      automaticRuleCountWithOwner: importPlan.automaticRuleCountWithOwner,
+      automaticRuleCountWithoutOwner: importPlan.automaticRuleCountWithoutOwner,
+      accountOwnerMemberId: importPlan.accountOwnerMemberId,
+      members: members.filter((member) => member.isActive).map((member) => ({ id: member.id, displayName: member.displayName })),
       previewTransactions: result.previewTransactions.slice(0, 50),
       warnings: buildPreviewWarnings({
         workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),

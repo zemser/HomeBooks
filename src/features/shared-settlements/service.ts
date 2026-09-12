@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -626,8 +626,11 @@ export async function getSharedSettlementsPageData(
       return left.title.localeCompare(right.title);
     });
 
-  const needsSplitSetup = items.filter((item) => !item.splitState);
-  const trackedExpenses = items.filter((item) => Boolean(item.splitState));
+  const [pendingImports] = await db.select({ count: sql<number>`count(*)::int` }).from(transactions)
+    .leftJoin(transactionClassifications, eq(transactionClassifications.transactionId, transactions.id))
+    .where(and(eq(transactions.workspaceId, context.workspaceId), isNull(transactionClassifications.id)));
+  const needsSplitSetup = items.filter((item) => !item.splitState || !item.payerMemberId);
+  const trackedExpenses = items.filter((item) => Boolean(item.splitState) && Boolean(item.payerMemberId));
 
   return {
     workspaceCurrency: context.baseCurrency,
@@ -641,6 +644,7 @@ export async function getSharedSettlementsPageData(
     }),
     needsSplitSetup,
     trackedExpenses,
+    pendingReviewCount: Number(pendingImports?.count ?? 0),
   };
 }
 

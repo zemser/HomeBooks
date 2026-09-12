@@ -1,3 +1,4 @@
+import { merchantRuleAttribution } from "@/features/expenses/merchant-rules";
 import { and, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
@@ -244,6 +245,8 @@ function buildTransactionListFilters(input: {
 
   if (input.onlyUnclassified || input.reviewStatus === "needs_review") {
     filters.push(isNull(transactionClassifications.id));
+  } else if (input.reviewStatus === "automatic") {
+    filters.push(eq(transactionClassifications.decidedBy, "rule"));
   } else if (input.reviewStatus === "reviewed") {
     filters.push(isNotNull(transactionClassifications.id));
   }
@@ -458,7 +461,16 @@ export async function listReviewQueue(
     const key = normalizeMerchantRuleValue(merchant);
     return {
       ...transaction,
-      suggestion: suggestionsByMerchant.get(key) ?? null,
+      suggestion: (() => {
+        const suggestion = existingExactRuleValues.get(key) ?? suggestionsByMerchant.get(key);
+        if (!suggestion) return null;
+        const attribution = merchantRuleAttribution(suggestion.classificationType, transaction.accountOwnerMemberId);
+        const name = members.find((member) => member.id === transaction.accountOwnerMemberId)?.displayName ?? null;
+        return { ...suggestion, ...attribution,
+          personalOwnerName: attribution.personalOwnerMemberId ? name : null,
+          paidByName: attribution.paidByMemberId ? name : null,
+          receivedByName: attribution.receivedByMemberId ? name : null };
+      })(),
       similarQueueCount: Math.max((queueCountByMerchant.get(key) ?? 1) - 1, 0),
       exactRuleExists: existingExactRuleValues.has(key),
     };
@@ -538,19 +550,27 @@ async function listExistingExactRuleValues(
         .map(normalizeMerchantRuleValue),
     ),
   );
-  if (normalizedMerchants.length === 0) return new Set<string>();
+  if (normalizedMerchants.length === 0) return new Map<string, ClassificationSuggestion>();
 
   const rows = await db
-    .select({ matchValue: classificationRules.matchValue })
+    .select({ matchValue: classificationRules.matchValue,
+      classificationType: classificationRules.defaultClassificationType,
+      category: classificationRules.defaultCategory, categoryId: classificationRules.defaultCategoryId })
     .from(classificationRules)
     .where(
       and(
         eq(classificationRules.workspaceId, context.workspaceId),
         eq(classificationRules.matchType, "exact"),
+        eq(classificationRules.active, true),
         inArray(classificationRules.matchValue, normalizedMerchants),
       ),
     );
-  return new Set(rows.map((row) => row.matchValue));
+  return new Map<string, ClassificationSuggestion>(rows.map((row) => [row.matchValue, {
+    classificationType: row.classificationType, category: row.category, categoryId: row.categoryId,
+    personalOwnerMemberId: null, personalOwnerName: null, paidByMemberId: null, paidByName: null,
+    receivedByMemberId: null, receivedByName: null, matchingTransactionCount: 0, supportingTransactionCount: 0,
+    confidence: "strong", source: "saved_rule",
+  }]));
 }
 
 async function listRecentReviewCategories(
@@ -627,17 +647,7 @@ async function listHistoricalClassificationSuggestions(
     .orderBy(desc(transactionClassifications.reviewedAt), desc(transactionClassifications.updatedAt))
     .limit(5000);
 
-  const memberIds = Array.from(
-    new Set(
-      rows.flatMap((row) => [
-        row.personalOwnerMemberId,
-        row.paidByMemberId,
-        row.receivedByMemberId,
-      ]).filter((id): id is string => Boolean(id)),
-    ),
-  );
-  const memberNames = await listMemberNamesById(memberIds, db);
-  return buildExactMerchantSuggestions(rows, memberNames);
+  return buildExactMerchantSuggestions(rows);
 }
 
 async function getReviewQueueSummary(

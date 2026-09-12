@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
@@ -39,6 +40,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "A non-empty file is required." }, { status: 400 });
   }
 
+  const owner = z.string().uuid().nullable().safeParse(formData.get("accountOwnerMemberId") === "joint" ? null : formData.get("accountOwnerMemberId"));
+  if (!formData.has("accountOwnerMemberId") || !owner.success) {
+    return NextResponse.json({ error: "Choose who owns this account, or Joint or unknown." }, { status: 400 });
+  }
   try {
     const arrayBuffer = await file.arrayBuffer();
     const workbook = readTabularFileFromBuffer({
@@ -51,6 +56,7 @@ export async function POST(request: Request) {
       originalFilename: file.name,
       fileBuffer: Buffer.from(arrayBuffer),
       context,
+      accountOwnerMemberId: owner.data,
     });
     const savedImports = await withCurrentWorkspaceDb((currentContext, db) =>
       listSavedImports(currentContext, { type: "bank" }, db),

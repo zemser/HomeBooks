@@ -66,88 +66,16 @@ test("insufficient and conflicting history does not produce a suggestion", () =>
   assert.equal(conflict.has("split"), false);
 });
 
-test("merchant rules restore both owner and payer for personal expenses", () => {
-  const names = new Map([
-    ["izzy", "Izzy"],
-    ["lee", "Lee"],
-  ]);
-  const suggestion = buildExactMerchantSuggestions(
-    [
-      decision("Gift shop", "personal", "Gifts", {
-        personalOwnerMemberId: "izzy",
-        paidByMemberId: "lee",
-      }),
-      decision("Gift shop", "personal", "Gifts", {
-        personalOwnerMemberId: "izzy",
-        paidByMemberId: "lee",
-      }),
-    ],
-    names,
-  ).get("gift shop");
-
-  assert.equal(suggestion?.personalOwnerMemberId, "izzy");
-  assert.equal(suggestion?.personalOwnerName, "Izzy");
-  assert.equal(suggestion?.paidByMemberId, "lee");
-  assert.equal(suggestion?.paidByName, "Lee");
-});
-
-test("different personal payers do not create false suggestion consensus", () => {
-  const suggestion = buildExactMerchantSuggestions([
-    decision("Gift shop", "personal", "Gifts", {
-      personalOwnerMemberId: "izzy",
-      paidByMemberId: "lee",
-    }),
-    decision("Gift shop", "personal", "Gifts", {
-      personalOwnerMemberId: "izzy",
-      paidByMemberId: "izzy",
-    }),
-  ]).get("gift shop");
-
-  assert.equal(suggestion, undefined);
-});
-
-test("member evidence follows owner, payer, and income recipient eligibility", () => {
-  const names = new Map([["member-1", "Alex"]]);
-  const personal = buildExactMerchantSuggestions(
-    [
-      decision("Personal merchant", "personal", "Personal", {
-        personalOwnerMemberId: "member-1",
-        paidByMemberId: "member-1",
-      }),
-      decision("Personal merchant", "personal", "Personal", {
-        personalOwnerMemberId: "member-1",
-        paidByMemberId: "member-1",
-      }),
-    ],
-    names,
-  ).get("personal merchant");
-  assert.equal(personal?.personalOwnerName, "Alex");
-
-  const household = buildExactMerchantSuggestions([
-    decision("Household merchant", "household", "Home", { paidByMemberId: "member-1" }),
-    decision("Household merchant", "household", "Home", { paidByMemberId: "member-1" }),
-  ]).get("household merchant");
-  assert.equal(household?.paidByMemberId, "member-1");
-  assert.equal(household?.personalOwnerMemberId, null);
-
-  const income = buildExactMerchantSuggestions(
-    [
-      decision("Salary", "income", "Salary", { receivedByMemberId: "member-1" }),
-      decision("Salary", "income", "Salary", { receivedByMemberId: "member-1" }),
-    ],
-    names,
-  ).get("salary");
-  assert.equal(income?.receivedByMemberId, "member-1");
-  assert.equal(income?.receivedByName, "Alex");
-});
-
-test("different income receivers do not create false suggestion consensus", () => {
-  const suggestion = buildExactMerchantSuggestions([
-    decision("Salary", "income", "Salary", { receivedByMemberId: "member-1" }),
-    decision("Salary", "income", "Salary", { receivedByMemberId: "member-1" }),
-    decision("Salary", "income", "Salary", { receivedByMemberId: "member-2" }),
-    decision("Salary", "income", "Salary", { receivedByMemberId: "member-2" }),
-  ]).get("salary");
-
-  assert.equal(suggestion, undefined);
+test("suggestions reuse classification but never historical people", () => {
+  for (const classificationType of ["household", "shared", "personal", "income"] as const) {
+    const suggestion = buildExactMerchantSuggestions([
+      decision("Merchant", classificationType, "Category", { personalOwnerMemberId: "alex", paidByMemberId: "alex", receivedByMemberId: "alex" }),
+      decision("Merchant", classificationType, "Category", { personalOwnerMemberId: "sam", paidByMemberId: "sam", receivedByMemberId: "sam" }),
+    ]).get("merchant");
+    assert.equal(suggestion?.classificationType, classificationType);
+    assert.equal(suggestion?.confidence, "strong");
+    assert.equal(suggestion?.personalOwnerMemberId, null);
+    assert.equal(suggestion?.paidByMemberId, null);
+    assert.equal(suggestion?.receivedByMemberId, null);
+  }
 });

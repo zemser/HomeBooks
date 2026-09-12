@@ -72,3 +72,10 @@ test("serialized page 1 remains explicit when a transaction is selected", () => 
   assert.equal(restored.transactionId, "selected-on-page-2");
   assert.equal(parseHistoryQuery(new URLSearchParams("transactionId=focus")).pageSpecified, false);
 });
+
+
+test("automatic classification filter survives URL round trips", () => {
+  const query = parseHistoryQuery(new URLSearchParams("month=all&import=all&reviewStatus=automatic"));
+  assert.equal(query.reviewStatus, "automatic");
+  assert.equal(parseHistoryQuery(new URLSearchParams(serializeHistoryQuery("", query))).reviewStatus, "automatic");
+});

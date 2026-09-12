@@ -107,7 +107,7 @@ type LoadExpensesOptions = {
   transactionId?: string | null;
 };
 
-type ReviewStatusFilter = "all" | "needs_review" | "reviewed";
+type ReviewStatusFilter = "all" | "needs_review" | "reviewed" | "automatic";
 
 const EXPENSE_CLASSIFICATION_OPTIONS: OneTimeManualEntryClassificationType[] = [
   "household",
@@ -1248,6 +1248,7 @@ export function ExpensesPageClient({
                 <option value="all">All rows</option>
                 <option value="needs_review">Needs review</option>
                 <option value="reviewed">Reviewed</option>
+                <option value="automatic">Automatically classified</option>
               </select>
             </label>
             <label className="field">
@@ -1432,8 +1433,11 @@ export function ExpensesPageClient({
                             type="button"
                             onClick={() => openClassificationEditor(transaction.id)}
                           >
-                            {transaction.classification ? "Edit classification" : "Classify"}
+                            {transaction.classification ? "Correct this transaction" : "Classify"}
                           </button>
+                          {transaction.classification?.decidedBy === "rule" ? (
+                            <Link className="link-button" href={`/transactions/review?transactionId=${encodeURIComponent(transaction.id)}`}>Inspect or stop rule</Link>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

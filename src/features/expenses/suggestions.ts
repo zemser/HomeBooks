@@ -1,8 +1,4 @@
 import type { ClassificationType } from "@/features/expenses/constants";
-import {
-  classificationAllowsPayer,
-  classificationAllowsRecipient,
-} from "@/features/expenses/payer";
 import type { ClassificationSuggestion } from "@/features/expenses/types";
 
 export type HistoricalClassificationDecision = {
@@ -21,7 +17,6 @@ export function normalizeMerchantRuleValue(value: string) {
 
 export function buildExactMerchantSuggestions(
   rows: HistoricalClassificationDecision[],
-  memberNames: ReadonlyMap<string, string> = new Map(),
 ) {
   const result = new Map<string, ClassificationSuggestion>();
   const decisionsByMerchant = new Map<
@@ -35,9 +30,7 @@ export function buildExactMerchantSuggestions(
     const decisionKey = JSON.stringify([
       row.classificationType,
       row.categoryId ?? row.category?.trim().toLocaleLowerCase() ?? null,
-      row.classificationType === "personal" ? row.personalOwnerMemberId : null,
-      classificationAllowsPayer(row.classificationType) ? row.paidByMemberId : null,
-      classificationAllowsRecipient(row.classificationType) ? row.receivedByMemberId : null,
+
     ]);
     const decisions = decisionsByMerchant.get(merchantKey) ?? new Map();
     const current = decisions.get(decisionKey);
@@ -53,27 +46,17 @@ export function buildExactMerchantSuggestions(
     const winner = ranked[0];
     const total = ranked.reduce((sum, decision) => sum + decision.count, 0);
     if (!winner || total < 2 || winner.count / total < 0.75) return;
-    const personalOwnerMemberId =
-      winner.row.classificationType === "personal" ? winner.row.personalOwnerMemberId : null;
-    const paidByMemberId = classificationAllowsPayer(winner.row.classificationType)
-      ? winner.row.paidByMemberId
-      : null;
-    const receivedByMemberId = classificationAllowsRecipient(winner.row.classificationType)
-      ? winner.row.receivedByMemberId
-      : null;
 
     result.set(merchantKey, {
       classificationType: winner.row.classificationType,
       category: winner.row.category,
       categoryId: winner.row.categoryId,
-      personalOwnerMemberId,
-      personalOwnerName: personalOwnerMemberId
-        ? memberNames.get(personalOwnerMemberId) ?? null
-        : null,
-      paidByMemberId,
-      paidByName: paidByMemberId ? memberNames.get(paidByMemberId) ?? null : null,
-      receivedByMemberId,
-      receivedByName: receivedByMemberId ? memberNames.get(receivedByMemberId) ?? null : null,
+      personalOwnerMemberId: null,
+      personalOwnerName: null,
+      paidByMemberId: null,
+      paidByName: null,
+      receivedByMemberId: null,
+      receivedByName: null,
       matchingTransactionCount: total,
       supportingTransactionCount: winner.count,
       confidence: winner.count === total ? "strong" : "likely",

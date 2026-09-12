@@ -1,5 +1,6 @@
 "use client";
 
+import { merchantRuleExceptionMessage } from "@/features/expenses/merchant-rules";
 import Link from "next/link";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
@@ -704,10 +705,28 @@ export function ReviewQueueClient({
       categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
       ...memberAttributionForClassificationType(
         classificationType,
-        current,
+        { ...current,
+          personalOwnerMemberId: current.personalOwnerMemberId || selectedTransaction?.accountOwnerMemberId || "",
+          receivedByMemberId: current.receivedByMemberId || selectedTransaction?.accountOwnerMemberId || "" },
         selectedTransaction?.accountOwnerMemberId ?? "",
       ),
     }));
+  }
+
+  async function stopSelectedRule() {
+    if (!selectedTransaction) return;
+    try {
+      const response = await fetch("/api/transaction-classifications", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId: selectedTransaction.id }),
+      });
+      if (!response.ok) throw new Error("Could not stop this rule. Try again.");
+      await loadQueue(selectedTransaction.id, page, searchQuery);
+      setMessage("Rule stopped for future imports. Existing transactions are unchanged.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not stop this rule.");
+    }
   }
 
   function acceptSuggestion() {
@@ -718,10 +737,10 @@ export function ReviewQueueClient({
       classificationType: suggestion.classificationType,
       category: suggestion.category ?? "",
       categoryId: suggestion.categoryId ?? "",
-      personalOwnerMemberId: suggestion.personalOwnerMemberId ?? "",
+      personalOwnerMemberId: suggestion.classificationType === "personal" ? selectedTransaction.accountOwnerMemberId ?? "" : "",
       paidByMemberId:
-        suggestion.paidByMemberId ?? selectedTransaction.accountOwnerMemberId ?? "",
-      receivedByMemberId: suggestion.receivedByMemberId ?? "",
+        ["personal", "household", "shared"].includes(suggestion.classificationType) ? selectedTransaction.accountOwnerMemberId ?? "" : "",
+      receivedByMemberId: suggestion.classificationType === "income" ? selectedTransaction.accountOwnerMemberId ?? "" : "",
     }));
     setMessage("Suggestion applied. Review it, then save when ready.");
   }
@@ -778,7 +797,7 @@ export function ReviewQueueClient({
         personalOwnerMemberId: singleForm.personalOwnerMemberId || null,
         paidByMemberId: singleForm.paidByMemberId || null,
         receivedByMemberId: singleForm.receivedByMemberId || null,
-        createRule: singleForm.createRule,
+        createRule: singleForm.createRule && merchantCanCreateRule,
         additionalTransactionIds,
       }),
     });
@@ -987,7 +1006,14 @@ export function ReviewQueueClient({
   const nextTransactionId = selectedQueuePosition && selectedQueuePosition < visibleQueue.length
     ? visibleQueue[selectedQueuePosition]?.id
     : null;
-  const merchantCanCreateRule = Boolean(selectedTransaction?.merchantRaw?.trim());
+  const ruleException = singleForm.classificationType ? merchantRuleExceptionMessage({
+    classificationType: singleForm.classificationType,
+    accountOwnerMemberId: selectedTransaction?.accountOwnerMemberId ?? null,
+    personalOwnerMemberId: singleForm.personalOwnerMemberId || null,
+    paidByMemberId: singleForm.paidByMemberId || null,
+    receivedByMemberId: singleForm.receivedByMemberId || null,
+  }) : "Choose a classification first.";
+  const merchantCanCreateRule = Boolean(selectedTransaction?.merchantRaw?.trim()) && !ruleException;
   const allocationEditable =
     selectedTransaction?.classification &&
     selectedTransaction.classification.classificationType !== "transfer" &&
@@ -1727,7 +1753,7 @@ export function ReviewQueueClient({
                       {selectedTransaction.suggestion.category ? ` · ${selectedTransaction.suggestion.category}` : ""}
                     </h3>
                     <p>
-                      Based on {selectedTransaction.suggestion.supportingTransactionCount} of {selectedTransaction.suggestion.matchingTransactionCount} previous transactions from this merchant.
+                      {selectedTransaction.suggestion.source === "saved_rule" ? "Saved merchant classification. Confirm the people for this transaction. Save the rule again to enable account-based attribution on future imports." : `Based on ${selectedTransaction.suggestion.supportingTransactionCount} of ${selectedTransaction.suggestion.matchingTransactionCount} previous transactions from this merchant. People follow this account, not previous purchases.`}
                     </p>
                   </div>
                   <button className="button button-secondary" type="button" onClick={acceptSuggestion}>Accept suggestion</button>
@@ -1769,8 +1795,8 @@ export function ReviewQueueClient({
                 <label className="checkbox-label merchant-rule-toggle">
                   <input
                     type="checkbox"
-                    aria-label="Use this decision for future exact merchant matches"
-                    checked={singleForm.createRule}
+                    aria-label="Automatically classify future exact merchant matches on all members’ accounts"
+                    checked={singleForm.createRule && merchantCanCreateRule}
                     disabled={!merchantCanCreateRule}
                     onChange={(event) =>
                       setSingleForm((current) => ({
@@ -1780,13 +1806,17 @@ export function ReviewQueueClient({
                     }
                   />
                   <span>
-                    Always categorize “{selectedTransaction.merchantRaw?.trim() || "this merchant"}” this way <kbd>R</kbd>
+                    Automatically classify “{selectedTransaction.merchantRaw?.trim() || "this merchant"}” as {singleForm.classificationType ? formatClassificationTypeLabel(singleForm.classificationType) : "the selected type"}{singleForm.category ? ` / ${singleForm.category}` : ""} <kbd>R</kbd>
                   </span>
                 </label>
-                {singleForm.createRule && selectedTransaction.merchantRaw ? (
+                {selectedTransaction.exactRuleExists ? (
+                  <button className="link-button" type="button" onClick={() => void stopSelectedRule()}>Stop this rule</button>
+                ) : null}
+                {!selectedTransaction.accountOwnerMemberId ? <p className="status warning">Account owner is unknown or joint. Confirm people for this transaction; automatic attribution is unavailable.</p> : null}
+                {singleForm.createRule && merchantCanCreateRule && selectedTransaction.merchantRaw ? (
                   <div className="merchant-rule-preview">
                     <strong>{selectedTransaction.exactRuleExists ? "Update saved exact-match rule" : "Save a new exact-match rule"}</strong>
-                    <p>Exact merchant name · applies automatically to future imports.</p>
+                    <p>Applies to this exact merchant on all members’ accounts. Who paid follows the account owner. Personal spending and income also belong to the account owner. Exceptions must be reviewed individually.</p>
                   </div>
                 ) : null}
                 {similarVisibleTransactionIds.length > 0 && selectedTransactionInQueue ? (
@@ -1808,8 +1838,7 @@ export function ReviewQueueClient({
                 ) : null}
                 {!merchantCanCreateRule ? (
                   <p className="helper-text">
-                    Merchant rule creation is only available when the transaction has a
-                    merchant value.
+                    {ruleException ?? "Merchant rule creation requires a merchant value."}
                   </p>
                 ) : null}
                 {similarVisibleTransactionIds.length > 0 && selectedTransactionInQueue && !singleForm.applyToSimilar ? (

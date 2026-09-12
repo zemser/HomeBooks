@@ -5,7 +5,7 @@ export const HISTORY_MONTH_UNRESOLVED = "default";
 export const HISTORY_IMPORT_ALL = "all";
 export const HISTORY_IMPORT_UNRESOLVED = "default";
 
-export type HistoryReviewStatus = "all" | "needs_review" | "reviewed";
+export type HistoryReviewStatus = "all" | "needs_review" | "reviewed" | "automatic";
 
 export type HistoryQuery = {
   month: string;
@@ -28,6 +28,7 @@ const historyReviewStatuses = new Set<HistoryReviewStatus>([
   "all",
   "needs_review",
   "reviewed",
+  "automatic",
 ]);
 
 function positiveInteger(value: string | null, fallback: number) {

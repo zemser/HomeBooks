@@ -1,3 +1,4 @@
+import { canAutoApplyMerchantRule, merchantRuleAttribution } from "@/features/expenses/merchant-rules";
 import { createHash, randomUUID } from "node:crypto";
 
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
@@ -12,12 +13,11 @@ import {
   importTemplates,
   transactionClassifications,
   transactions,
+  workspaceMembers,
 } from "@/db/schema";
 import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
 import {
   compatibilityMemberOwnerId,
-  normalizeMemberAttribution,
-  resolveImportedPaidByMemberId,
 } from "@/features/expenses/payer";
 import { getSupportedBankImportCatalog } from "@/features/imports/catalog";
 import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
@@ -129,6 +129,7 @@ function buildTransactionDedupeHash(input: {
 export async function analyzeParsedBankImport(input: {
   context: CurrentImportContext;
   parsed: ParsedBankStatement;
+  accountOwnerMemberId?: string | null;
   db?: DbExecutor;
 }) {
   const db = input.db ?? getDb();
@@ -141,6 +142,14 @@ export async function analyzeParsedBankImport(input: {
 
   const accountLabel =
     input.parsed.accountLabel?.trim() || `${templateRecord.sourceName} imported account`;
+  const existingAccount = await db.query.financialAccounts.findFirst({ where: and(
+    eq(financialAccounts.workspaceId, input.context.workspaceId),
+    eq(financialAccounts.importSourceId, templateRecord.sourceId),
+    eq(financialAccounts.displayName, accountLabel),
+    eq(financialAccounts.externalAccountLabel, accountLabel),
+  ) });
+  const accountOwnerMemberId = input.accountOwnerMemberId !== undefined
+    ? input.accountOwnerMemberId : existingAccount?.ownerMemberId ?? null;
   const transactionDedupeHashes = input.parsed.transactions.map((transaction) =>
     buildTransactionDedupeHash({
       workspaceId: input.context.workspaceId,
@@ -209,7 +218,10 @@ export async function analyzeParsedBankImport(input: {
     transactionCount: transactionPlans.length,
     newTransactionCount: transactionPlans.filter((item) => !item.duplicate).length,
     duplicateTransactionCount: transactionPlans.filter((item) => item.duplicate).length,
-    automaticRuleCount: transactionPlans.filter((item) => item.matchedRule).length,
+    accountOwnerMemberId,
+    automaticRuleCount: transactionPlans.filter((item) => item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, accountOwnerMemberId)).length,
+    automaticRuleCountWithOwner: transactionPlans.filter((item) => item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, "confirmed-owner")).length,
+    automaticRuleCountWithoutOwner: transactionPlans.filter((item) => item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, null)).length,
   };
 }
 
@@ -271,7 +283,7 @@ function createImportRowStatusMap(input: {
 
 async function findOrCreateFinancialAccount(input: {
   workspaceId: string;
-  memberId: string;
+  accountOwnerMemberId: string | null;
   sourceId: string;
   accountLabel: string;
   db: DbExecutor;
@@ -287,14 +299,15 @@ async function findOrCreateFinancialAccount(input: {
   });
 
   if (existing) {
-    return existing;
+    // Persist ownership only alongside a successful import below.
+    return { ...existing, ownerMemberId: input.accountOwnerMemberId };
   }
 
   const [created] = await input.db
     .insert(financialAccounts)
     .values({
       workspaceId: input.workspaceId,
-      ownerMemberId: input.memberId,
+      ownerMemberId: input.accountOwnerMemberId,
       accountType: "credit_card",
       displayName,
       importSourceId: input.sourceId,
@@ -442,6 +455,7 @@ export async function persistBankImport(input: {
   workbook: WorkbookData;
   originalFilename: string;
   fileBuffer: Buffer;
+  accountOwnerMemberId?: string | null;
   context: CurrentImportContext;
 }) {
   const checksum = hashBuffer(input.fileBuffer);
@@ -494,19 +508,27 @@ export async function persistBankImport(input: {
     analyzeParsedBankImport({
       context: input.context,
       parsed: preview.parsed,
+      accountOwnerMemberId: input.accountOwnerMemberId ?? null,
       db,
     }),
   );
   const { accountLabel, templateRecord } = importPlan;
-  const account = await withDbTransaction(input.context.userId, (db) =>
-    findOrCreateFinancialAccount({
+  const account = await withDbTransaction(input.context.userId, async (db) => {
+    if (input.accountOwnerMemberId) {
+      const member = await db.query.workspaceMembers.findFirst({ where: and(
+        eq(workspaceMembers.workspaceId, input.context.workspaceId),
+        eq(workspaceMembers.id, input.accountOwnerMemberId), eq(workspaceMembers.isActive, true),
+      ) });
+      if (!member) throw new Error("Account owner must be an active workspace member.");
+    }
+    return findOrCreateFinancialAccount({
       workspaceId: input.context.workspaceId,
-      memberId: input.context.memberId,
+      accountOwnerMemberId: input.accountOwnerMemberId ?? null,
       sourceId: templateRecord.sourceId,
       accountLabel,
       db,
-    }),
-  );
+    });
+  });
 
   const importId = retryImport?.id ?? randomUUID();
   const storagePath =
@@ -571,6 +593,9 @@ export async function persistBankImport(input: {
     });
 
     await withDbTransaction(input.context.userId, async (tx) => {
+      await tx.update(financialAccounts)
+        .set({ ownerMemberId: account.ownerMemberId, updatedAt: new Date() })
+        .where(and(eq(financialAccounts.id, account.id), eq(financialAccounts.workspaceId, input.context.workspaceId)));
       if (stagingRows.length > 0) {
         await tx.insert(importRows).values(
           stagingRows.map((row) => ({
@@ -629,16 +654,8 @@ export async function persistBankImport(input: {
             return [];
           }
 
-          const attribution = normalizeMemberAttribution({
-            classificationType: matchedRule.classificationType,
-            personalOwnerMemberId: matchedRule.personalOwnerMemberId,
-            paidByMemberId: resolveImportedPaidByMemberId({
-              classificationType: matchedRule.classificationType,
-              paidByMemberId: matchedRule.paidByMemberId ?? undefined,
-              accountOwnerMemberId: account.ownerMemberId,
-            }),
-            receivedByMemberId: matchedRule.receivedByMemberId,
-          });
+          if (!canAutoApplyMerchantRule(matchedRule, account.ownerMemberId)) return [];
+          const attribution = merchantRuleAttribution(matchedRule.classificationType, account.ownerMemberId);
 
           return [
             {
