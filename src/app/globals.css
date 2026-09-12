@@ -239,6 +239,27 @@ main {
   min-width: 0;
 }
 
+.app-account-skeleton {
+  pointer-events: none;
+}
+
+.app-account-skeleton .app-account-avatar {
+  background: rgba(39, 93, 76, 0.1);
+  color: transparent;
+}
+
+.app-account-skeleton strong,
+.app-account-skeleton small {
+  width: 6.5rem;
+  color: transparent;
+  background: rgba(90, 102, 88, 0.12);
+  border-radius: 0.25rem;
+}
+
+.app-account-skeleton small {
+  width: 8rem;
+}
+
 .app-account-copy strong {
   overflow: hidden;
   font-size: 0.92rem;

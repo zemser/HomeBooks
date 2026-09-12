@@ -15,6 +15,18 @@ function initialsFromName(name: string) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
+export function AccountControlSkeleton() {
+  return (
+    <div className="app-account app-account-skeleton" aria-busy="true" aria-label="Account">
+      <span className="app-account-avatar" />
+      <span className="app-account-copy">
+        <strong>&nbsp;</strong>
+        <small>&nbsp;</small>
+      </span>
+    </div>
+  );
+}
+
 export function AccountControl({ displayName, email }: AccountControlProps) {
   const pathname = usePathname();
   const active = pathname === "/settings" || pathname.startsWith("/settings/");
