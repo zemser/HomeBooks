@@ -57,6 +57,7 @@ CREATE POLICY "workspace_members_insert_self_or_owner" ON "workspace_members"
     "app"."is_workspace_owner"("workspace_id")
     OR (
       "user_id" = "app"."current_user_id"()
+      AND "role" = 'member'
       AND "app"."has_pending_workspace_invite"("workspace_id")
     )
     OR (
@@ -78,6 +79,7 @@ CREATE POLICY "workspace_invites_select_member_or_invitee" ON "workspace_invites
 CREATE POLICY "workspace_invites_insert_owner" ON "workspace_invites"
   FOR INSERT WITH CHECK (
     "app"."is_workspace_owner"("workspace_id")
+    AND "role" = 'member'
     AND "status" = 'pending'
     AND "invited_by_user_id" = "app"."current_user_id"()
   );--> statement-breakpoint
@@ -99,6 +101,7 @@ CREATE POLICY "workspace_invites_update_owner_or_invitee" ON "workspace_invites"
   WITH CHECK (
     (
       "app"."is_workspace_owner"("workspace_id")
+      AND "role" = 'member'
       AND "status" = 'revoked'
     )
     OR (
@@ -107,6 +110,7 @@ CREATE POLICY "workspace_invites_update_owner_or_invitee" ON "workspace_invites"
         FROM "users"
         WHERE "users"."id" = "app"."current_user_id"()
       )
+      AND "role" = 'member'
       AND "status" IN ('accepted', 'declined')
     )
   );

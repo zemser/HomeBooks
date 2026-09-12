@@ -445,6 +445,25 @@ async function main() {
       [invite.id],
     );
 
+    await setCurrentUser(client, first.userId);
+    await expectPolicyBlock(
+      client,
+      "owner cannot invite someone as owner",
+      `
+        insert into workspace_invites (
+          workspace_id,
+          invited_email,
+          invited_by_user_id,
+          role,
+          status,
+          workspace_name_snapshot,
+          invited_by_display_name
+        )
+        values ($1, $2, $3, 'owner', 'pending', $4, 'Owner')
+      `,
+      [first.workspaceId, `${testLabel("owner-invite")}@example.test`, first.userId, testLabel("invite-workspace")],
+    );
+
     await setCurrentUser(client, invitee.id);
     const visibleInvite = await client.query(
       "select id from workspace_invites where id = $1",
@@ -454,6 +473,37 @@ async function main() {
       throw new Error(`invitee cannot read matching invite: expected 1 row, saw ${visibleInvite.rowCount}.`);
     }
     console.log("ok - invitee can read matching invite");
+
+    await expectPolicyBlock(
+      client,
+      "invitee cannot join as owner",
+      `
+        insert into workspace_members (workspace_id, user_id, role)
+        values ($1, $2, 'owner')
+      `,
+      [first.workspaceId, invitee.id],
+    );
+
+    await insertOne(
+      client,
+      `
+        insert into workspace_members (workspace_id, user_id, role)
+        values ($1, $2, 'member')
+      `,
+      [first.workspaceId, invitee.id],
+    );
+    console.log("ok - invitee can join as member");
+
+    await expectPolicyBlock(
+      client,
+      "invitee cannot accept an invite as owner",
+      `
+        update workspace_invites
+        set status = 'accepted', role = 'owner'
+        where id = $1
+      `,
+      [invite.id],
+    );
 
     await setCurrentUser(client, null);
     await expectNoRows(

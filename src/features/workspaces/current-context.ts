@@ -279,7 +279,7 @@ async function findCurrentMembership(tx: DbExecutor, userId: string) {
     .select()
     .from(workspaceMembers)
     .where(and(eq(workspaceMembers.userId, userId), eq(workspaceMembers.isActive, true)))
-    .orderBy(desc(workspaceMembers.updatedAt), desc(workspaceMembers.createdAt))
+    .orderBy(desc(workspaceMembers.createdAt))
     .limit(1);
 
   return member ?? null;

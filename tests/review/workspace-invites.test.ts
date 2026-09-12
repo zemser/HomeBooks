@@ -43,11 +43,12 @@ test("accepting an invite does not close invites to other workspaces", async () 
   assert.doesNotMatch(acceptSource, /already belong to a household/);
 });
 
-test("current workspace prefers the most recently touched membership", async () => {
+test("current workspace prefers the most recently joined membership", async () => {
   const source = await readFile(contextPath, "utf8");
 
   assert.match(source, /async function findCurrentMembership/);
-  assert.match(source, /orderBy\(desc\(workspaceMembers\.updatedAt\), desc\(workspaceMembers\.createdAt\)\)/);
+  assert.match(source, /orderBy\(desc\(workspaceMembers\.createdAt\)\)/);
+  assert.doesNotMatch(source, /workspaceMembers\.updatedAt/);
 });
 
 test("invite RLS helpers stay in the private app schema", async () => {
@@ -62,4 +63,9 @@ test("invite RLS helpers stay in the private app schema", async () => {
   assert.match(migration, /NOT "app"\."workspace_has_members"\("workspace_id"\)/);
   assert.match(migration, /CREATE POLICY "workspace_invites_select_member_or_invitee"/);
   assert.match(migration, /CREATE POLICY "workspace_invites_insert_owner"/);
+  assert.match(
+    migration,
+    /"user_id" = "app"\."current_user_id"\(\)\s+AND "role" = 'member'\s+AND "app"\."has_pending_workspace_invite"/,
+  );
+  assert.match(migration, /AND "role" = 'member'\s+AND "status" = 'pending'/);
 });
