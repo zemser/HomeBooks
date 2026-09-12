@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { canAutoApplyMerchantRule, merchantRuleAttribution, merchantRuleExceptionMessage } from "../../src/features/expenses/merchant-rules";
+import {
+  canAutoApplyMerchantRule,
+  canSaveMerchantRule,
+  merchantRuleAttribution,
+  merchantRuleAttributionNote,
+} from "../../src/features/expenses/merchant-rules";
 import { CLASSIFICATION_TYPES } from "../../src/features/expenses/constants";
 
 const people = { personalOwnerMemberId: null, paidByMemberId: null, receivedByMemberId: null };
@@ -30,9 +35,30 @@ test("old rule snapshots cannot silently pin or reinterpret any member", () => {
   }
 });
 
-test("personal exceptions may be classified, but cannot be saved as automatic rules", () => {
-  assert.match(merchantRuleExceptionMessage({ classificationType: "personal", accountOwnerMemberId: "sam", personalOwnerMemberId: "alex", paidByMemberId: "sam", receivedByMemberId: null })!, /exception/);
-  assert.equal(merchantRuleExceptionMessage({ classificationType: "personal", accountOwnerMemberId: "sam", personalOwnerMemberId: "sam", paidByMemberId: "sam", receivedByMemberId: null }), null);
+test("personal exceptions can still save a type-and-category rule", () => {
+  assert.equal(canSaveMerchantRule({ merchantRaw: "Gym", classificationType: "personal" }), true);
+  assert.equal(canSaveMerchantRule({ merchantRaw: "Gym", classificationType: "" }), false);
+  assert.equal(canSaveMerchantRule({ merchantRaw: "", classificationType: "personal" }), false);
+  assert.match(
+    merchantRuleAttributionNote({
+      classificationType: "personal",
+      accountOwnerMemberId: "sam",
+      personalOwnerMemberId: "alex",
+      paidByMemberId: "sam",
+      receivedByMemberId: null,
+    })!,
+    /exception/,
+  );
+  assert.equal(
+    merchantRuleAttributionNote({
+      classificationType: "personal",
+      accountOwnerMemberId: "sam",
+      personalOwnerMemberId: "sam",
+      paidByMemberId: "sam",
+      receivedByMemberId: null,
+    }),
+    null,
+  );
 });
 
 test("income follows account owner and excluded types never acquire people", () => {

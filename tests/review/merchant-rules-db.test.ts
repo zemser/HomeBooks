@@ -43,7 +43,12 @@ test("merchant rules persist safely, preserve undo, and keep ambiguous attributi
       assert.equal(report.status, "in_progress");
       const settlements = await getSharedSettlementsPageData(context, tx);
       assert.equal(settlements.pendingReviewCount, 1);
-      await assert.rejects(upsertTransactionClassification(context, { transactionId: rows[1].id, ...personal, paidByMemberId: members[1].id, createRule: true }, tx), /exception/);
+      const exceptionSave = await upsertTransactionClassification(context, { transactionId: rows[1].id, ...personal, paidByMemberId: members[1].id, createRule: true }, tx);
+      const [exceptionClassification] = await tx.select().from(schema.transactionClassifications).where(eq(schema.transactionClassifications.transactionId, rows[1].id));
+      assert.equal(exceptionClassification.personalOwnerMemberId, members[0].id);
+      assert.equal(exceptionClassification.paidByMemberId, members[1].id);
+      assert.equal((await tx.select().from(schema.classificationRules).where(eq(schema.classificationRules.workspaceId, workspace.id)))[0].defaultPersonalOwnerMemberId, null);
+      await undoClassificationDecision(context, exceptionSave.undoBatchId, tx);
       await undoClassificationDecision(context, first.undoBatchId, tx);
       assert.equal((await tx.select().from(schema.classificationRules).where(eq(schema.classificationRules.workspaceId, workspace.id))).length, 0);
       // A legacy snapshot is not silently reused, and undo preserves it exactly.

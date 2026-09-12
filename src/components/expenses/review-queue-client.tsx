@@ -1,6 +1,6 @@
 "use client";
 
-import { merchantRuleExceptionMessage } from "@/features/expenses/merchant-rules";
+import { canSaveMerchantRule, merchantRuleAttributionNote } from "@/features/expenses/merchant-rules";
 import Link from "next/link";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
 
@@ -1030,7 +1030,7 @@ export function ReviewQueueClient({
   const nextTransactionId = selectedQueuePosition && selectedQueuePosition < visibleQueue.length
     ? visibleQueue[selectedQueuePosition]?.id
     : null;
-  const ruleException = singleForm.classificationType ? merchantRuleExceptionMessage({
+  const ruleAttributionNote = singleForm.classificationType ? merchantRuleAttributionNote({
     classificationType: singleForm.classificationType,
     accountOwnerMemberId: selectedTransaction?.accountOwnerMemberId ?? null,
     personalOwnerMemberId:
@@ -1039,8 +1039,11 @@ export function ReviewQueueClient({
       selectedTransaction?.accountOwnerMemberId || singleForm.paidByMemberId || null,
     receivedByMemberId:
       selectedTransaction?.accountOwnerMemberId || singleForm.receivedByMemberId || null,
-  }) : "Choose a classification first.";
-  const merchantCanCreateRule = Boolean(selectedTransaction?.merchantRaw?.trim()) && !ruleException;
+  }) : null;
+  const merchantCanCreateRule = canSaveMerchantRule({
+    merchantRaw: selectedTransaction?.merchantRaw,
+    classificationType: singleForm.classificationType,
+  });
   const allocationEditable =
     selectedTransaction?.classification &&
     selectedTransaction.classification.classificationType !== "transfer" &&
@@ -1851,7 +1854,7 @@ export function ReviewQueueClient({
                 {singleForm.createRule && merchantCanCreateRule && selectedTransaction.merchantRaw ? (
                   <div className="merchant-rule-preview">
                     <strong>{selectedTransaction.exactRuleExists ? "Update saved exact-match rule" : "Save a new exact-match rule"}</strong>
-                    <p>Applies to this exact merchant on all members’ accounts. Who paid follows the account owner. Personal spending and income also belong to the account owner. Exceptions must be reviewed individually.</p>
+                    <p>Applies to this exact merchant on all members’ accounts. Who paid follows the account owner. Personal spending and income also belong to the account owner. This transaction can keep a different assignment; later matches do not copy it.</p>
                   </div>
                 ) : null}
                 {similarVisibleTransactionIds.length > 0 && selectedTransactionInQueue ? (
@@ -1871,9 +1874,14 @@ export function ReviewQueueClient({
                     </span>
                   </label>
                 ) : null}
+                {merchantCanCreateRule && ruleAttributionNote ? (
+                  <p className="helper-text">{ruleAttributionNote}</p>
+                ) : null}
                 {!merchantCanCreateRule ? (
                   <p className="helper-text">
-                    {ruleException ?? "Merchant rule creation requires a merchant value."}
+                    {selectedTransaction.merchantRaw?.trim()
+                      ? "Choose a classification first."
+                      : "Merchant rule creation requires a merchant value."}
                   </p>
                 ) : null}
                 {similarVisibleTransactionIds.length > 0 && selectedTransactionInQueue && !singleForm.applyToSimilar ? (

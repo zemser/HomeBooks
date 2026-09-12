@@ -21,13 +21,13 @@ The account owner and the uploader are different concepts. Import preview asks t
 
 If the account has no owner, person-bearing types stay in review with type/category suggested. Transfer and ignore may still auto-apply. Preview and saved-import counts use the same eligibility decision.
 
-A personal purchase for someone other than the account owner can be classified individually. That exception cannot be saved as an automatic rule. The same applies to payer or income-recipient exceptions. There is no pin control in this version.
+A personal purchase for someone other than the account owner can be classified individually. That exception stays on this transaction. An automatic rule can still be saved; it stores only type and category, so later matches follow each source-account owner rather than this exception. The same applies to payer or income-recipient exceptions. There is no pin control in this version.
 
 Matching remains exact, trimmed and case-insensitive. One active rule per merchant; saving a rule updates its existing exact match. Bulk classification does not create rules.
 
 ## Review and correction
 
-The checkbox says **Automatically classify “merchant” as Type / Category**. The preview explains that it applies across all members' accounts and people follow each source account. `R` toggles it when eligible.
+The checkbox says **Automatically classify “merchant” as Type / Category**. It is available for any reviewed transaction with a merchant and a type, including person-specific exceptions. The preview explains that it applies across all members' accounts and people follow each source account. `R` toggles it when eligible.
 
 The import result and saved statement library link to **View automatic classifications**, a History filter scoped to that import. History shows classification and payer, supports **Correct this transaction**, and links to the review editor to inspect or stop the rule. **Stop this rule** disables future application without changing existing transactions.
 
@@ -54,7 +54,7 @@ Apply Drizzle migration `0013_merchant_rule_reuse.sql` before deploying the appl
 - Alex uploads Sam's statement: Sam is payer and personal owner when Sam owns the account.
 - A shared merchant rule works on either member's account without replaying the rule creator's payer.
 - Joint/unknown accounts remain pending for personal, household, shared and income rules.
-- Personal-owner and payer exceptions are saved individually, with rule creation unavailable.
+- Personal-owner and payer exceptions stay on the reviewed transaction; a type/category rule can still be saved and later matches follow each account owner.
 - New personal rules store no person; their resulting classifications have valid owners.
 - Legacy person-bearing rules require confirmation; undo preserves their prior snapshots.
 - Automatic History filtering survives navigation and reload; corrections and stopping rules are accessible.
