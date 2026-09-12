@@ -49,9 +49,5 @@ export type WorkspaceHomeActivitySnapshot = {
 };
 
 export type AppShellSnapshot = {
-  workspaceName: string;
-  baseCurrency: string;
-  activeMemberCount: number;
-  pairwiseSettlementReady: boolean;
   reviewQueueCount: number;
 };

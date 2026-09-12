@@ -90,20 +90,8 @@ export async function getAppShellSnapshot(
   db: DbExecutor = getDb(),
 ): Promise<AppShellSnapshot> {
   return runWithWorkspaceDatabaseUser(context, async () => {
-    const [workspaceName, members, reviewQueueCount] = await Promise.all([
-      getWorkspaceName(context),
-      listWorkspaceMembersForSettings(context, db),
-      getReviewQueueCount(context, db),
-    ]);
-    const activeMembers = members.filter((member) => member.isActive);
-    const pairwiseSettlementReady = activeMembers.length === 2;
-
     return {
-      workspaceName,
-      baseCurrency: context.baseCurrency,
-      activeMemberCount: activeMembers.length,
-      pairwiseSettlementReady,
-      reviewQueueCount,
+      reviewQueueCount: await getReviewQueueCount(context, db),
     };
   });
 }
