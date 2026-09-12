@@ -1,7 +1,9 @@
-import {
-  signInWithGoogleAction,
-  signInWithPasswordAction,
-} from "@/features/auth/actions";
+import { Suspense } from "react";
+
+import { AuthScreen } from "@/components/auth/auth-screen";
+import { GoogleContinueForm } from "@/components/auth/google-continue-form";
+import { PasswordField } from "@/components/auth/password-field";
+import { signInWithPasswordAction } from "@/features/auth/actions";
 
 type SignInPageProps = {
   searchParams?: Promise<{
@@ -10,73 +12,58 @@ type SignInPageProps = {
   }>;
 };
 
-
 async function SignInForm({ searchParams }: SignInPageProps) {
   const params = await searchParams;
+  const error = params?.error;
   const next = params?.next ?? "/";
 
   return (
-    <>
-      {params?.error ? <p className="status error">{params.error}</p> : null}
+    <AuthScreen
+      description="Continue to manage shared household money."
+      error={error}
+      footer={
+        <p className="auth-note">
+          Need first-time access? <a href="/sign-up">Create the first account</a>
+        </p>
+      }
+      testId="sign-in-shell"
+      title="Welcome back"
+      trustLine="Then you’ll confirm a second-factor code. Data stays in this workspace."
+    >
+      <GoogleContinueForm from="sign-in" next={next} />
 
-      <section className="auth-layout auth-layout-single">
-          <div className="card auth-card stack">
-            <form action={signInWithPasswordAction} className="stack">
-              <div className="auth-card-header">
-                <h2>Sign in</h2>
-                <p className="muted-text">
-                  Use your email and password, or continue with the Google account connected in
-                  Supabase Auth.
-                </p>
-              </div>
-              <input name="next" type="hidden" value={next} />
-              <label className="field">
-                <span>Email</span>
-                <input className="input" name="email" required type="email" />
-              </label>
-              <label className="field">
-                <span>Password</span>
-                <input className="input" name="password" required type="password" />
-              </label>
-              <button className="button auth-button" type="submit">
-                Sign in
-              </button>
-            </form>
+      <div className="auth-divider">
+        <span>or</span>
+      </div>
 
-            <div className="auth-divider">
-              <span>or</span>
-            </div>
-
-            <form action={signInWithGoogleAction}>
-              <input name="next" type="hidden" value={next} />
-              <button className="button button-secondary auth-button" type="submit">
-                Continue with Google
-              </button>
-            </form>
-            <p className="auth-note">
-              Need first-time access? <a href="/sign-up">Create the first account</a>
-            </p>
-          </div>
-      </section>
-    </>
+      <form action={signInWithPasswordAction} className="stack" id="sign-in" name="sign-in">
+        <input name="next" type="hidden" value={next} />
+        <label className="field">
+          <span>Email</span>
+          <input
+            autoCapitalize="none"
+            autoComplete="username"
+            autoCorrect="off"
+            className="input"
+            name="email"
+            required
+            spellCheck={false}
+            type="email"
+          />
+        </label>
+        <PasswordField autoComplete="current-password" />
+        <button className="button auth-button" type="submit">
+          Sign in with email
+        </button>
+      </form>
+    </AuthScreen>
   );
 }
 
 export default function SignInPage({ searchParams }: SignInPageProps) {
   return (
-    <main>
-      <div className="page-shell auth-shell">
-        <section className="auth-hero" data-testid="sign-in-shell">
-          <span className="eyebrow">Private access</span>
-          <h1>Welcome back to your household workspace.</h1>
-          <p>Sign in to manage shared household money.</p>
-        </section>
-
-        <Suspense fallback={<div className="card auth-card" aria-busy="true">Loading sign-in…</div>}>
-          <SignInForm searchParams={searchParams} />
-        </Suspense>
-      </div>
-    </main>
+    <Suspense fallback={<div className="card auth-card" aria-busy="true">Loading sign-in…</div>}>
+      <SignInForm searchParams={searchParams} />
+    </Suspense>
   );
 }
-import { Suspense } from "react";

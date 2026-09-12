@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { displayNameFromEmail, getPasswordValidationError } from "@/features/auth/password";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 function getString(formData: FormData, key: string) {
@@ -27,16 +28,8 @@ function getSafeNext(formData: FormData) {
   return next;
 }
 
-function getPasswordValidationError(password: string) {
-  if (password.length < 10) {
-    return "Password must be at least 10 characters.";
-  }
-
-  if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
-    return "Password must include uppercase, lowercase, and a number.";
-  }
-
-  return null;
+function getGoogleErrorPath(formData: FormData) {
+  return getString(formData, "from") === "sign-up" ? "/sign-up" : "/sign-in";
 }
 
 export async function signInWithPasswordAction(formData: FormData) {
@@ -64,19 +57,10 @@ export async function signInWithPasswordAction(formData: FormData) {
 export async function signUpWithPasswordAction(formData: FormData) {
   const email = getString(formData, "email");
   const password = getString(formData, "password");
-  const confirmPassword = getString(formData, "confirmPassword");
-  const displayName = getString(formData, "displayName");
+  const displayName = displayNameFromEmail(email);
 
-  if (!displayName) {
-    redirectWithError("/sign-up", "Display name is required.");
-  }
-
-  if (!email || !password || !confirmPassword) {
-    redirectWithError("/sign-up", "Email, password, and password confirmation are required.");
-  }
-
-  if (password !== confirmPassword) {
-    redirectWithError("/sign-up", "Passwords do not match.");
+  if (!email || !password) {
+    redirectWithError("/sign-up", "Email and password are required.");
   }
 
   const passwordError = getPasswordValidationError(password);
@@ -106,11 +90,12 @@ export async function signUpWithPasswordAction(formData: FormData) {
 
 export async function signInWithGoogleAction(formData: FormData) {
   const next = getSafeNext(formData);
+  const errorPath = getGoogleErrorPath(formData);
   const headerStore = await headers();
   const origin = headerStore.get("origin");
 
   if (!origin) {
-    redirectWithError("/sign-in", "Could not start Google sign-in.");
+    redirectWithError(errorPath, "Could not start Google sign-in.");
   }
 
   const supabase = await createSupabaseServerClient();
@@ -122,7 +107,7 @@ export async function signInWithGoogleAction(formData: FormData) {
   });
 
   if (error || !data.url) {
-    redirectWithError("/sign-in", error?.message ?? "Could not start Google sign-in.");
+    redirectWithError(errorPath, error?.message ?? "Could not start Google sign-in.");
   }
 
   redirect(data.url);
