@@ -473,7 +473,7 @@ export function ImportPreviewClient({
                   {result.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}
                   <option value="joint">Joint or unknown — review people individually</option>
                 </select>
-                <span className="helper-text">Confirm the owner of {result.accountLabel || "this account"}, regardless of who uploaded the file. Saved rules use this owner for who paid, personal spending and income. This choice applies to future imports; existing transactions are unchanged.</span>
+                <span className="helper-text">Defaults to you for a new account. Change this if the statement belongs to someone else, or mark it joint. Saved rules use this owner for who paid, personal spending and income.</span>
               </label>
             ) : null}
             {result.warnings.length > 0 ? (

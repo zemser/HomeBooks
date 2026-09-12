@@ -51,6 +51,23 @@ type ActiveExactClassificationRule = {
   categoryId: string | null;
 };
 
+export function resolveImportAccountOwnerMemberId(input: {
+  requestedAccountOwnerMemberId?: string | null;
+  existingOwnerMemberId?: string | null;
+  hasExistingAccount: boolean;
+  currentMemberId: string;
+}) {
+  if (input.requestedAccountOwnerMemberId !== undefined) {
+    return input.requestedAccountOwnerMemberId;
+  }
+
+  if (input.hasExistingAccount) {
+    return input.existingOwnerMemberId ?? null;
+  }
+
+  return input.currentMemberId;
+}
+
 type RetryableFailedImport = {
   id: string;
   storagePath: string;
@@ -148,8 +165,12 @@ export async function analyzeParsedBankImport(input: {
     eq(financialAccounts.displayName, accountLabel),
     eq(financialAccounts.externalAccountLabel, accountLabel),
   ) });
-  const accountOwnerMemberId = input.accountOwnerMemberId !== undefined
-    ? input.accountOwnerMemberId : existingAccount?.ownerMemberId ?? null;
+  const accountOwnerMemberId = resolveImportAccountOwnerMemberId({
+    requestedAccountOwnerMemberId: input.accountOwnerMemberId,
+    existingOwnerMemberId: existingAccount?.ownerMemberId ?? null,
+    hasExistingAccount: Boolean(existingAccount),
+    currentMemberId: input.context.memberId,
+  });
   const transactionDedupeHashes = input.parsed.transactions.map((transaction) =>
     buildTransactionDedupeHash({
       workspaceId: input.context.workspaceId,

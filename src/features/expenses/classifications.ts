@@ -1,4 +1,3 @@
-import { merchantRuleExceptionMessage } from "@/features/expenses/merchant-rules";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
@@ -239,15 +238,6 @@ export async function upsertTransactionClassification(
       accountOwnerMemberId,
       selectedAccountOwnerMemberId,
     });
-  }
-  const primaryAttribution = attributionFor(transaction.accountOwnerMemberId);
-  if (input.createRule) {
-    const message = merchantRuleExceptionMessage({
-      classificationType: input.classificationType,
-      accountOwnerMemberId: transaction.accountOwnerMemberId,
-      ...primaryAttribution,
-    });
-    if (message) throw new ClassificationInputError(message);
   }
   for (const item of matchingTransactions) {
     validateClassificationInput({
