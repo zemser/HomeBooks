@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type FocusEvent } from "react";
+import { useFormStatus } from "react-dom";
 
 import { signOutAction } from "@/features/auth/actions";
 
@@ -19,11 +20,90 @@ function initialsFromName(name: string) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
-export function AccountControl({ displayName, email, canSignOut }: AccountControlProps) {
+function AccountChip({
+  displayName,
+  email,
+  showCaret = false,
+}: {
+  displayName: string;
+  email: string;
+  showCaret?: boolean;
+}) {
+  return (
+    <>
+      <span className="app-account-avatar" aria-hidden="true">
+        {initialsFromName(displayName)}
+      </span>
+      <span className="app-account-copy">
+        <strong>{displayName}</strong>
+        <small>{email}</small>
+      </span>
+      {showCaret ? (
+        <span className="app-account-caret" aria-hidden="true">
+          <svg viewBox="0 0 12 12" width="12" height="12">
+            <path
+              d="M2.5 4.25 6 8.25 9.5 4.25"
+              fill="none"
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="1.5"
+            />
+          </svg>
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+function SignOutButton() {
+  const { pending } = useFormStatus();
+
+  return (
+    <button type="submit" disabled={pending} aria-busy={pending}>
+      {pending ? "Signing out…" : "Sign out"}
+    </button>
+  );
+}
+
+export function AccountControlSkeleton() {
+  return (
+    <div className="app-account-wrap">
+      <div className="app-account app-account-skeleton" aria-busy="true" aria-label="Account">
+        <span className="app-account-avatar" />
+        <span className="app-account-copy">
+          <strong>&nbsp;</strong>
+          <small>&nbsp;</small>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function AccountSettingsLink({ displayName, email }: Omit<AccountControlProps, "canSignOut">) {
+  const pathname = usePathname();
+  const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
+
+  return (
+    <div className="app-account-wrap">
+      <Link
+        className={`app-account ${settingsActive ? "app-account-active" : ""}`}
+        href="/settings"
+        aria-current={settingsActive ? "page" : undefined}
+        aria-label={`${displayName}, Settings`}
+      >
+        <AccountChip displayName={displayName} email={email} />
+      </Link>
+    </div>
+  );
+}
+
+function AccountMenu({ displayName, email }: Omit<AccountControlProps, "canSignOut">) {
   const pathname = usePathname();
   const settingsActive = pathname === "/settings" || pathname.startsWith("/settings/");
   const wrapRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const blurTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const menuId = useId();
   const buttonId = useId();
   const [open, setOpen] = useState(false);
@@ -31,6 +111,14 @@ export function AccountControl({ displayName, email, canSignOut }: AccountContro
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current !== undefined) {
+        window.clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -56,8 +144,22 @@ export function AccountControl({ displayName, email, canSignOut }: AccountContro
     };
   }, [open]);
 
+  function onBlur(event: FocusEvent<HTMLDivElement>) {
+    const next = event.relatedTarget;
+    if (next instanceof Node && wrapRef.current?.contains(next)) return;
+
+    if (blurTimeoutRef.current !== undefined) {
+      window.clearTimeout(blurTimeoutRef.current);
+    }
+    blurTimeoutRef.current = window.setTimeout(() => {
+      if (!wrapRef.current?.contains(document.activeElement)) {
+        setOpen(false);
+      }
+    }, 0);
+  }
+
   return (
-    <div className="app-account-wrap" ref={wrapRef}>
+    <div className="app-account-wrap" ref={wrapRef} onBlur={onBlur}>
       <button
         className={`app-account ${open || settingsActive ? "app-account-active" : ""}`}
         type="button"
@@ -69,26 +171,30 @@ export function AccountControl({ displayName, email, canSignOut }: AccountContro
         aria-label={`${displayName}, account menu`}
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="app-account-avatar" aria-hidden="true">
-          {initialsFromName(displayName)}
-        </span>
-        <span className="app-account-copy">
-          <strong>{displayName}</strong>
-          <small>{email}</small>
-        </span>
+        <AccountChip displayName={displayName} email={email} showCaret />
       </button>
-      {open ? (
-        <div className="app-account-menu" id={menuId} aria-labelledby={buttonId}>
-          <Link href="/settings" onClick={() => setOpen(false)}>
-            Settings
-          </Link>
-          {canSignOut ? (
-            <form action={signOutAction}>
-              <button type="submit">Sign out</button>
-            </form>
-          ) : null}
-        </div>
-      ) : null}
+      <div
+        className="app-account-menu"
+        id={menuId}
+        data-open={open ? "true" : "false"}
+        inert={!open}
+        aria-label="Account"
+      >
+        <Link href="/settings" onClick={() => setOpen(false)}>
+          Settings
+        </Link>
+        <form action={signOutAction}>
+          <SignOutButton />
+        </form>
+      </div>
     </div>
   );
+}
+
+export function AccountControl({ displayName, email, canSignOut }: AccountControlProps) {
+  if (!canSignOut) {
+    return <AccountSettingsLink displayName={displayName} email={email} />;
+  }
+
+  return <AccountMenu displayName={displayName} email={email} />;
 }

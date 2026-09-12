@@ -3,18 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import {
-  AccountControl,
-  type AccountControlProps,
-} from "@/components/app-shell/account-control";
 import type { AppNavigation, AppNavItem } from "@/components/app-shell/nav";
 import { BrandMark } from "@/components/brand/brand-mark";
 import { PRODUCT_NAME } from "@/lib/brand";
 
 type AppShellClientProps = {
-  account: AccountControlProps;
+  headerAccount: React.ReactNode;
   navigation: AppNavigation;
   reviewBadge: React.ReactNode;
+  sidebarAccount: React.ReactNode;
   children: React.ReactNode;
 };
 
@@ -97,9 +94,10 @@ function DesktopNavLink({
 }
 
 export function AppShellClient({
-  account,
+  headerAccount,
   navigation,
   reviewBadge,
+  sidebarAccount,
   children,
 }: AppShellClientProps) {
   const pathname = usePathname();
@@ -136,7 +134,7 @@ export function AppShellClient({
           </nav>
 
           <div className="app-sidebar-footer">
-            <AccountControl {...account} />
+            {sidebarAccount}
           </div>
         </div>
       </aside>
@@ -147,7 +145,7 @@ export function AppShellClient({
             <p className="app-kicker">{PRODUCT_NAME}</p>
             <h1>{currentItem?.label ?? "Home"}</h1>
           </div>
-          <AccountControl {...account} />
+          {headerAccount}
         </header>
 
         <div className="app-main-scroll">{children}</div>

@@ -43,9 +43,13 @@ test("desktop navigation exposes the Phase 4 information architecture", async ({
   await expect(more.getByRole("link", { name: /Investments.*Beta/ })).toBeVisible();
   await expect(more.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   const account = page.locator(".app-sidebar-footer");
-  await expect(account.getByRole("button", { name: /, account menu$/ })).toBeVisible();
-  await account.getByRole("button", { name: /, account menu$/ }).click();
-  await expect(account.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+  const menuButton = account.getByRole("button", { name: /, account menu$/ });
+  if (await menuButton.count()) {
+    await menuButton.click();
+    await expect(account.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+  } else {
+    await expect(account.getByRole("link", { name: /, Settings$/ })).toBeVisible();
+  }
   await expect(page.getByTestId("home-shell").getByRole("link", { name: "Settings", exact: true })).toHaveCount(0);
   await expect(navigation.getByRole("link", { name: "Imports", exact: true })).toHaveCount(0);
   await expect(navigation.getByRole("link", { name: "Review", exact: true })).toHaveCount(0);
