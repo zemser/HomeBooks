@@ -417,6 +417,9 @@ export function SharedSettlementsPageClient({
         </article>
       ) : null}
 
+      {data && data.isPairwiseReady && (data.needsSplitSetup.length > 0 || (data.pendingReviewCount ?? 0) > 0) ? (
+        <p className="status warning">Settlement is incomplete: {data.needsSplitSetup.length} shared expenses need payer or split confirmation, and {data.pendingReviewCount ?? 0} imported transactions need review. <Link href="/transactions/review?import=all">Review transactions</Link></p>
+      ) : null}
       {data && data.isPairwiseReady ? (
         <article className="card">
           <div className="summary-strip">
@@ -424,10 +427,10 @@ export function SharedSettlementsPageClient({
               <strong>
                 {formatMoneyDisplay(data.balanceSummary.amount, data.workspaceCurrency)}
               </strong>
-              <span>Net open balance</span>
+              <span>Net open balance of confirmed splits</span>
             </div>
             <div>
-              <strong>{data.balanceSummary.summaryText}</strong>
+              <strong>{(data.pendingReviewCount ?? 0) + data.needsSplitSetup.length > 0 && Number(data.balanceSummary.amount) === 0 ? "No balance from confirmed splits yet" : data.balanceSummary.summaryText}</strong>
               <span>Current direction</span>
             </div>
             <div>

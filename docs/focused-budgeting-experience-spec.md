@@ -188,7 +188,7 @@ For each transaction, the user answers in this order:
 2. What category does it belong to, when reportable?
 3. Which member owns it, when personal?
 4. Who paid or received it, when supported by the current model?
-5. Should the decision be reused for matching merchants?
+5. Should type and category apply automatically to this exact merchant across all members’ accounts? Payer, personal owner and income recipient follow each confirmed source-account owner. Person-specific exceptions remain individual decisions. See `docs/merchant-rule-reuse-spec.md`.
 
 Acceptance criteria:
 
@@ -206,8 +206,8 @@ Acceptance criteria:
 The application determines a visible month status:
 
 - `empty`: no imported, manual, or recurring events exist for the month
-- `in_progress`: one or more imported transactions dated in the month have no saved classification
-- `complete`: every imported transaction dated in the month has a saved classification, including transfer or ignore
+- `in_progress`: one or more imported transactions dated in the month have no saved classification, or a reportable classification still lacks payer/income-recipient attribution
+- `complete`: every imported transaction dated in the month has a saved classification and required attribution, including transfer or ignore (which need no people)
 
 The status is descriptive, not a locking mechanism. Partial reports remain viewable.
 

@@ -75,6 +75,7 @@ export type SharedSettlementItem = {
 };
 
 export type SharedSettlementsPageData = {
+  pendingReviewCount?: number;
   workspaceCurrency: string;
   activeMembers: Array<{
     id: string;

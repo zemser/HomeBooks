@@ -24,6 +24,10 @@ type PreviewTransaction = {
 };
 
 type PreviewResponse = {
+  accountOwnerMemberId: string | null;
+  members: Array<{ id: string; displayName: string }>;
+  automaticRuleCountWithOwner: number;
+  automaticRuleCountWithoutOwner: number;
   detectedTemplate: {
     id: string;
     confidence: number;
@@ -132,6 +136,7 @@ export function ImportPreviewClient({
   const [isPending, startTransition] = useTransition();
   const [workspaceCurrency, setWorkspaceCurrency] = useState(initialWorkspaceCurrency);
   const [result, setResult] = useState<PreviewResponse | null>(null);
+  const [accountOwner, setAccountOwner] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -222,11 +227,12 @@ export function ImportPreviewClient({
       });
     }
 
+    setAccountOwner(preview.accountOwnerMemberId ?? "");
     setResult(preview);
   }
 
   async function handleSaveImport() {
-    if (!pendingSave) {
+    if (!pendingSave || !accountOwner) {
       return;
     }
 
@@ -237,6 +243,7 @@ export function ImportPreviewClient({
     formData.append("file", pendingSave.file);
     formData.append("workspaceCurrency", pendingSave.workspaceCurrency);
     formData.append("importType", "bank");
+    formData.append("accountOwnerMemberId", accountOwner);
     formData.append(
       "preview",
       JSON.stringify({
@@ -445,11 +452,11 @@ export function ImportPreviewClient({
                   <span>Already imported · skipped</span>
                 </div>
                 <div>
-                  <strong>{result.automaticRuleCount}</strong>
+                  <strong>{accountOwner && accountOwner !== "joint" ? result.automaticRuleCountWithOwner : result.automaticRuleCountWithoutOwner}</strong>
                   <span>Handled by saved rules</span>
                 </div>
                 <div>
-                  <strong>{Math.max(result.newTransactionCount - result.automaticRuleCount, 0)}</strong>
+                  <strong>{Math.max(result.newTransactionCount - (accountOwner && accountOwner !== "joint" ? result.automaticRuleCountWithOwner : result.automaticRuleCountWithoutOwner), 0)}</strong>
                   <span>Will need review</span>
                 </div>
               </div>
@@ -458,6 +465,17 @@ export function ImportPreviewClient({
               </p>
             </section>
 
+            {!hasSavedOutcome ? (
+              <label className="field">
+                <span>This account belongs to</span>
+                <select className="input" aria-label="This account belongs to" value={accountOwner} onChange={(event) => setAccountOwner(event.target.value)} disabled={saveState === "saving"}>
+                  <option value="">Choose account owner</option>
+                  {result.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}
+                  <option value="joint">Joint or unknown — review people individually</option>
+                </select>
+                <span className="helper-text">Confirm the owner of {result.accountLabel || "this account"}, regardless of who uploaded the file. Saved rules use this owner for who paid, personal spending and income. This choice applies to future imports; existing transactions are unchanged.</span>
+              </label>
+            ) : null}
             {result.warnings.length > 0 ? (
               <div className="stack">
                 {result.warnings.map((warning) => (
@@ -497,10 +515,11 @@ export function ImportPreviewClient({
                     </button>
                     <Link
                       className="link-button"
-                      href={`/transactions/all?import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
+                      href={`/transactions/all?month=all&reviewStatus=automatic&import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
                     >
-                      Open this statement in History
+                      View automatic classifications
                     </Link>
+                    <Link className="link-button" href={`/transactions/all?month=all&import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}>Open this statement in History</Link>
                   </div>
                 </div>
               ) : (
@@ -508,7 +527,7 @@ export function ImportPreviewClient({
                   className="button"
                   type="button"
                   onClick={() => void handleSaveImport()}
-                  disabled={saveState === "saving" || result.newTransactionCount === 0}
+                  disabled={saveState === "saving" || result.newTransactionCount === 0 || !accountOwner}
                 >
                   {saveState === "saving"
                     ? "Importing..."
@@ -632,7 +651,8 @@ export function ImportPreviewClient({
                     <td>
                       <strong>{savedImport.reviewPendingCount === 0 ? "Complete" : `${savedImport.reviewPendingCount} need review`}</strong>
                       <div className="table-note">
-                        {savedImport.manuallyReviewedCount} reviewed · {savedImport.ruleAppliedCount} by rules · {savedImport.transactionCount} total
+                        {savedImport.ruleAppliedCount > 0 ? <Link href={`/transactions/all?month=all&reviewStatus=automatic&import=${encodeURIComponent(savedImport.id)}`}>View automatic classifications</Link> : null}
+                        {" "}{savedImport.manuallyReviewedCount} reviewed · {savedImport.ruleAppliedCount} by rules · {savedImport.transactionCount} total
                       </div>
                     </td>
                     <td>{formatSavedAt(savedImport.createdAt)}</td>

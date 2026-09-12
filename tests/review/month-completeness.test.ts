@@ -59,3 +59,10 @@ test("manual-only activity is complete without an import review step", () => {
   assert.equal(result.status, "complete");
   assert.equal(result.importedTransactionCount, 0);
 });
+
+
+test("classified spending with an unknown payer is visibly incomplete", () => {
+  const result = buildMonthCompleteness(month, counts({ importedTransactionCount: 2, reviewedTransactionCount: 2, unresolvedAttributionCount: 1 }));
+  assert.equal(result.status, "in_progress");
+  assert.equal(result.unresolvedAttributionCount, 1);
+});

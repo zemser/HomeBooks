@@ -4,6 +4,7 @@ import { z } from "zod";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import {
   isClassificationInputError,
+  stopMerchantRule,
   upsertTransactionClassification,
 } from "@/features/expenses/classifications";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
@@ -51,5 +52,16 @@ export async function POST(request: Request) {
         error instanceof Error ? error.message : "Failed to save transaction classification.",
       status: isClassificationInputError(error) ? 400 : 500,
     });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const parsed = z.object({ transactionId: z.string().uuid() }).safeParse(await request.json());
+    if (!parsed.success) return NextResponse.json({ error: "A transaction is required." }, { status: 400 });
+    const result = await withCurrentWorkspaceDb((context, db) => stopMerchantRule(context, parsed.data.transactionId, db));
+    return NextResponse.json(result);
+  } catch (error) {
+    return errorResponse({ error, request, route: "/api/transaction-classifications", message: "Could not stop merchant rule", clientMessage: "Could not stop this rule. Try again." });
   }
 }

@@ -47,6 +47,8 @@ export type MonthlyReportSummary = {
 export type MonthCompletenessStatus = "empty" | "in_progress" | "complete";
 
 export type MonthCompleteness = {
+  pendingOutflowTotal?: number;
+  unresolvedAttributionCount?: number;
   month: string;
   status: MonthCompletenessStatus;
   importedTransactionCount: number;
@@ -344,7 +346,7 @@ export function buildMonthCompleteness(
   const status: MonthCompletenessStatus =
     counts.importedTransactionCount === 0 && counts.manualEntryCount === 0
       ? "empty"
-      : pendingTransactionCount > 0
+      : pendingTransactionCount > 0 || (counts.unresolvedAttributionCount ?? 0) > 0
         ? "in_progress"
         : "complete";
 
@@ -368,6 +370,8 @@ export async function getMonthCompleteness(
       .select({
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
         reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
+        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit'), 0)::text`,
+        unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared', 'household') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
         reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'household', 'income'))::int`,
         excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore'))::int`,
       })
@@ -395,6 +399,8 @@ export async function getMonthCompleteness(
   ]);
 
   return buildMonthCompleteness(selectedMonth, {
+    pendingOutflowTotal: Number(transactionCounts?.pendingOutflowTotal ?? 0),
+    unresolvedAttributionCount: Number(transactionCounts?.unresolvedAttributionCount ?? 0),
     importedTransactionCount: Number(transactionCounts?.importedTransactionCount ?? 0),
     reviewedTransactionCount: Number(transactionCounts?.reviewedTransactionCount ?? 0),
     reportableTransactionCount: Number(transactionCounts?.reportableTransactionCount ?? 0),
@@ -446,6 +452,8 @@ async function getMonthCompletenessForMonths(
         month: transactionMonth,
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
         reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
+        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit'), 0)::text`,
+        unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared', 'household') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
         reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'household', 'income'))::int`,
         excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore'))::int`,
       })
@@ -486,6 +494,8 @@ async function getMonthCompletenessForMonths(
     const counts = transactionCountsByMonth.get(month);
 
     return buildMonthCompleteness(month, {
+      pendingOutflowTotal: Number(counts?.pendingOutflowTotal ?? 0),
+      unresolvedAttributionCount: Number(counts?.unresolvedAttributionCount ?? 0),
       importedTransactionCount: Number(counts?.importedTransactionCount ?? 0),
       reviewedTransactionCount: Number(counts?.reviewedTransactionCount ?? 0),
       reportableTransactionCount: Number(counts?.reportableTransactionCount ?? 0),

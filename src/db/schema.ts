@@ -460,7 +460,6 @@ export const classificationRules = pgTable(
       sql`(
         (
           ${table.defaultClassificationType} = 'personal'
-          AND ${table.defaultPersonalOwnerMemberId} IS NOT NULL
           AND ${table.defaultReceivedByMemberId} IS NULL
         )
         OR (

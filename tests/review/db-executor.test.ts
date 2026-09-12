@@ -123,8 +123,8 @@ test("home and app-shell reads use the explicit transaction executor", async () 
   assert.match(homeSource, /listWorkspaceMembersForSettings\(context, db\)/);
   assert.match(homeSource, /listSavedImports\(context, \{ type: "bank" \}, db\)/);
   assert.match(shellSnapshotSource, /cache\(\(\) =>/);
-  assert.match(shellSnapshotSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(pageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(shellSnapshotSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(pageSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
   assert.match(importsSource, /db: DbExecutor = getDb\(\)/);
   assert.match(
     await readFile(new URL("../../src/app/(app)/transactions/page.tsx", import.meta.url), "utf8"),
@@ -137,7 +137,7 @@ test("home and app-shell reads use the explicit transaction executor", async () 
   assert.match(importsSource, /db\?: DbExecutor/);
   assert.match(
     await readFile(new URL("../../src/app/api/imports/preview/route.ts", import.meta.url), "utf8"),
-    /withCurrentWorkspaceDb\(\(context, db\)/,
+    /withCurrentWorkspaceDb\((?:async )?\(context, db\)/,
   );
 });
 
@@ -157,9 +157,9 @@ test("expense reads and classification commands use the explicit transaction exe
   assert.match(classificationsSource, /upsertTransactionClassification\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(classificationsSource, /bulkClassifyTransactions\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(classificationsSource, /undoClassificationDecision\([\s\S]*db: DbExecutor = getDb\(\)/);
-  assert.match(expensesPageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(expensesApiSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(reviewPageSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(expensesPageSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(expensesApiSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(reviewPageSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
 });
 
 test("import persistence keeps parsing and Storage work outside DB transactions", async () => {
@@ -194,10 +194,10 @@ test("recurring services and API callers use the explicit transaction executor",
   assert.match(serviceSource, /createRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(serviceSource, /updateRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(serviceSource, /deleteRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
-  assert.match(routeSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(generateRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(detailRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(versionRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(routeSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(generateRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(detailRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(versionRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
 });
 
 test("reporting reads and callers use the explicit transaction executor", async () => {
@@ -229,7 +229,7 @@ test("shared settlement reads and commands use the explicit transaction executor
   assert.match(serviceSource, /upsertSharedSettlement\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(serviceSource, /listEligibleSettlementRows\([\s\S]*db: DbExecutor/);
   assert.match(serviceSource, /listSourceDates\([\s\S]*db: DbExecutor/);
-  assert.match(routeSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(routeSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
   assert.doesNotMatch(routeSource, /withCurrentWorkspace\(/);
 });
 
@@ -244,8 +244,8 @@ test("manual-entry reads and commands use the explicit transaction executor", as
   assert.match(serviceSource, /createOneTimeManualEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(serviceSource, /updateOneTimeManualEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(serviceSource, /deleteOneTimeManualEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
-  assert.match(routeSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(detailRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(routeSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(detailRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
 });
 
 test("investment reads and persistence preserve the DB/Storage boundary", async () => {
@@ -277,6 +277,6 @@ test("allocation and category commands use the explicit transaction executor", a
   assert.match(allocationSource, /updateExpenseAllocation\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(categoriesSource, /createWorkspaceCategory\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(categoriesSource, /updateWorkspaceCategory\([\s\S]*db: DbExecutor = getDb\(\)/);
-  assert.match(allocationRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
-  assert.match(categoriesRouteSource, /withCurrentWorkspaceDb\(\(context, db\)/);
+  assert.match(allocationRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(categoriesRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
 });
