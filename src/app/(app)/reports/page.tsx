@@ -27,6 +27,7 @@ import {
   formatReportingModeLabel,
   formatSourceKind,
   getMonthCompletenessPresentation,
+  getMonthCompletenessProgressCopy,
 } from "@/features/reporting/presentation";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
@@ -565,13 +566,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
                 ? `${reportMonthLabel} is in progress.`
                 : `${reportMonthLabel} is complete.`}
           </strong>{" "}
-          {completeness.status === "empty"
-            ? "No imported or manual activity exists for this month."
-            : completeness.status === "in_progress"
-              ? `${completeness.reviewedTransactionCount} of ${completeness.importedTransactionCount} imported transactions are reviewed. Totals below are based on classified transactions and may change.`
-              : completeness.importedTransactionCount === 0
-                ? "Manual activity exists and no imported transactions need review."
-                : `All ${completeness.importedTransactionCount} imported transactions have been reviewed.`}
+          {getMonthCompletenessProgressCopy(completeness)}
           {(completeness.pendingOutflowTotal ?? 0) > 0 ? <p>Unreviewed account outflows: {formatReportMoney(completeness.pendingOutflowTotal ?? 0, report.summary.workspaceCurrency)}. These still need classification before they can count as spending or be assigned to a person.</p> : null}
           {(completeness.unresolvedAttributionCount ?? 0) > 0 ? <p>{completeness.unresolvedAttributionCount} classified transactions still need payer or income-recipient confirmation. Spending totals include classified expenses; member attribution is incomplete. <Link href={`/transactions/all?month=${report.summary.selectedMonth.slice(0, 7)}&import=all`}>Confirm people in History</Link></p> : null}
           {report.summary.reportingMode === "allocated_period" ? (

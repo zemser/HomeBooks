@@ -58,6 +58,7 @@ Apply Drizzle migration `0013_merchant_rule_reuse.sql` before deploying the appl
 - New personal rules store no person; their resulting classifications have valid owners.
 - Legacy person-bearing rules require confirmation; undo preserves their prior snapshots.
 - Automatic History filtering survives navigation and reload; corrections and stopping rules are accessible.
+- When a month is incomplete only because classified rows still need people, Home sends the user to History instead of an empty Review queue.
 - Missing payer/split does not generate an inferred settlement.
 - Previously classified transactions and duplicate-import protection remain unchanged.
 

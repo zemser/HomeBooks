@@ -14,7 +14,9 @@ import {
   formatMonthInputValue,
   formatReportMoney,
   formatReportMonthLabel,
+  getMonthCompletenessNextAction,
   getMonthCompletenessPresentation,
+  getMonthCompletenessProgressCopy,
 } from "@/features/reporting/presentation";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 
@@ -25,8 +27,7 @@ type HomePageProps = {
 };
 
 function buildReportTarget(month: string) {
-  const normalizedMonth = month.slice(0, 7);
-  return `/reports?month=${normalizedMonth}&mode=payment_date`;
+  return `/reports?month=${formatMonthInputValue(month)}&mode=payment_date`;
 }
 
 const getSelectedHomeMonth = cache(async (searchParams: HomePageProps["searchParams"]) => {
@@ -48,21 +49,7 @@ async function HomeReporting({ searchParams }: HomePageProps) {
   const completion = reporting.completeness;
   const monthLabel = formatReportMonthLabel(reporting.selectedMonth);
   const statusPresentation = getMonthCompletenessPresentation(completion.status);
-  const nextAction =
-    completion.status === "empty"
-      ? {
-          href: "/transactions",
-          label: "Import transactions",
-        }
-      : completion.status === "in_progress"
-        ? {
-            href: `/transactions/review?month=${reporting.selectedMonth.slice(0, 7)}`,
-            label: `Review ${completion.pendingTransactionCount} transaction${completion.pendingTransactionCount === 1 ? "" : "s"}`,
-          }
-        : {
-            href: buildReportTarget(reporting.selectedMonth),
-            label: "View monthly report",
-          };
+  const nextAction = getMonthCompletenessNextAction(completion, reporting.selectedMonth);
 
   return (
     <div className="stack" data-testid="home-content">
@@ -98,13 +85,7 @@ async function HomeReporting({ searchParams }: HomePageProps) {
           </span>
           <h2>{monthLabel}</h2>
           <p>
-            {completion.status === "empty"
-              ? "No imported or manual activity exists for this month."
-              : completion.status === "in_progress"
-                ? `${completion.reviewedTransactionCount} of ${completion.importedTransactionCount} imported transactions reviewed. Totals are based on reviewed transactions.`
-                : completion.importedTransactionCount === 0
-                  ? "Manual activity exists and no imported transactions need review."
-                  : `All ${completion.importedTransactionCount} imported transactions have been reviewed.`}
+            {getMonthCompletenessProgressCopy(completion)}
           </p>
         </div>
         <Link className="button" href={nextAction.href}>{nextAction.label}</Link>
