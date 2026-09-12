@@ -484,6 +484,17 @@ async function main() {
       [first.workspaceId, invitee.id],
     );
 
+    await expectPolicyBlock(
+      client,
+      "invitee cannot move an invite to another workspace",
+      `
+        update workspace_invites
+        set workspace_id = $1, status = 'accepted'
+        where id = $2
+      `,
+      [second.workspaceId, invite.id],
+    );
+
     await insertOne(
       client,
       `

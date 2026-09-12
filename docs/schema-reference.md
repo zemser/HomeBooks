@@ -18,6 +18,7 @@ Use this file for table/enum/constraint-level details. Keep product direction in
 - `0002_lethal_ironclad.sql`
 - `0003_high_hemingway.sql`
 - `0014_plain_grim_reaper.sql`
+- `0015_workspace_invite_identity.sql`
 
 ## Enums
 
@@ -177,7 +178,7 @@ Use this file for table/enum/constraint-level details. Keep product direction in
 
 ## RLS status
 
-RLS is now represented by migrations `src/db/migrations/0004_hosted_rls_foundation.sql` and `src/db/migrations/0014_plain_grim_reaper.sql`.
+RLS is now represented by migrations `src/db/migrations/0004_hosted_rls_foundation.sql`, `src/db/migrations/0014_plain_grim_reaper.sql`, and `src/db/migrations/0015_workspace_invite_identity.sql`.
 
 That migration adds:
 

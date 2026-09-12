@@ -2,12 +2,20 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { normalizeInviteEmail } from "../../src/features/workspaces/invites";
+import { inviteUserErrorMessage, normalizeInviteEmail } from "../../src/features/workspaces/invites";
 
 const membersPath = new URL("../../src/features/workspaces/members.ts", import.meta.url);
 const invitesPath = new URL("../../src/features/workspaces/invites.ts", import.meta.url);
 const contextPath = new URL("../../src/features/workspaces/current-context.ts", import.meta.url);
 const migrationPath = new URL("../../src/db/migrations/0014_plain_grim_reaper.sql", import.meta.url);
+const identityMigrationPath = new URL(
+  "../../src/db/migrations/0015_workspace_invite_identity.sql",
+  import.meta.url,
+);
+const inviteActionsPath = new URL(
+  "../../src/features/workspaces/invite-actions.ts",
+  import.meta.url,
+);
 const membersRoutePath = new URL("../../src/app/api/workspace-members/route.ts", import.meta.url);
 
 test("invite emails are normalized and reject placeholders", () => {
@@ -16,6 +24,14 @@ test("invite emails are normalized and reject placeholders", () => {
   assert.throws(
     () => normalizeInviteEmail("member-1@placeholder.finapp.local"),
     /real email/,
+  );
+  assert.equal(
+    inviteUserErrorMessage(new Error("This invite is no longer available."), "Could not accept the invite."),
+    "This invite is no longer available.",
+  );
+  assert.equal(
+    inviteUserErrorMessage(new Error("duplicate key value violates unique constraint"), "Could not accept the invite."),
+    "Could not accept the invite.",
   );
 });
 
@@ -52,7 +68,11 @@ test("current workspace prefers the most recently joined membership", async () =
 });
 
 test("invite RLS helpers stay in the private app schema", async () => {
-  const migration = await readFile(migrationPath, "utf8");
+  const [migration, identityMigration, actionsSource] = await Promise.all([
+    readFile(migrationPath, "utf8"),
+    readFile(identityMigrationPath, "utf8"),
+    readFile(inviteActionsPath, "utf8"),
+  ]);
 
   assert.match(migration, /CREATE TABLE "workspace_invites"/);
   assert.equal((migration.match(/SECURITY DEFINER/g) ?? []).length, 2);
@@ -68,4 +88,9 @@ test("invite RLS helpers stay in the private app schema", async () => {
     /"user_id" = "app"\."current_user_id"\(\)\s+AND "role" = 'member'\s+AND "app"\."has_pending_workspace_invite"/,
   );
   assert.match(migration, /AND "role" = 'member'\s+AND "status" = 'pending'/);
+  assert.match(identityMigration, /CREATE TRIGGER "workspace_invites_protect_identity"/);
+  assert.match(identityMigration, /NEW\.workspace_id IS DISTINCT FROM OLD\.workspace_id/);
+  assert.match(actionsSource, /unstable_rethrow\(error\)/);
+  assert.match(actionsSource, /inviteUserErrorMessage/);
+  assert.doesNotMatch(actionsSource, /error\.digest/);
 });

@@ -1,6 +1,6 @@
 "use server";
 
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { withDbTransaction } from "@/db";
 import { AuthContextError, requireAal2Context } from "@/features/auth/supabase-user";
@@ -11,21 +11,12 @@ import {
 import {
   acceptWorkspaceInvite,
   declineWorkspaceInvite,
+  inviteUserErrorMessage,
 } from "@/features/workspaces/invites";
 
 function getString(formData: FormData, key: string) {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim() : "";
-}
-
-function isNextRedirect(error: unknown) {
-  return (
-    typeof error === "object"
-    && error !== null
-    && "digest" in error
-    && typeof error.digest === "string"
-    && error.digest.startsWith("NEXT_REDIRECT")
-  );
 }
 
 function redirectOnboardingError(message: string): never {
@@ -55,12 +46,13 @@ export async function acceptWorkspaceInviteAction(formData: FormData) {
       );
     });
   } catch (error) {
-    if (isNextRedirect(error) || error instanceof AuthContextError) {
+    unstable_rethrow(error);
+    if (error instanceof AuthContextError) {
       throw error;
     }
 
     redirectOnboardingError(
-      error instanceof Error ? error.message : "Could not accept the invite.",
+      inviteUserErrorMessage(error, "Could not accept the invite."),
     );
   }
 
@@ -82,12 +74,13 @@ export async function declineWorkspaceInviteAction(formData: FormData) {
       await declineWorkspaceInvite(tx, user.email, inviteId);
     });
   } catch (error) {
-    if (isNextRedirect(error) || error instanceof AuthContextError) {
+    unstable_rethrow(error);
+    if (error instanceof AuthContextError) {
       throw error;
     }
 
     redirectOnboardingError(
-      error instanceof Error ? error.message : "Could not decline the invite.",
+      inviteUserErrorMessage(error, "Could not decline the invite."),
     );
   }
 

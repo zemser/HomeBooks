@@ -13,6 +13,25 @@ import {
 
 const INVITE_EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const INVITE_USER_ERROR_MESSAGES = new Set([
+  "Enter a valid email address.",
+  "Enter a real email address.",
+  "You already belong to this workspace.",
+  "That person already belongs to this workspace.",
+  "That email already has a pending invite.",
+  "This invite is no longer available.",
+  "This invite was sent to a different email address.",
+  "Only workspace owners can invite people.",
+]);
+
+export function inviteUserErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && INVITE_USER_ERROR_MESSAGES.has(error.message)) {
+    return error.message;
+  }
+
+  return fallback;
+}
+
 export function normalizeInviteEmail(value: string) {
   const email = value.trim().toLowerCase();
 
