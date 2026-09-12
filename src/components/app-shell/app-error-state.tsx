@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 
+import { PRODUCT_NAME } from "@/lib/brand";
+
 type AppErrorStateProps = {
   digest?: string;
   homeHref?: string;
@@ -20,7 +22,7 @@ export function AppErrorState({
   return (
     <main className="app-error-shell">
       <section className="app-error-card" aria-labelledby="app-error-title">
-        <span className="eyebrow">Fin App</span>
+        <span className="eyebrow">{PRODUCT_NAME}</span>
         <div className="app-error-copy">
           <h1 id="app-error-title">{title}</h1>
           <p>

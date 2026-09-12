@@ -1,4 +1,6 @@
 import { AuthAutofocus } from "@/components/auth/auth-autofocus";
+import { BrandMark } from "@/components/brand/brand-mark";
+import { PRODUCT_NAME } from "@/lib/brand";
 
 type AuthScreenProps = {
   children: React.ReactNode;
@@ -23,10 +25,13 @@ export function AuthScreen({
     <main>
       <div className="page-shell auth-shell">
         <section className="auth-brand">
-          <span className="app-brand-mark" aria-hidden="true">
-            FA
-          </span>
-          <p>Private household money, for the people who live here.</p>
+          <BrandMark />
+          <div className="auth-brand-copy">
+            <p className="auth-brand-name">{PRODUCT_NAME}</p>
+            <p className="auth-brand-tagline">
+              Private household money, for the people who live here.
+            </p>
+          </div>
         </section>
 
         <section className="card auth-card stack" data-testid={testId}>

@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 
 import { AppErrorState } from "@/components/app-shell/app-error-state";
+import { PRODUCT_NAME } from "@/lib/brand";
 
 import "./globals.css";
 
@@ -24,7 +25,7 @@ export default function GlobalError({
           digest={error.digest}
           onReset={reset}
           showSettingsLink={false}
-          title="Fin App could not load."
+          title={`${PRODUCT_NAME} could not load.`}
         />
       </body>
     </html>

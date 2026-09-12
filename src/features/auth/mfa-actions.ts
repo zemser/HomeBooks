@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 
 import { getSupabaseAuthContext } from "@/features/auth/supabase-user";
+import { PRODUCT_NAME } from "@/lib/brand";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export type MfaEnrollmentState =
@@ -69,8 +70,8 @@ export async function beginTotpEnrollmentAction(
   const supabase = await createSupabaseServerClient();
   const { data: enrollData, error: enrollError } = await supabase.auth.mfa.enroll({
     factorType: "totp",
-    friendlyName: "Fin App authenticator",
-    issuer: "Fin App",
+    friendlyName: `${PRODUCT_NAME} authenticator`,
+    issuer: PRODUCT_NAME,
   });
 
   if (enrollError) {
