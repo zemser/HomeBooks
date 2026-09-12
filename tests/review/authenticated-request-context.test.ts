@@ -31,3 +31,14 @@ test("workspace callbacks receive one complete context instead of re-resolving i
   assert.match(source, /withDbTransaction\(context\.userId, \(\) => callback\(context\)\)/);
   assert.match(source, /return withCurrentWorkspace\(\(context\) => callback\(context, getDb\(\)\)\)/);
 });
+
+test("the app layout suspends account chrome instead of awaiting workspace context", async () => {
+  const layout = await readFile(
+    new URL("../../src/app/(app)/layout.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(layout, /<AccountSlot \/>/);
+  assert.match(layout, /<Suspense fallback=\{<AccountControlSkeleton \/>\}>/);
+  assert.doesNotMatch(layout, /export default async function AppLayout/);
+});

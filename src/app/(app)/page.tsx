@@ -254,9 +254,6 @@ export default function HomePage({ searchParams }: HomePageProps) {
             <h1>Good to see you.</h1>
             <p>Your household workspace at a glance.</p>
           </div>
-          <Link className="button button-secondary" href="/settings">
-            Settings
-          </Link>
         </section>
 
         <Suspense fallback={<RouteDataFallback label="Selected month" />}>
