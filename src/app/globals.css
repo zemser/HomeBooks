@@ -351,9 +351,42 @@ main {
 
 .auth-shell {
   display: grid;
-  gap: 1rem;
-  width: min(980px, 100%);
-  padding-top: 1.5rem;
+  gap: 1.35rem;
+  width: min(28rem, 100%);
+  min-height: calc(100vh - 2rem);
+  padding-top: 2.5rem;
+  padding-bottom: 2.5rem;
+  align-content: start;
+  justify-items: stretch;
+}
+
+@media (min-height: 44rem) {
+  .auth-shell {
+    align-content: center;
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+  }
+}
+
+.auth-brand {
+  display: grid;
+  gap: 0.7rem;
+  justify-items: center;
+  text-align: center;
+}
+
+.auth-brand .app-brand-mark {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1rem;
+}
+
+.auth-brand p {
+  margin: 0;
+  max-width: 28ch;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
 }
 
 .auth-hero {
@@ -365,6 +398,7 @@ main {
   max-width: 18ch;
   margin: 0;
   font-size: clamp(2.1rem, 4.6vw, 3.25rem);
+  letter-spacing: -0.03em;
   line-height: 1.02;
 }
 
@@ -389,8 +423,9 @@ main {
 }
 
 .auth-card {
-  padding: 1rem;
-  border-radius: 1rem;
+  padding: 1.5rem;
+  border-radius: 1.35rem;
+  box-shadow: 0 18px 40px rgba(35, 54, 43, 0.06);
 }
 
 .auth-card.stack,
@@ -403,8 +438,12 @@ main {
   gap: 0.35rem;
 }
 
+.auth-card-header h1,
 .auth-card-header h2 {
-  margin-bottom: 0;
+  margin: 0;
+  font-size: 1.55rem;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
 }
 
 .auth-card-secondary {
@@ -436,6 +475,13 @@ main {
   flex: 1;
   height: 1px;
   background: var(--border);
+}
+
+.auth-trust {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.5;
 }
 
 .auth-note {
@@ -522,9 +568,48 @@ main {
   gap: 0.45rem;
 }
 
-.field span {
+.field > span,
+.field > label {
   font-size: 0.95rem;
   font-weight: 600;
+}
+
+.field-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.password-field {
+  position: relative;
+  display: grid;
+}
+
+.password-field .input {
+  padding-right: 4.25rem;
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 0.45rem;
+  min-width: 0;
+  width: auto;
+  padding: 0.35rem 0.55rem;
+  border: 0;
+  border-radius: 0.55rem;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  transform: translateY(-50%);
+  cursor: pointer;
+}
+
+.password-toggle:active {
+  transform: translateY(-50%) scale(0.97);
 }
 
 .input,
@@ -687,6 +772,55 @@ select.input:focus {
   background: var(--accent);
   color: white;
   cursor: pointer;
+  transition: transform 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.google-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.7rem;
+  min-height: 2.85rem;
+  border-color: #747775;
+  background: #ffffff;
+  color: #1f1f1f;
+  font-weight: 600;
+}
+
+.google-mark {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: none;
+}
+
+.button.auth-button,
+.google-button {
+  width: 100%;
+  min-width: 0;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .google-button:hover {
+    background: #f8f9fa;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .button {
+    transition: none;
+  }
+
+  .button:active:not(:disabled) {
+    transform: none;
+  }
+
+  .password-toggle:active {
+    transform: translateY(-50%);
+  }
 }
 
 .button-secondary {
@@ -2247,6 +2381,7 @@ kbd {
 
   .auth-shell {
     padding-top: 1.25rem;
+    min-height: auto;
   }
 
   .auth-hero h1 {
