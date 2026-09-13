@@ -101,14 +101,23 @@ test.describe("transaction review workflow", () => {
       await expect(panel.getByText(/This account belongs to/)).toBeVisible();
     }
 
-    await panel.getByRole("radio", { name: /Household/ }).check();
-    await expect(panel.getByRole("radio", { name: /Household/ })).toBeChecked();
+    await panel.getByRole("radio", { name: /Shared/ }).check();
+    await expect(panel.getByRole("radio", { name: /Shared/ })).toBeChecked();
     await expect(panel.getByLabel("Whose personal expense?")).toHaveCount(0);
     await expect(panel.getByLabel("Paid by")).toHaveCount(hasAccountOwner ? 0 : 1);
     await expect(panel.getByLabel("Received by")).toHaveCount(0);
     if (hasAccountOwner) {
       await expect(panel.getByText(/Paid from /)).toBeVisible();
     }
+    if (before.members.length >= 2) {
+      await expect(panel.getByRole("checkbox", { name: "Split this later" })).toBeVisible();
+    } else {
+      await expect(panel.getByRole("checkbox", { name: "Split this later" })).toHaveCount(0);
+    }
+
+    await expect(panel.getByRole("radio", { name: /Household/ })).toHaveCount(0);
+    await expect(panel.getByRole("radio", { name: /Transfer/ })).toBeVisible();
+    await expect(panel.getByRole("radio", { name: /Ignore/ })).toBeVisible();
 
     await panel.getByRole("radio", { name: /Income/ }).check();
     await expect(panel.getByRole("radio", { name: /Income/ })).toBeChecked();
@@ -132,9 +141,18 @@ test.describe("transaction review workflow", () => {
     const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
     const startingId = await activeRow.getAttribute("data-review-transaction-id");
 
-    await page.getByRole("heading", { name: "Transactions", exact: true }).click();
+    await page.getByRole("heading", { name: "Selected transaction" }).click();
+    await page.getByRole("searchbox", { name: "Search" }).blur();
+    await page.keyboard.press("1");
+    await expect(page.getByRole("radio", { name: /Personal/ })).toBeChecked();
+    await page.keyboard.press("2");
+    await expect(page.getByRole("radio", { name: /Shared/ })).toBeChecked();
+    await page.keyboard.press("4");
+    await expect(page.getByRole("radio", { name: /Transfer/ })).toBeChecked();
+    await page.keyboard.press("5");
+    await expect(page.getByRole("radio", { name: /Ignore/ })).toBeChecked();
     await page.keyboard.press("3");
-    await expect(page.getByRole("radio", { name: /Household/ })).toBeChecked();
+    await expect(page.getByRole("radio", { name: /Income/ })).toBeChecked();
 
     await page.keyboard.press("c");
     const category = page.getByRole("combobox", { name: "Category", exact: true });
@@ -153,11 +171,15 @@ test.describe("transaction review workflow", () => {
   });
 
   test("radio, combobox, and shortcut-help keyboard contracts remain isolated", async ({ page }) => {
+    const before = await loadReviewData(page);
+    test.skip(before.queue.length < 2, "The keyboard isolation test needs two review rows.");
+
     await page.goto("/transactions/review");
 
     const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
     const startingRowId = await activeRow.getAttribute("data-review-transaction-id");
-    await activeRow.focus();
+    await page.getByRole("heading", { name: "Review queue" }).click();
+    await page.getByRole("searchbox", { name: "Search" }).blur();
     await page.keyboard.press("ArrowDown");
     await expect(activeRow).not.toHaveAttribute("data-review-transaction-id", startingRowId!);
 
@@ -207,7 +229,7 @@ test.describe("transaction review workflow", () => {
         "true",
       );
 
-      await page.getByRole("radio", { name: /Household/ }).check();
+      await page.getByRole("radio", { name: /Shared/ }).check();
       const categoryInput = page.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
       await page.getByRole("option", { name: category.name, exact: true }).click();
@@ -266,8 +288,9 @@ test.describe("transaction review workflow", () => {
       const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
       await expect(activeRow).toHaveAttribute("data-review-transaction-id", transaction.id);
 
-      await page.getByRole("heading", { name: "Transactions", exact: true }).click();
-      await page.keyboard.press("6");
+      await page.getByRole("heading", { name: "Selected transaction" }).click();
+      await page.getByRole("searchbox", { name: "Search" }).blur();
+      await page.keyboard.press("5");
       await expect(page.getByRole("radio", { name: /Ignore/ })).toBeChecked();
       const saveResponsePromise = page.waitForResponse(
         (response) =>
@@ -309,13 +332,13 @@ test.describe("transaction review workflow", () => {
     let undoBatchId: string | undefined;
     try {
       await page.goto(`/transactions/review?transactionId=${transaction!.id}`);
-      const householdRadio = page.getByRole("radio", { name: /Household/ });
-      await householdRadio.check();
-      await expect(householdRadio).toBeChecked();
+      const sharedRadio = page.getByRole("radio", { name: /Shared/ });
+      await sharedRadio.check();
+      await expect(sharedRadio).toBeChecked();
       const categoryInput = page.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
       await page.getByRole("option", { name: category!.name, exact: true }).click();
-      await page.getByRole("checkbox", { name: /Use this decision for future exact merchant matches/ }).check();
+      await page.getByRole("checkbox", { name: /Automatically classify/ }).check();
       await expect(page.getByText(/exact-match rule/)).toBeVisible();
 
       const saveResponsePromise = page.waitForResponse(
@@ -363,7 +386,7 @@ test.describe("transaction review workflow", () => {
     let undoBatchId: string | undefined;
     try {
       await page.goto(`/transactions/review?transactionId=${transaction!.id}`);
-      await page.getByRole("radio", { name: /Household/ }).check();
+      await page.getByRole("radio", { name: /Shared/ }).check();
       const categoryInput = page.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
       await page.getByRole("option", { name: category!.name, exact: true }).click();
@@ -407,7 +430,7 @@ test.describe("transaction review workflow", () => {
     const invalidCategory = await page.request.post("/api/transaction-classifications", {
       data: {
         transactionId: transaction!.id,
-        classificationType: "household",
+        classificationType: "shared",
         categoryId: "00000000-0000-4000-8000-000000000001",
       },
     });
@@ -425,7 +448,7 @@ test.describe("transaction review workflow", () => {
     const invalidBulkCategory = await page.request.post("/api/transaction-classifications/bulk", {
       data: {
         transactionIds: [transaction!.id],
-        classificationType: "household",
+        classificationType: "shared",
         categoryId: "00000000-0000-4000-8000-000000000001",
       },
     });
@@ -553,7 +576,7 @@ test.describe("transaction review workflow", () => {
       await page.getByRole("button", { name: "Classify selected", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Classify selected" });
       await expect(dialog).toBeVisible();
-      await dialog.getByRole("radio", { name: /Household/ }).check();
+      await dialog.getByRole("radio", { name: /Shared/ }).check();
       const categoryInput = dialog.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
       await dialog.getByRole("option", { name: category.name, exact: true }).click();

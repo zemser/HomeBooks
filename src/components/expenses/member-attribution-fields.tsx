@@ -154,3 +154,45 @@ export function MemberAttributionFields({
     </>
   );
 }
+
+export function SplitForSettlementField({
+  classificationType,
+  value,
+  onChange,
+  canSplit,
+  warnWhenLeavingShared = false,
+}: {
+  classificationType: ClassificationType | "";
+  value: boolean;
+  onChange: (value: boolean) => void;
+  canSplit: boolean;
+  warnWhenLeavingShared?: boolean;
+}) {
+  if (warnWhenLeavingShared && classificationType && classificationType !== "shared") {
+    return (
+      <p className="helper-text">
+        Changing this away from shared drops confirmed split tracking.
+      </p>
+    );
+  }
+
+  if (classificationType !== "shared" || !canSplit) {
+    return null;
+  }
+
+  return (
+    <label className="checkbox-label">
+      <input
+        type="checkbox"
+        checked={value}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span>
+        Split this later
+        <small className="helper-text">
+          Adds this to shared balances. Leave off for ordinary shared spending like rent or groceries.
+        </small>
+      </span>
+    </label>
+  );
+}

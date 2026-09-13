@@ -11,7 +11,7 @@ import { CLASSIFICATION_TYPES } from "../../src/features/expenses/constants";
 const people = { personalOwnerMemberId: null, paidByMemberId: null, receivedByMemberId: null };
 
 test("same merchant on different accounts uses each account's payer and personal owner", () => {
-  for (const classificationType of ["household", "shared", "personal"] as const) {
+  for (const classificationType of ["shared", "personal"] as const) {
     for (const owner of ["alex", "sam"]) {
       const rule = { classificationType, ...people };
       assert.equal(canAutoApplyMerchantRule(rule, owner), true);

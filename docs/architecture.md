@@ -312,7 +312,8 @@ Stores how a user interprets a transaction.
 
 - id
 - transaction_id
-- classification_type (`personal`, `shared`, `household`, `income`, `transfer`, `ignore`)
+- classification_type (`personal`, `shared`, `income`, `transfer`, `ignore`)
+- split_for_settlement boolean not null default false
 - member_owner_id nullable
 - category
 - confidence
@@ -578,7 +579,6 @@ Good UX pattern:
 
 - “12 transactions need review”
 - bulk actions like:
-  - mark as household
   - mark as shared
   - assign to member A
   - assign to member B

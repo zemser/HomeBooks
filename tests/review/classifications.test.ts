@@ -45,12 +45,54 @@ test("personal owner and payer can differ", () => {
   });
 });
 
-test("household can record a payer", () => {
+test("shared can record a payer", () => {
   validateClassificationInput({
-    classificationType: "household",
+    classificationType: "shared",
     paidByMemberId: "lee",
     category: "Utilities",
   });
+});
+
+test("interactive one-member saves reject split for settlement", () => {
+  assert.throws(
+    () => validateClassificationInput({
+      classificationType: "shared",
+      splitForSettlement: true,
+      category: "Dining",
+      activeMemberCount: 1,
+      writeMode: "interactive",
+    }),
+    ClassificationInputError,
+  );
+  validateClassificationInput({
+    classificationType: "shared",
+    splitForSettlement: true,
+    category: "Dining",
+    activeMemberCount: 2,
+    writeMode: "interactive",
+  });
+  validateClassificationInput({
+    classificationType: "shared",
+    splitForSettlement: true,
+    category: "Dining",
+    activeMemberCount: 1,
+    writeMode: "replay",
+  });
+});
+
+test("split for settlement is rejected on non-shared types", () => {
+  for (const classificationType of ["personal", "income", "transfer", "ignore"] as const) {
+    assert.throws(
+      () => validateClassificationInput({
+        classificationType,
+        splitForSettlement: true,
+        personalOwnerMemberId: classificationType === "personal" ? "izzy" : null,
+        category: classificationType === "transfer" || classificationType === "ignore" ? null : "Dining",
+        activeMemberCount: 2,
+      }),
+      ClassificationInputError,
+    );
+  }
 });
 
 test("classification summaries keep owner and payer distinct", () => {
@@ -65,6 +107,7 @@ test("classification summaries keep owner and payer distinct", () => {
       paidByName: "Lee",
       receivedByMemberId: null,
       receivedByName: null,
+      splitForSettlement: false,
       decidedBy: "user",
       reviewedAt: null,
     }),
@@ -72,7 +115,7 @@ test("classification summaries keep owner and payer distinct", () => {
   );
   assert.equal(
     formatClassificationSummary({
-      classificationType: "household",
+      classificationType: "shared",
       category: "Utilities",
       categoryId: "utilities",
       personalOwnerMemberId: null,
@@ -81,9 +124,27 @@ test("classification summaries keep owner and payer distinct", () => {
       paidByName: "Izzy",
       receivedByMemberId: null,
       receivedByName: null,
+      splitForSettlement: false,
       decidedBy: "user",
       reviewedAt: null,
     }),
-    "Household / paid by Izzy / Utilities",
+    "Shared / paid by Izzy / Utilities",
+  );
+  assert.equal(
+    formatClassificationSummary({
+      classificationType: "shared",
+      category: "Dining",
+      categoryId: "dining",
+      personalOwnerMemberId: null,
+      personalOwnerName: null,
+      paidByMemberId: "lee",
+      paidByName: "Lee",
+      receivedByMemberId: null,
+      receivedByName: null,
+      splitForSettlement: true,
+      decidedBy: "user",
+      reviewedAt: null,
+    }),
+    "Shared, split later / paid by Lee / Dining",
   );
 });

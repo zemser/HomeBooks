@@ -43,10 +43,11 @@ type CurrentImportContext = {
 
 type ActiveExactClassificationRule = {
   matchValue: string;
-  classificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
+  classificationType: "personal" | "shared" | "income" | "transfer" | "ignore";
   personalOwnerMemberId: string | null;
   paidByMemberId: string | null;
   receivedByMemberId: string | null;
+  splitForSettlement: boolean;
   category: string | null;
   categoryId: string | null;
 };
@@ -198,6 +199,7 @@ export async function analyzeParsedBankImport(input: {
         personalOwnerMemberId: classificationRules.defaultPersonalOwnerMemberId,
         paidByMemberId: classificationRules.defaultPaidByMemberId,
         receivedByMemberId: classificationRules.defaultReceivedByMemberId,
+        splitForSettlement: classificationRules.defaultSplitForSettlement,
         category: classificationRules.defaultCategory,
         categoryId: classificationRules.defaultCategoryId,
       })
@@ -689,6 +691,7 @@ export async function persistBankImport(input: {
               personalOwnerMemberId: attribution.personalOwnerMemberId,
               paidByMemberId: attribution.paidByMemberId,
               receivedByMemberId: attribution.receivedByMemberId,
+              splitForSettlement: Boolean(matchedRule.splitForSettlement),
               category: matchedRule.category,
               categoryId: matchedRule.categoryId,
               confidence: null,

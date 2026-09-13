@@ -9,7 +9,6 @@ import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
 const CLASSIFICATION_LABELS: Record<ClassificationType, string> = {
   personal: "Personal",
   shared: "Shared",
-  household: "Household",
   income: "Income",
   transfer: "Transfer",
   ignore: "Ignore",
@@ -19,14 +18,36 @@ export function formatClassificationTypeLabel(value: ClassificationType) {
   return CLASSIFICATION_LABELS[value];
 }
 
+export function formatMerchantRulePreview(input: {
+  classificationType: ClassificationType;
+  category?: string | null;
+  splitForSettlement?: boolean;
+}) {
+  const typeLabel =
+    input.classificationType === "shared" && input.splitForSettlement
+      ? "Shared, split later"
+      : formatClassificationTypeLabel(input.classificationType);
+
+  if (input.category) {
+    return `${typeLabel} / ${input.category}`;
+  }
+
+  return typeLabel;
+}
+
 function formatClassifiedEntrySummary(input: {
   classificationType: ClassificationType;
   personalOwnerName: string | null;
   paidByName: string | null;
   receivedByName: string | null;
   category: string | null;
+  splitForSettlement?: boolean;
 }) {
-  const parts = [formatClassificationTypeLabel(input.classificationType)];
+  const typeLabel =
+    input.classificationType === "shared" && input.splitForSettlement
+      ? "Shared, split later"
+      : formatClassificationTypeLabel(input.classificationType);
+  const parts = [typeLabel];
 
   if (input.personalOwnerName) {
     parts.push(input.personalOwnerName);
@@ -60,6 +81,7 @@ export function formatClassificationSummary(
     paidByName: classification.paidByName,
     receivedByName: classification.receivedByName,
     category: classification.category,
+    splitForSettlement: classification.splitForSettlement,
   });
 }
 
@@ -190,6 +212,7 @@ export function formatManualEntryClassificationSummary(
     | "payerMemberName"
     | "receivedByName"
     | "category"
+    | "splitForSettlement"
   >,
 ) {
   return formatClassifiedEntrySummary({
@@ -198,5 +221,6 @@ export function formatManualEntryClassificationSummary(
     paidByName: item.payerMemberName,
     receivedByName: item.receivedByName,
     category: item.category,
+    splitForSettlement: item.splitForSettlement,
   });
 }

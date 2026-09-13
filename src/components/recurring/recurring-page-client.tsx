@@ -9,6 +9,7 @@ import { CategorySelect } from "@/components/workspaces/category-select";
 import {
   MemberAttributionFields,
   memberAttributionForClassificationType,
+  SplitForSettlementField,
 } from "@/components/expenses/member-attribution-fields";
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
 import {
@@ -41,6 +42,7 @@ type RuleFormState = {
   payerMemberId: string;
   receivedByMemberId: string;
   classificationType: (typeof CLASSIFICATION_TYPES)[number];
+  splitForSettlement: boolean;
   category: string;
   categoryId: string;
   active: boolean;
@@ -78,7 +80,8 @@ const initialCreateState: CreateRuleState = {
   personalOwnerMemberId: "",
   payerMemberId: "",
   receivedByMemberId: "",
-  classificationType: "household",
+  classificationType: "shared",
+  splitForSettlement: false,
   category: "",
   categoryId: "",
   active: true,
@@ -210,6 +213,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       payerMemberId: selectedEntry.payerMemberId ?? "",
       receivedByMemberId: selectedEntry.receivedByMemberId ?? "",
       classificationType,
+      splitForSettlement: Boolean(selectedEntry.splitForSettlement),
       category: selectedEntry.category ?? "",
       categoryId: selectedEntry.categoryId ?? "",
       active: selectedEntry.active,
@@ -403,7 +407,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                         eventKind === "income"
                           ? "income"
                           : current.classificationType === "income"
-                            ? "household"
+                            ? "shared"
                             : current.classificationType,
                       personalOwnerMemberId:
                         eventKind === "income" ? "" : current.personalOwnerMemberId,
@@ -411,6 +415,8 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                         eventKind === "income" ? "" : current.payerMemberId,
                       receivedByMemberId:
                         eventKind === "income" ? current.receivedByMemberId : "",
+                      splitForSettlement:
+                        eventKind === "income" ? false : current.splitForSettlement,
                     }));
                   }}
                 >
@@ -444,6 +450,8 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                       personalOwnerMemberId: nextAttribution.personalOwnerMemberId,
                       payerMemberId: nextAttribution.paidByMemberId,
                       receivedByMemberId: nextAttribution.receivedByMemberId,
+                      splitForSettlement:
+                        classificationType === "shared" ? current.splitForSettlement : false,
                     }));
                   }}
                 >
@@ -470,6 +478,14 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                     payerMemberId: next.paidByMemberId,
                     receivedByMemberId: next.receivedByMemberId,
                   }))
+                }
+              />
+              <SplitForSettlementField
+                classificationType={createState.classificationType}
+                value={createState.splitForSettlement}
+                canSplit={(data?.members.length ?? 0) >= 2}
+                onChange={(splitForSettlement) =>
+                  setCreateState((current) => ({ ...current, splitForSettlement }))
                 }
               />
             </div>
@@ -661,8 +677,8 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
           {isLoading ? <p className="status">Loading recurring entries...</p> : null}
           {!isLoading && !data?.recurringEntries.length ? (
             <p className="empty-state">
-              No recurring rules exist yet. Create the first rent, salary, or recurring
-              household item above.
+              No recurring rules exist yet. Create the first rent, salary, or repeating
+              shared item above.
             </p>
           ) : null}
 
@@ -751,7 +767,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                                   eventKind === "income"
                                     ? "income"
                                     : current.classificationType === "income"
-                                      ? "household"
+                                      ? "shared"
                                       : current.classificationType,
                                 personalOwnerMemberId:
                                   eventKind === "income" ? "" : current.personalOwnerMemberId,
@@ -759,6 +775,8 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                                   eventKind === "income" ? "" : current.payerMemberId,
                                 receivedByMemberId:
                                   eventKind === "income" ? current.receivedByMemberId : "",
+                                splitForSettlement:
+                                  eventKind === "income" ? false : current.splitForSettlement,
                               }
                             : current,
                         );
@@ -798,6 +816,8 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                             personalOwnerMemberId: nextAttribution.personalOwnerMemberId,
                             payerMemberId: nextAttribution.paidByMemberId,
                             receivedByMemberId: nextAttribution.receivedByMemberId,
+                            splitForSettlement:
+                              classificationType === "shared" ? current.splitForSettlement : false,
                           };
                         });
                       }}
@@ -828,6 +848,17 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                               receivedByMemberId: next.receivedByMemberId,
                             }
                           : current,
+                      )
+                    }
+                  />
+                  <SplitForSettlementField
+                    classificationType={editState.classificationType}
+                    value={editState.splitForSettlement}
+                    canSplit={(data?.members.length ?? 0) >= 2}
+                    warnWhenLeavingShared={selectedEntry?.classificationType === "shared"}
+                    onChange={(splitForSettlement) =>
+                      setEditState((current) =>
+                        current ? { ...current, splitForSettlement } : current,
                       )
                     }
                   />

@@ -24,13 +24,13 @@ function record(
   };
 }
 
-test("one-member reporting includes personal, shared, and household buckets", () => {
+test("one-member reporting includes personal and shared buckets", () => {
   const records = [
     record({ classificationType: "personal", memberId: lee.id, normalizedAmount: 0.1 }),
     record({ classificationType: "personal", memberId: lee.id, normalizedAmount: 0.2 }),
     record({ classificationType: "shared", normalizedAmount: 10 }),
     record({
-      classificationType: "household",
+      classificationType: "shared",
       category: "Groceries",
       categoryId: "groceries",
       normalizedAmount: 20,
@@ -44,8 +44,7 @@ test("one-member reporting includes personal, shared, and household buckets", ()
     scopes.map((scope) => [scope.label, scope.expenseTotal, scope.itemCount]),
     [
       ["Personal · Lee", 0.3, 2],
-      ["Shared", 10, 1],
-      ["Household", 20, 1],
+      ["Shared", 30, 2],
     ],
   );
   assert.equal(
@@ -83,7 +82,6 @@ test("active members receive zero buckets and referenced inactive members remain
       ["Personal · Izzy", 7],
       ["Personal · Sam", 5],
       ["Shared", 0],
-      ["Household", 0],
     ],
   );
 });
@@ -107,7 +105,6 @@ test("three active members receive independent personal buckets", () => {
       ["Personal · Izzy", 5],
       ["Personal · Sam", 6],
       ["Shared", 0],
-      ["Household", 0],
     ],
   );
 });
@@ -131,9 +128,9 @@ test("income attribution stays outside spending scopes", () => {
   );
 });
 
-test("household and shared payers do not leak into personal spending buckets", () => {
+test("shared payers do not leak into personal spending buckets", () => {
   const records = [
-    record({ classificationType: "household", memberId: lee.id, normalizedAmount: 20 }),
+    record({ classificationType: "shared", memberId: lee.id, normalizedAmount: 20 }),
     record({ classificationType: "shared", memberId: lee.id, normalizedAmount: 10 }),
     record({ classificationType: "personal", memberId: lee.id, normalizedAmount: 5 }),
   ];
@@ -143,8 +140,7 @@ test("household and shared payers do not leak into personal spending buckets", (
     scopes.map((scope) => [scope.label, scope.expenseTotal]),
     [
       ["Personal · Lee", 5],
-      ["Shared", 10],
-      ["Household", 20],
+      ["Shared", 30],
     ],
   );
 });
@@ -152,7 +148,7 @@ test("household and shared payers do not leak into personal spending buckets", (
 test("missing expense categories are grouped under Uncategorized", () => {
   const records = [
     record({
-      classificationType: "household",
+      classificationType: "shared",
       category: null,
       categoryId: null,
       normalizedAmount: 12,

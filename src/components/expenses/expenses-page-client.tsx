@@ -14,6 +14,7 @@ import {
   emptyMemberAttributionFormValue,
   MemberAttributionFields,
   memberAttributionForClassificationType,
+  SplitForSettlementField,
 } from "@/components/expenses/member-attribution-fields";
 import { Modal } from "@/components/shared/modal";
 import { ImportSourceCell } from "@/components/shared/import-source-cell";
@@ -83,6 +84,7 @@ type ClassificationFormState = {
   personalOwnerMemberId: string;
   paidByMemberId: string;
   receivedByMemberId: string;
+  splitForSettlement: boolean;
 };
 
 type ClassificationMutationResponse = {
@@ -96,6 +98,7 @@ type ManualEntryFormState = {
   personalOwnerMemberId: string;
   payerMemberId: string;
   receivedByMemberId: string;
+  splitForSettlement: boolean;
   category: string;
   categoryId: string;
   amount: string;
@@ -110,7 +113,6 @@ type LoadExpensesOptions = {
 type ReviewStatusFilter = "all" | "needs_review" | "reviewed" | "automatic";
 
 const EXPENSE_CLASSIFICATION_OPTIONS: OneTimeManualEntryClassificationType[] = [
-  "household",
   "shared",
   "personal",
 ];
@@ -121,6 +123,7 @@ const emptyClassificationForm: ClassificationFormState = {
   category: "",
   categoryId: "",
   ...emptyMemberAttributionFormValue(),
+  splitForSettlement: false,
 };
 
 function todayDateInputValue() {
@@ -135,10 +138,11 @@ function createInitialManualEntryFormState(): ManualEntryFormState {
   return {
     title: "",
     eventKind: "expense",
-    classificationType: "household",
+    classificationType: "shared",
     personalOwnerMemberId: "",
     payerMemberId: "",
     receivedByMemberId: "",
+    splitForSettlement: false,
     category: "",
     categoryId: "",
     amount: "",
@@ -159,6 +163,7 @@ function manualEntryToFormState(entry: OneTimeManualEntryItem): ManualEntryFormS
     personalOwnerMemberId: entry.personalOwnerMemberId ?? "",
     payerMemberId: entry.payerMemberId ?? "",
     receivedByMemberId: entry.receivedByMemberId ?? "",
+    splitForSettlement: Boolean(entry.splitForSettlement),
     category: entry.category ?? "",
     categoryId: entry.categoryId ?? "",
     amount: Number(entry.originalAmount).toFixed(2),
@@ -532,6 +537,7 @@ export function ExpensesPageClient({
             paidByMemberId: accountOwnerMemberId || classification.paidByMemberId || "",
             receivedByMemberId:
               accountOwnerMemberId || classification.receivedByMemberId || "",
+            splitForSettlement: Boolean(classification.splitForSettlement),
           }
         : emptyClassificationForm,
     );
@@ -576,6 +582,7 @@ export function ExpensesPageClient({
         current,
         selectedTransaction?.accountOwnerMemberId ?? "",
       ),
+      splitForSettlement: classificationType === "shared" ? current.splitForSettlement : false,
     }));
   }
 
@@ -595,7 +602,7 @@ export function ExpensesPageClient({
         eventKind === "income"
           ? "income"
           : current.classificationType === "income"
-            ? "household"
+            ? "shared"
             : current.classificationType,
       personalOwnerMemberId:
         eventKind === "income" ? "" : current.personalOwnerMemberId,
@@ -603,6 +610,8 @@ export function ExpensesPageClient({
         eventKind === "income" ? "" : current.payerMemberId,
       receivedByMemberId:
         eventKind === "income" ? current.receivedByMemberId : "",
+      splitForSettlement:
+        eventKind === "income" ? false : current.splitForSettlement,
     }));
   }
 
@@ -635,6 +644,7 @@ export function ExpensesPageClient({
             personalOwnerMemberId: manualEntryForm.personalOwnerMemberId || null,
             payerMemberId: manualEntryForm.payerMemberId || null,
             receivedByMemberId: manualEntryForm.receivedByMemberId || null,
+            splitForSettlement: manualEntryForm.splitForSettlement,
             category: manualEntryForm.category,
             categoryId: manualEntryForm.categoryId || null,
             amount: Number(manualEntryForm.amount),
@@ -780,6 +790,7 @@ export function ExpensesPageClient({
           personalOwnerMemberId: classificationForm.personalOwnerMemberId || null,
           paidByMemberId: classificationForm.paidByMemberId || null,
           receivedByMemberId: classificationForm.receivedByMemberId || null,
+          splitForSettlement: classificationForm.splitForSettlement,
           createRule: false,
           additionalTransactionIds: [],
         }),
@@ -927,6 +938,8 @@ export function ExpensesPageClient({
                       personalOwnerMemberId: nextAttribution.personalOwnerMemberId,
                       payerMemberId: nextAttribution.paidByMemberId,
                       receivedByMemberId: nextAttribution.receivedByMemberId,
+                      splitForSettlement:
+                        classificationType === "shared" ? current.splitForSettlement : false,
                     }));
                   }}
                 >
@@ -953,6 +966,15 @@ export function ExpensesPageClient({
                     payerMemberId: next.paidByMemberId,
                     receivedByMemberId: next.receivedByMemberId,
                   }))
+                }
+              />
+              <SplitForSettlementField
+                classificationType={manualEntryForm.classificationType}
+                value={manualEntryForm.splitForSettlement}
+                canSplit={members.length >= 2}
+                warnWhenLeavingShared={selectedManualEntry?.classificationType === "shared"}
+                onChange={(splitForSettlement) =>
+                  setManualEntryForm((current) => ({ ...current, splitForSettlement }))
                 }
               />
             </div>
@@ -1533,6 +1555,14 @@ export function ExpensesPageClient({
                 }
               />
             ) : null}
+            <SplitForSettlementField
+              classificationType={classificationForm.classificationType}
+              value={classificationForm.splitForSettlement}
+              canSplit={members.length >= 2}
+              onChange={(splitForSettlement) =>
+                setClassificationForm((current) => ({ ...current, splitForSettlement }))
+              }
+            />
 
             <div className="action-row">
               <button

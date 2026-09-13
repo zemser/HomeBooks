@@ -11,6 +11,7 @@ import {
   compatibilityMemberOwnerId,
   getEventKindClassificationValidationMessage,
   getMemberAttributionValidationMessage,
+  getSplitForSettlementValidationMessage,
   importedMemberAttribution,
   memberAttributionFromSnapshot,
   normalizeClassificationForEventKind,
@@ -18,22 +19,22 @@ import {
   resolveImportedPaidByMemberId,
 } from "../../src/features/expenses/payer";
 
-test("unassigned household expenses are valid and can record an optional payer", () => {
+test("unassigned shared expenses are valid and can record an optional payer", () => {
   assert.equal(
     getMemberAttributionValidationMessage({
-      classificationType: "household",
+      classificationType: "shared",
       paidByMemberId: null,
     }),
     null,
   );
   assert.equal(
     getMemberAttributionValidationMessage({
-      classificationType: "household",
+      classificationType: "shared",
       paidByMemberId: "member-1",
     }),
     null,
   );
-  assert.equal(classificationAllowsPayer("household"), true);
+  assert.equal(classificationAllowsPayer("shared"), true);
 });
 
 test("personal requires an owner even when a payer is present", () => {
@@ -55,7 +56,7 @@ test("personal requires an owner even when a payer is present", () => {
   );
 });
 
-test("shared and household accept optional payer and reject personal owner", () => {
+test("shared accepts optional payer and rejects personal owner", () => {
   assert.equal(
     getMemberAttributionValidationMessage({
       classificationType: "shared",
@@ -77,12 +78,50 @@ test("shared and household accept optional payer and reject personal owner", () 
     }) ?? "",
     /cannot have a personal owner/,
   );
+});
+
+test("shared split for settlement defaults off and is rejected on other types", () => {
+  assert.equal(
+    getSplitForSettlementValidationMessage({
+      classificationType: "shared",
+      splitForSettlement: false,
+      activeMemberCount: 2,
+    }),
+    null,
+  );
+  assert.equal(
+    getSplitForSettlementValidationMessage({
+      classificationType: "shared",
+      splitForSettlement: true,
+      activeMemberCount: 2,
+    }),
+    null,
+  );
   assert.match(
-    getMemberAttributionValidationMessage({
-      classificationType: "household",
-      personalOwnerMemberId: "izzy",
+    getSplitForSettlementValidationMessage({
+      classificationType: "personal",
+      splitForSettlement: true,
+      activeMemberCount: 2,
     }) ?? "",
-    /cannot have a personal owner/,
+    /cannot be split/,
+  );
+  assert.match(
+    getSplitForSettlementValidationMessage({
+      classificationType: "shared",
+      splitForSettlement: true,
+      activeMemberCount: 1,
+      writeMode: "interactive",
+    }) ?? "",
+    /two active members/,
+  );
+  assert.equal(
+    getSplitForSettlementValidationMessage({
+      classificationType: "shared",
+      splitForSettlement: true,
+      activeMemberCount: 1,
+      writeMode: "replay",
+    }),
+    null,
   );
 });
 
@@ -231,7 +270,7 @@ test("imported default payer comes from the account owner and stays null when mi
   );
   assert.equal(
     resolveImportedPaidByMemberId({
-      classificationType: "household",
+      classificationType: "shared",
       accountOwnerMemberId: null,
     }),
     null,
@@ -312,13 +351,13 @@ test("backfill maps overloaded member owner without fabricating a personal payer
   );
   assert.deepEqual(
     backfillImportedMemberAttribution({
-      classificationType: "household",
+      classificationType: "shared",
       memberOwnerId: null,
       accountOwnerMemberId: "izzy",
     }),
     {
       personalOwnerMemberId: null,
-      paidByMemberId: "izzy",
+      paidByMemberId: null,
       receivedByMemberId: null,
     },
   );
@@ -406,7 +445,6 @@ test("event kinds expose only compatible classifications", () => {
   const allClassifications = [
     "personal",
     "shared",
-    "household",
     "income",
     "transfer",
     "ignore",
@@ -416,14 +454,13 @@ test("event kinds expose only compatible classifications", () => {
   assert.deepEqual(classificationsForEventKind("expense", allClassifications), [
     "personal",
     "shared",
-    "household",
     "transfer",
     "ignore",
   ]);
   assert.match(
     getEventKindClassificationValidationMessage({
       eventKind: "income",
-      classificationType: "household",
+      classificationType: "shared",
     }) ?? "",
     /must use income/,
   );
@@ -431,7 +468,7 @@ test("event kinds expose only compatible classifications", () => {
 
 test("legacy event-kind mismatches normalize to a compatible classification", () => {
   assert.equal(normalizeClassificationForEventKind("income", "shared"), "income");
-  assert.equal(normalizeClassificationForEventKind("expense", "income"), "household");
+  assert.equal(normalizeClassificationForEventKind("expense", "income"), "shared");
   assert.equal(normalizeClassificationForEventKind("expense", "shared"), "shared");
 });
 

@@ -56,7 +56,7 @@ test("year reporting reconciles dynamic scope columns, totals, and averages", ()
       record("2026-01-10", "income", 100, "lee"),
       record("2026-01-11", "personal", 20, "lee"),
       record("2026-01-12", "shared", 10),
-      record("2026-02-01", "household", 30),
+      record("2026-02-01", "shared", 30),
       record("2026-02-02", "personal", 5, "sam"),
     ],
     completeness: [
@@ -77,8 +77,7 @@ test("year reporting reconciles dynamic scope columns, totals, and averages", ()
       ["Personal · Lee", 20],
       ["Personal · Izzy", 0],
       ["Personal · Sam", 5],
-      ["Shared", 10],
-      ["Household", 30],
+      ["Shared", 40],
     ],
   );
   assert.equal(report.totals.incomeTotal, 100);

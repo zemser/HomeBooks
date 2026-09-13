@@ -1,7 +1,6 @@
 export const CLASSIFICATION_TYPES = [
   "personal",
   "shared",
-  "household",
   "income",
   "transfer",
   "ignore",

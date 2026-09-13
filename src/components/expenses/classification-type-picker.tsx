@@ -6,9 +6,8 @@ import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expens
 import { formatClassificationTypeLabel } from "@/features/expenses/presentation";
 
 const descriptions: Record<ClassificationType, string> = {
-  personal: "Belongs to one household member",
-  shared: "Shared cost with a known payer",
-  household: "General household spending",
+  personal: "Counts as one person’s spending",
+  shared: "Counts as both of yours",
   income: "Money received",
   transfer: "Movement between your accounts",
   ignore: "Exclude from spending reports",

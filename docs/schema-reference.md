@@ -19,13 +19,14 @@ Use this file for table/enum/constraint-level details. Keep product direction in
 - `0003_high_hemingway.sql`
 - `0014_plain_grim_reaper.sql`
 - `0015_workspace_invite_identity.sql`
+- `0016_shiny_clint_barton.sql`
 
 ## Enums
 
 - `import_type`: `bank`, `investment`
 - `file_kind`: `csv`, `xlsx`
 - `import_status`: `uploaded`, `processing`, `completed`, `failed`
-- `classification_type`: `personal`, `shared`, `household`, `income`, `transfer`, `ignore`
+- `classification_type`: `personal`, `shared`, `income`, `transfer`, `ignore`
 - `event_kind`: `expense`, `income`
 - `source_type`: `transaction`, `manual`, `recurring`
 - `reporting_mode`: `payment_date`, `allocated_period`
@@ -98,10 +99,12 @@ Use this file for table/enum/constraint-level details. Keep product direction in
   - PK: `id`
   - FK: `transaction_id -> transactions.id`, optional `member_owner_id -> workspace_members.id`
   - unique: `(transaction_id)`
+  - `split_for_settlement` boolean not null default false; true only when type is `shared`
 - `classification_rules`
   - PK: `id`
   - FK: `workspace_id -> workspaces.id`, optional `default_member_owner_id -> workspace_members.id`
   - index: `(workspace_id, active, priority)`
+  - `default_split_for_settlement` boolean not null default false
 
 ### Reporting/events/allocations
 
@@ -109,6 +112,7 @@ Use this file for table/enum/constraint-level details. Keep product direction in
   - PK: `id`
   - FK: `workspace_id -> workspaces.id`, optional `payer_member_id -> workspace_members.id`
   - source pointers: `source_type`, `source_id`
+  - `split_for_settlement` boolean not null default false; settlements query shared rows with this flag true
   - indexes: `(workspace_id, event_kind, category)`, `(workspace_id, reporting_mode)`
 - `expense_allocations`
   - PK: `id`

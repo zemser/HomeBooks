@@ -34,7 +34,6 @@ export const importStatusEnum = pgEnum("import_status", [
 export const classificationTypeEnum = pgEnum("classification_type", [
   "personal",
   "shared",
-  "household",
   "income",
   "transfer",
   "ignore",
@@ -364,6 +363,7 @@ export const transactionClassifications = pgTable(
     personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
     paidByMemberId: uuid("paid_by_member_id").references(() => workspaceMembers.id),
     receivedByMemberId: uuid("received_by_member_id").references(() => workspaceMembers.id),
+    splitForSettlement: boolean("split_for_settlement").notNull().default(false),
     category: text("category"),
     categoryId: uuid("category_id").references(() => workspaceCategories.id, {
       onDelete: "set null",
@@ -385,7 +385,7 @@ export const transactionClassifications = pgTable(
           AND ${table.receivedByMemberId} IS NULL
         )
         OR (
-          ${table.classificationType} IN ('shared', 'household')
+          ${table.classificationType} = 'shared'
           AND ${table.personalOwnerMemberId} IS NULL
           AND ${table.receivedByMemberId} IS NULL
         )
@@ -401,6 +401,10 @@ export const transactionClassifications = pgTable(
           AND ${table.receivedByMemberId} IS NULL
         )
       )`,
+    ),
+    splitForSettlementCheck: check(
+      "transaction_classifications_split_for_settlement_check",
+      sql`${table.splitForSettlement} = false OR ${table.classificationType} = 'shared'`,
     ),
   }),
 );
@@ -423,11 +427,12 @@ export const classificationDecisionBatches = pgTable(
         classification: {
           id: string;
           transactionId: string;
-          classificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
+          classificationType: string;
           memberOwnerId: string | null;
           personalOwnerMemberId: string | null;
           paidByMemberId: string | null;
           receivedByMemberId: string | null;
+          splitForSettlement?: boolean | null;
           category: string | null;
           categoryId: string | null;
           confidence: string | null;
@@ -444,17 +449,28 @@ export const classificationDecisionBatches = pgTable(
         id: string;
         matchType: "contains" | "regex" | "exact";
         matchValue: string;
-        defaultClassificationType: "personal" | "shared" | "household" | "income" | "transfer" | "ignore";
+        defaultClassificationType: string;
         defaultMemberOwnerId: string | null;
         defaultPersonalOwnerMemberId: string | null;
         defaultPaidByMemberId: string | null;
         defaultReceivedByMemberId: string | null;
+        defaultSplitForSettlement?: boolean | null;
         defaultCategory: string | null;
         defaultCategoryId: string | null;
         priority: number;
         active: boolean;
         createdAt: string;
         updatedAt: string;
+      }> | null>()
+      .default(null),
+    previousSplits: jsonb("previous_splits")
+      .$type<Array<{
+        expenseEventId: string;
+        sourceType: "transaction" | "manual" | "recurring";
+        sourceId: string;
+        splitMode: "equal" | "percentage" | "fixed";
+        splitDefinitionJson: unknown;
+        settlementStatus: "open" | "settled" | "ignored";
       }> | null>()
       .default(null),
     ruleMatchValue: text("rule_match_value"),
@@ -487,6 +503,7 @@ export const classificationRules = pgTable(
     defaultReceivedByMemberId: uuid("default_received_by_member_id").references(
       () => workspaceMembers.id,
     ),
+    defaultSplitForSettlement: boolean("default_split_for_settlement").notNull().default(false),
     defaultCategory: text("default_category"),
     defaultCategoryId: uuid("default_category_id").references(() => workspaceCategories.id, {
       onDelete: "set null",
@@ -509,7 +526,7 @@ export const classificationRules = pgTable(
           AND ${table.defaultReceivedByMemberId} IS NULL
         )
         OR (
-          ${table.defaultClassificationType} IN ('shared', 'household')
+          ${table.defaultClassificationType} = 'shared'
           AND ${table.defaultPersonalOwnerMemberId} IS NULL
           AND ${table.defaultReceivedByMemberId} IS NULL
         )
@@ -525,6 +542,10 @@ export const classificationRules = pgTable(
           AND ${table.defaultReceivedByMemberId} IS NULL
         )
       )`,
+    ),
+    splitForSettlementCheck: check(
+      "classification_rules_default_split_for_settlement_check",
+      sql`${table.defaultSplitForSettlement} = false OR ${table.defaultClassificationType} = 'shared'`,
     ),
   }),
 );
@@ -546,6 +567,7 @@ export const expenseEvents = pgTable(
     payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
     personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
     receivedByMemberId: uuid("received_by_member_id").references(() => workspaceMembers.id),
+    splitForSettlement: boolean("split_for_settlement").notNull().default(false),
     category: text("category"),
     categoryId: uuid("category_id").references(() => workspaceCategories.id, {
       onDelete: "set null",
@@ -572,7 +594,7 @@ export const expenseEvents = pgTable(
           AND ${table.receivedByMemberId} IS NULL
         )
         OR (
-          ${table.classificationType} IN ('shared', 'household')
+          ${table.classificationType} = 'shared'
           AND ${table.personalOwnerMemberId} IS NULL
           AND ${table.receivedByMemberId} IS NULL
         )
@@ -588,6 +610,10 @@ export const expenseEvents = pgTable(
           AND ${table.receivedByMemberId} IS NULL
         )
       )`,
+    ),
+    splitForSettlementCheck: check(
+      "expense_events_split_for_settlement_check",
+      sql`${table.splitForSettlement} = false OR ${table.classificationType} = 'shared'`,
     ),
   }),
 );
@@ -625,6 +651,7 @@ export const manualRecurringExpenses = pgTable(
     personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
     receivedByMemberId: uuid("received_by_member_id").references(() => workspaceMembers.id),
     classificationType: classificationTypeEnum("classification_type").notNull(),
+    splitForSettlement: boolean("split_for_settlement").notNull().default(false),
     category: text("category"),
     categoryId: uuid("category_id").references(() => workspaceCategories.id, {
       onDelete: "set null",
@@ -642,7 +669,7 @@ export const manualRecurringExpenses = pgTable(
           AND ${table.receivedByMemberId} IS NULL
         )
         OR (
-          ${table.classificationType} IN ('shared', 'household')
+          ${table.classificationType} = 'shared'
           AND ${table.personalOwnerMemberId} IS NULL
           AND ${table.receivedByMemberId} IS NULL
         )
@@ -658,6 +685,10 @@ export const manualRecurringExpenses = pgTable(
           AND ${table.receivedByMemberId} IS NULL
         )
       )`,
+    ),
+    splitForSettlementCheck: check(
+      "manual_recurring_expenses_split_for_settlement_check",
+      sql`${table.splitForSettlement} = false OR ${table.classificationType} = 'shared'`,
     ),
   }),
 );
@@ -707,6 +738,7 @@ export const manualEntries = pgTable(
     personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
     receivedByMemberId: uuid("received_by_member_id").references(() => workspaceMembers.id),
     classificationType: classificationTypeEnum("classification_type").notNull(),
+    splitForSettlement: boolean("split_for_settlement").notNull().default(false),
     category: text("category"),
     categoryId: uuid("category_id").references(() => workspaceCategories.id, {
       onDelete: "set null",
@@ -729,7 +761,7 @@ export const manualEntries = pgTable(
           AND ${table.receivedByMemberId} IS NULL
         )
         OR (
-          ${table.classificationType} IN ('shared', 'household')
+          ${table.classificationType} = 'shared'
           AND ${table.personalOwnerMemberId} IS NULL
           AND ${table.receivedByMemberId} IS NULL
         )
@@ -745,6 +777,10 @@ export const manualEntries = pgTable(
           AND ${table.receivedByMemberId} IS NULL
         )
       )`,
+    ),
+    splitForSettlementCheck: check(
+      "manual_entries_split_for_settlement_check",
+      sql`${table.splitForSettlement} = false OR ${table.classificationType} = 'shared'`,
     ),
   }),
 );

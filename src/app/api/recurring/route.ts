@@ -24,6 +24,7 @@ const createSchema = z.object({
   payerMemberId: z.string().uuid().optional().nullable(),
   receivedByMemberId: z.string().uuid().optional().nullable(),
   classificationType: z.enum(CLASSIFICATION_TYPES),
+  splitForSettlement: z.boolean().optional().default(false),
   category: z.string().trim().optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),
   effectiveStartMonth: z.string().trim().min(1),

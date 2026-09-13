@@ -30,7 +30,6 @@ Users want to know:
 - yearly averages and trends, not only one-month snapshots
 - how much each person spent on themselves
 - how much they spent together
-- how much they spent on the household
 - how much income each person received
 - how much the household saved each month
 
@@ -111,8 +110,7 @@ This is the most important feature and should be the first full workflow.
 - classify transactions into:
   - personal spending for member A
   - personal spending for member B
-  - shared couple spending
-  - household spending
+  - shared spending
   - income
   - transfer or ignored transaction
 - produce a monthly summary that shows:
@@ -120,7 +118,7 @@ This is the most important feature and should be the first full workflow.
   - total spending
   - total savings
   - spending by member
-  - shared and household spending
+  - shared spending
 - produce period summaries that can also show:
   - yearly averages
   - trailing 12-month averages
@@ -171,8 +169,8 @@ A raw bank transaction usually tells us:
 It usually does not tell us:
 
 - whether the expense was personal or shared
-- whether it belongs to the household
-- how it should be split
+- whether to settle a shared expense later
+- how a settlement split should be calculated
 
 So the system should not depend on fully automatic classification.
 
@@ -182,8 +180,8 @@ Recommended MVP approach:
 - suggest a likely category based on merchant rules and past user decisions
 - let the user confirm or change only the uncertain items
 - allow the user to save reusable rules such as:
-  - supermarket usually means household
-  - specific restaurant usually means shared
+  - supermarket usually means shared
+  - specific restaurant usually means shared, optionally split later
   - gym membership belongs to member A
 - remember previous decisions for the same merchant or pattern
 

@@ -23,7 +23,6 @@ The first implementation priority is trustworthy reporting. A report must make i
 
 - personal spending for each member
 - shared spending
-- household spending
 - total spending
 - income
 - savings
@@ -32,7 +31,7 @@ The first implementation priority is trustworthy reporting. A report must make i
 
 The current application has most of the required financial mechanics, but the experience is organized around implementation concepts rather than the user's monthly job.
 
-Current primary destinations include separate pages for imports, review, expenses, recurring entries, and reports. The current report shows income, expenses, savings, categories, and a member-or-payer breakdown, but it does not provide a first-class personal/shared/household summary. It can also show precise partial totals while transactions still need review.
+Current primary destinations include separate pages for imports, review, expenses, recurring entries, and reports. The current report shows income, expenses, savings, categories, and a member-or-payer breakdown, but it does not provide a first-class personal/shared summary. It can also show precise partial totals while transactions still need review.
 
 As a result, users can complete individual actions without feeling confident that they have completed a month or reproduced the overview they previously maintained in the spreadsheet.
 
@@ -46,7 +45,6 @@ Make the answer to these questions obvious for any selected month:
 - How much was saved?
 - How much was personal spending for each member?
 - How much was shared spending?
-- How much was household spending?
 - Which categories and transactions explain each amount?
 
 For a selected year, make the same figures comparable month by month and provide useful monthly averages.
@@ -72,7 +70,7 @@ Those capabilities may remain, but they must not dominate the primary budgeting 
 
 - setup is complete
 - the member receives one personal-spending bucket
-- shared and household classifications remain available
+- shared classifications remain available
 - reports render normally
 - settlements show an explanatory empty state because balancing requires at least two active members
 - adding another member is an optional settings action, not a blocking task
@@ -80,7 +78,7 @@ Those capabilities may remain, but they must not dominate the primary budgeting 
 ### Two active members
 
 - each member receives a personal-spending bucket
-- shared and household buckets remain separate
+- shared spending is a single bucket
 - payer and settlement features are available
 - reports compare the two personal buckets without assuming fixed names or genders
 
@@ -100,8 +98,9 @@ The interface and implementation must keep these concepts distinct.
 Who or what benefited from the expense:
 
 - `personal`: belongs to one workspace member
-- `shared`: a discretionary or general cost shared by members
-- `household`: a household operating cost such as rent, utilities, groceries, or home supplies
+- `shared`: counts as both members’ spending
+
+Settling a shared expense is a separate opt-in (`splitForSettlement`). Category answers rent vs groceries vs dining. See `docs/shared-spending-scope-spec.md`.
 
 The persisted `classification_type` remains the source for this concept in the first reporting implementation.
 
@@ -118,8 +117,8 @@ The member whose account or payment method paid the expense. Payer is relevant t
 Examples:
 
 - Lee pays for Izzy's personal purchase: personal owner is Izzy; payer is Lee.
-- Izzy pays the electricity bill: scope is household; payer is Izzy.
-- Lee pays for a shared dinner: scope is shared; payer is Lee.
+- Izzy pays the electricity bill: scope is shared; payer is Izzy; split off.
+- Lee pays for a shared dinner they want to balance: scope is shared; payer is Lee; split on.
 
 The existing model partially overloads member ownership and payer semantics. Separating them is a later phase in this specification and is not required to ship the first trustworthy report.
 
@@ -181,20 +180,20 @@ For each transaction, the user answers in this order:
 1. How should this transaction be treated?
    - Personal
    - Shared
-   - Household
    - Income
    - Transfer
    - Ignore
 2. What category does it belong to, when reportable?
 3. Which member owns it, when personal?
 4. Who paid or received it, when supported by the current model?
-5. Should type and category apply automatically to this exact merchant across all members’ accounts? Payer, personal owner and income recipient follow each confirmed source-account owner. Person-specific exceptions remain individual decisions. See `docs/merchant-rule-reuse-spec.md`.
+5. Should this shared expense be split later for settlement? Default off; only when the workspace has two active members.
+6. Should type and category apply automatically to this exact merchant across all members’ accounts? Payer, personal owner and income recipient follow each confirmed source-account owner. Person-specific exceptions remain individual decisions. See `docs/merchant-rule-reuse-spec.md`.
 
 Acceptance criteria:
 
 - personal requires a member owner
-- shared and household do not require a personal owner
-- category is available for personal, shared, household, and income
+- shared does not require a personal owner
+- category is available for personal, shared, and income
 - transfer and ignore are considered reviewed but excluded from financial totals
 - save-and-next remains the primary action
 - bulk review and merchant-rule behavior remain available
@@ -227,7 +226,7 @@ The monthly report must show, in this order:
 
 1. month and completion status
 2. Income, Total spent, and Saved
-3. Personal spending for each relevant member, Shared, and Household
+3. Personal spending for each relevant member, and Shared
 4. category-by-scope breakdown
 5. transaction drill-down
 6. advanced reporting and FX details
@@ -236,7 +235,7 @@ Acceptance criteria:
 
 - the first viewport contains completion status and the primary financial totals on desktop
 - all monetary expense cards display positive magnitudes; savings may be positive or negative
-- the sum of the personal, shared, and household expense buckets reconciles to Total spent
+- the sum of the personal and shared expense buckets reconciles to Total spent
 - selecting a scope or category filters or reveals the contributing transactions
 - uncategorized reportable items appear as `Uncategorized`
 - imported, one-time manual, and recurring-generated items use the same aggregation rules
@@ -251,7 +250,6 @@ Required columns:
 - income
 - personal spending for each relevant member
 - shared spending
-- household spending
 - total spending
 - savings
 
@@ -263,7 +261,7 @@ Required summary values:
 - average monthly income
 - average monthly spending
 - average monthly savings
-- average monthly personal/shared/household spending
+- average monthly personal/shared spending
 
 Acceptance criteria:
 
@@ -351,7 +349,6 @@ When data exists, show:
 - Saved
 - one personal-spending card per relevant member
 - Shared
-- Household
 
 When the month is in progress, every amount group includes the partial-data warning.
 
@@ -386,7 +383,7 @@ Return and display a dynamic collection rather than hardcoded partner names:
 ```ts
 type SpendingScopeSummary = {
   key: string;
-  scope: "personal" | "shared" | "household";
+  scope: "personal" | "shared";
   memberId: string | null;
   label: string;
   expenseTotal: number;
@@ -399,16 +396,15 @@ Expected rows for a two-member workspace might be:
 - Personal · Lee
 - Personal · Izzy
 - Shared
-- Household
 
 ### Category-by-scope breakdown
 
 The report must provide a matrix that explains both dimensions at once:
 
-| Category | Personal · Member A | Personal · Member B | Shared | Household | Total |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Groceries | 0 | 0 | 0 | 1,800 | 1,800 |
-| Dining | 240 | 180 | 450 | 0 | 870 |
+| Category | Personal · Member A | Personal · Member B | Shared | Total |
+| --- | ---: | ---: | ---: | ---: |
+| Groceries | 0 | 0 | 1,800 | 1,800 |
+| Dining | 240 | 180 | 450 | 870 |
 
 For more than two members, the table may scroll horizontally on desktop and use stacked category cards on mobile.
 
@@ -416,7 +412,7 @@ Suggested return type:
 
 ```ts
 type CategoryScopeAmount = {
-  scope: "personal" | "shared" | "household";
+  scope: "personal" | "shared";
   memberId: string | null;
   amount: number;
   itemCount: number;
@@ -525,7 +521,7 @@ Definitions:
 - imported transaction: normalized transaction whose `transaction_date` is in the selected calendar month
 - reviewed: has a persisted classification of any type
 - pending: has no persisted classification
-- reportable: classification is personal, shared, household, or income
+- reportable: classification is personal, shared, or income
 - excluded: classification is transfer or ignore
 - status is `empty` when imported count and manual/recurring activity are both zero
 - status is `in_progress` when pending count is greater than zero
@@ -550,7 +546,7 @@ All new report aggregations must:
 Required reconciliation checks:
 
 ```text
-personal totals across members + shared + household = total expenses
+personal totals across members + shared = total expenses
 income - total expenses = savings
 category row totals = sum of category scope cells
 sum of category totals = total expenses
@@ -574,7 +570,7 @@ Migration requirements:
 - for existing shared classifications, treat `member_owner_id` as payer where that matches existing behavior
 - for imported transactions, use `financial_accounts.owner_member_id` as the default payer when present
 - do not fabricate a payer when the source account has no owner
-- permit household expenses to have a payer
+- permit shared expenses to have a payer
 - keep settlement calculations limited to intentionally tracked split expenses
 
 This migration must be delivered separately from the initial reporting work to reduce risk.
@@ -588,7 +584,7 @@ Export is not required for the first release of this spec, but reporting output 
 One row per month with dynamic personal-member columns:
 
 ```text
-month,status,income,personal_<member_a>,personal_<member_b>,shared,household,total_spent,savings
+month,status,income,personal_<member_a>,personal_<member_b>,shared,total_spent,savings
 ```
 
 For a one-member workspace, only one personal-member column is emitted. Member-derived column headers use stable member IDs in machine-readable keys and display names in a separate header/metadata row when the format supports it.
@@ -598,7 +594,7 @@ For a one-member workspace, only one personal-member column is emitted. Member-d
 One row per month and category:
 
 ```text
-month,category,personal_<member_a>,personal_<member_b>,shared,household,total_spent,item_count
+month,category,personal_<member_a>,personal_<member_b>,shared,total_spent,item_count
 ```
 
 ### Excel workbook
@@ -667,8 +663,8 @@ Likely code areas:
 
 Exit criteria:
 
-- a one-member report shows one personal bucket plus shared and household
-- a two-member report reproduces the reference workbook's personal-member/shared/household structure
+- a one-member report shows one personal bucket plus shared
+- a two-member report reproduces the reference workbook's personal-member/shared structure
 - scope totals, category totals, total expenses, and savings reconcile
 
 ### Phase 3: focused Home and Reports
@@ -711,14 +707,14 @@ Deliverables:
 
 - schema migration for personal owner, payer, and income recipient semantics
 - account-owner payer defaults
-- household payer support
+- shared payer support
 - updated settlement integration
 - backward-compatible data migration tests
 
 Exit criteria:
 
 - personal owner and payer can differ
-- household expenses can record who paid
+- shared expenses can record who paid
 - existing classifications and settlements retain their meaning after migration
 
 ### Phase 6: export
@@ -742,7 +738,7 @@ Exit criteria:
 - completeness status for no data, pending rows, transfer/ignore rows, and fully reviewed rows
 - scope aggregation for one, two, and three members
 - personal classification without owner is rejected
-- shared and household totals do not appear in a member's personal bucket
+- shared totals do not appear in a member's personal bucket
 - income is excluded from expense-scope totals
 - payment-date and adjusted-period totals reconcile independently
 - inactive historical member remains in historical reports
@@ -760,14 +756,14 @@ Exit criteria:
 
 1. One-member workspace
    - import a statement
-   - classify personal, shared, household, transfer, and ignore rows
+   - classify personal, shared, transfer, and ignore rows
    - finish the month
-   - verify personal/shared/household totals and savings
+   - verify personal/shared totals and savings
 
 2. Two-member workspace
    - classify personal expenses for different members
-   - classify shared and household expenses
-   - verify separate personal buckets and shared/household totals
+   - classify shared expenses, including split-for-settlement when needed
+   - verify separate personal buckets and shared totals
 
 3. Partial month
    - leave at least one imported transaction unreviewed
@@ -789,7 +785,7 @@ The focused budgeting experience is complete when:
 - a one-member workspace is fully valid
 - the primary workflow is import, review, understand month, and compare year
 - incomplete reports cannot be mistaken for complete reports
-- monthly reporting shows personal spending per member, shared, household, total spending, income, and savings
+- monthly reporting shows personal spending per member, shared, total spending, income, and savings
 - category detail explains each spending-scope total
 - yearly reporting shows the same dimensions month by month
 - primary navigation no longer treats Imports, Review, and Expenses as unrelated top-level products

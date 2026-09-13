@@ -34,7 +34,7 @@ test("year view year-summary link downloads a CSV with the machine header", asyn
   const header = content.replace(/^\uFEFF/, "").split("\n")[0] ?? "";
 
   expect(header).toContain("month,status,income");
-  expect(header).toContain("shared,household,total_spent,savings");
+  expect(header).toContain("shared,total_spent,savings");
   expect(download.suggestedFilename()).toMatch(/year-summary\.csv$/);
   expect(prerenderErrors).toEqual([]);
 });
@@ -95,7 +95,7 @@ test("exports use payment dates or allocation months according to the selected U
   const created = await request.post("/api/manual-entries", {
     data: {
       title: "Export reporting-mode regression fixture",
-      eventKind: "expense", classificationType: "household",
+      eventKind: "expense", classificationType: "shared",
       amount: 90, eventDate: `${february}-15`,
     },
   });

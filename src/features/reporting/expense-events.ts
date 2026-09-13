@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, lt, ne } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
 import {
@@ -36,6 +36,7 @@ type ActiveSourceRow = {
   totalAmount: string;
   workspaceCurrency: string;
   classificationType: ClassificationType;
+  splitForSettlement: boolean;
   payerMemberId: string | null;
   personalOwnerMemberId: string | null;
   receivedByMemberId: string | null;
@@ -56,6 +57,7 @@ type ExistingExpenseEventRow = {
   totalAmount: string;
   workspaceCurrency: string;
   classificationType: ClassificationType;
+  splitForSettlement: boolean;
   payerMemberId: string | null;
   personalOwnerMemberId: string | null;
   receivedByMemberId: string | null;
@@ -135,6 +137,7 @@ function expenseEventMatches(
     amountsEqual(existing.totalAmount, active.totalAmount) &&
     existing.workspaceCurrency === active.workspaceCurrency &&
     existing.classificationType === active.classificationType &&
+    existing.splitForSettlement === active.splitForSettlement &&
     existing.payerMemberId === active.payerMemberId &&
     existing.personalOwnerMemberId === active.personalOwnerMemberId &&
     existing.receivedByMemberId === active.receivedByMemberId &&
@@ -196,6 +199,12 @@ async function applyExpenseEventSync(
         primaryRow.splitMode === "fixed" &&
         !amountsEqual(primaryRow.totalAmount, row.totalAmount),
     );
+    const shouldDeleteSplitBecauseTypeChanged = Boolean(
+      primaryRow &&
+        eventId &&
+        primaryRow.classificationType === "shared" &&
+        row.classificationType !== "shared",
+    );
 
     if (!eventId) {
       const [createdEvent] = await db
@@ -209,6 +218,7 @@ async function applyExpenseEventSync(
           totalAmount: row.totalAmount,
           workspaceCurrency: row.workspaceCurrency,
           classificationType: row.classificationType,
+          splitForSettlement: row.splitForSettlement,
           payerMemberId: row.payerMemberId,
           personalOwnerMemberId: row.personalOwnerMemberId,
           receivedByMemberId: row.receivedByMemberId,
@@ -230,6 +240,7 @@ async function applyExpenseEventSync(
           totalAmount: row.totalAmount,
           workspaceCurrency: row.workspaceCurrency,
           classificationType: row.classificationType,
+          splitForSettlement: row.splitForSettlement,
           payerMemberId: row.payerMemberId,
           personalOwnerMemberId: row.personalOwnerMemberId,
           receivedByMemberId: row.receivedByMemberId,
@@ -248,7 +259,7 @@ async function applyExpenseEventSync(
       );
     }
 
-    if (shouldResetFixedSharedSplit && eventId) {
+    if ((shouldResetFixedSharedSplit || shouldDeleteSplitBecauseTypeChanged) && eventId) {
       await db.delete(sharedExpenseSplits).where(eq(sharedExpenseSplits.expenseEventId, eventId));
     }
 
@@ -307,6 +318,7 @@ async function listExistingExpenseEvents(
       totalAmount: expenseEvents.totalAmount,
       workspaceCurrency: expenseEvents.workspaceCurrency,
       classificationType: expenseEvents.classificationType,
+      splitForSettlement: expenseEvents.splitForSettlement,
       payerMemberId: expenseEvents.payerMemberId,
       personalOwnerMemberId: expenseEvents.personalOwnerMemberId,
       receivedByMemberId: expenseEvents.receivedByMemberId,
@@ -400,6 +412,7 @@ export async function syncTransactionExpenseEvents(
         normalizedAmount: transactions.normalizedAmount,
         workspaceCurrency: transactions.workspaceCurrency,
         classificationType: transactionClassifications.classificationType,
+        splitForSettlement: transactionClassifications.splitForSettlement,
         personalOwnerMemberId: transactionClassifications.personalOwnerMemberId,
         paidByMemberId: transactionClassifications.paidByMemberId,
         receivedByMemberId: transactionClassifications.receivedByMemberId,
@@ -434,6 +447,7 @@ export async function syncTransactionExpenseEvents(
     totalAmount: transaction.normalizedAmount,
     workspaceCurrency: transaction.workspaceCurrency,
     classificationType: transaction.classificationType,
+    splitForSettlement: transaction.splitForSettlement,
     payerMemberId: transaction.paidByMemberId,
     personalOwnerMemberId: transaction.personalOwnerMemberId,
     receivedByMemberId: transaction.receivedByMemberId,
@@ -469,6 +483,7 @@ export async function syncManualEntryExpenseEvents(
         normalizedAmount: manualEntries.normalizedAmount,
         workspaceCurrency: manualEntries.workspaceCurrency,
         classificationType: manualEntries.classificationType,
+        splitForSettlement: manualEntries.splitForSettlement,
         payerMemberId: manualEntries.payerMemberId,
         personalOwnerMemberId: manualEntries.personalOwnerMemberId,
         receivedByMemberId: manualEntries.receivedByMemberId,
@@ -499,6 +514,7 @@ export async function syncManualEntryExpenseEvents(
     totalAmount: entry.normalizedAmount,
     workspaceCurrency: entry.workspaceCurrency,
     classificationType: entry.classificationType,
+    splitForSettlement: entry.splitForSettlement,
     payerMemberId: entry.payerMemberId,
     personalOwnerMemberId: entry.personalOwnerMemberId,
     receivedByMemberId: entry.receivedByMemberId,
@@ -607,4 +623,109 @@ export async function repairExpenseEventProjections(
     transactionSourceCount: transactionIds.length,
     manualEntrySourceCount: manualEntryIds.length,
   };
+}
+
+export type PreviousSplitSnapshot = {
+  expenseEventId: string;
+  sourceType: ExpenseEventSourceType;
+  sourceId: string;
+  splitMode: "equal" | "percentage" | "fixed";
+  splitDefinitionJson: unknown;
+  settlementStatus: "open" | "settled" | "ignored";
+};
+
+export async function snapshotSharedExpenseSplits(
+  db: DbExecutor,
+  context: CurrentWorkspaceContext,
+  input: {
+    sourceIds: string[];
+    sourceTypes: ExpenseEventSourceType[];
+  },
+): Promise<PreviousSplitSnapshot[]> {
+  const sourceIds = normalizeIds(input.sourceIds);
+
+  if (sourceIds.length === 0 || input.sourceTypes.length === 0) {
+    return [];
+  }
+
+  return db
+    .select({
+      expenseEventId: expenseEvents.id,
+      sourceType: expenseEvents.sourceType,
+      sourceId: expenseEvents.sourceId,
+      splitMode: sharedExpenseSplits.splitMode,
+      splitDefinitionJson: sharedExpenseSplits.splitDefinitionJson,
+      settlementStatus: sharedExpenseSplits.settlementStatus,
+    })
+    .from(expenseEvents)
+    .innerJoin(sharedExpenseSplits, eq(sharedExpenseSplits.expenseEventId, expenseEvents.id))
+    .where(
+      and(
+        eq(expenseEvents.workspaceId, context.workspaceId),
+        inArray(expenseEvents.sourceId, sourceIds),
+        inArray(expenseEvents.sourceType, input.sourceTypes),
+      ),
+    );
+}
+
+export async function restoreSharedExpenseSplits(
+  db: DbExecutor,
+  context: CurrentWorkspaceContext,
+  snapshots: PreviousSplitSnapshot[] | null | undefined,
+) {
+  if (!snapshots || snapshots.length === 0) {
+    return;
+  }
+
+  const sourceIds = normalizeIds(snapshots.map((snapshot) => snapshot.sourceId));
+  const currentEvents = await db
+    .select({
+      id: expenseEvents.id,
+      sourceType: expenseEvents.sourceType,
+      sourceId: expenseEvents.sourceId,
+    })
+    .from(expenseEvents)
+    .where(
+      and(
+        eq(expenseEvents.workspaceId, context.workspaceId),
+        inArray(expenseEvents.sourceId, sourceIds),
+        inArray(expenseEvents.sourceType, ["transaction", "manual", "recurring"]),
+      ),
+    );
+  const eventIdBySource = new Map(
+    currentEvents.map((event) => [eventRowKey(event), event.id]),
+  );
+  const rows = snapshots.flatMap((snapshot) => {
+    const eventId = eventIdBySource.get(eventRowKey(snapshot));
+
+    if (!eventId) {
+      return [];
+    }
+
+    return [
+      {
+        expenseEventId: eventId,
+        splitMode: snapshot.splitMode,
+        splitDefinitionJson: snapshot.splitDefinitionJson,
+        settlementStatus: snapshot.settlementStatus,
+      },
+    ];
+  });
+
+  if (rows.length === 0) {
+    return;
+  }
+
+  await db
+    .insert(sharedExpenseSplits)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: sharedExpenseSplits.expenseEventId,
+      set: {
+        splitMode: sql`excluded.split_mode`,
+        splitDefinitionJson: sql`excluded.split_definition_json`,
+        settlementStatus: sql`excluded.settlement_status`,
+        updatedAt: new Date(),
+      },
+    });
 }

@@ -19,6 +19,7 @@ export type OneTimeManualEntryItem = {
   receivedByMemberId: string | null;
   receivedByName: string | null;
   classificationType: OneTimeManualEntryClassificationType;
+  splitForSettlement: boolean;
   category: string | null;
   categoryId: string | null;
   eventDate: string;
