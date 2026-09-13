@@ -423,9 +423,10 @@ Needs:
 
 - create recurring income
 - create recurring expense
-- define effective month
-- edit amount from a future month only
-- view rule history
+- define the starting month on the rule
+- correct an amount on that version in Amount history
+- schedule a later amount as a new future version
+- view and remove a not-yet-started amount change
 
 ## 8. Reports page
 
@@ -726,10 +727,11 @@ What actually happened in code so far:
 16. shared app shell and hybrid home hub on `/`, including workflow navigation and route reframing across the existing expense product surfaces
 17. explicit FX transparency and month-aware report handoffs across imports, review, ledger, reports, and `/`, including queue-cleared home cues and report drill-ins
 18. recurring definitions simplified into one saved flow, with automatic report materialization plus pause/delete behavior that updates the current report month
-19. lightweight investment composition views on top of saved holdings, including heuristic asset typing, owner split, top positions, fallback classification for older snapshots, symbol-based aggregation, and a cleaner preview/save flow
-20. first-pass Excellence investment activity import support from a real checked-in workbook sample, with activity persistence and saved activity visibility on `/investments`
-21. hosted Supabase auth foundation with sign-in, first-user onboarding, hosted current-context resolution, and required TOTP MFA
-22. hosted RLS foundation with request-scoped `app.current_user_id`, non-bypass DB role guardrails, and workspace/member policies
+19. recurring amount history as the correction surface: identity/Starts stay on the rule, amount edits rematerialize that version's months, and unstarted future versions can be removed
+20. lightweight investment composition views on top of saved holdings, including heuristic asset typing, owner split, top positions, fallback classification for older snapshots, symbol-based aggregation, and a cleaner preview/save flow
+21. first-pass Excellence investment activity import support from a real checked-in workbook sample, with activity persistence and saved activity visibility on `/investments`
+22. hosted Supabase auth foundation with sign-in, first-user onboarding, hosted current-context resolution, and required TOTP MFA
+23. hosted RLS foundation with request-scoped `app.current_user_id`, non-bypass DB role guardrails, and workspace/member policies
 
 The DB-backed validation checkpoint, settings polish, manual shared-settlement coverage, Excellence investment persistence, shared workflow shell, FX/report-handoff usability pass, the recurring-flow simplification, the saved-holdings composition pass, the first activity-import pass, hosted Auth/MFA, and the hosted RLS foundation are now completed in code. The next work should validate those hosted foundations against a real Supabase project before import-heavy hosted usage.
 

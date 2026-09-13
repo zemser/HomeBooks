@@ -23,29 +23,38 @@ test("nextMonthString advances a stored month key", () => {
   assert.equal(normalizeMonthString("2026-05"), "2026-05-01");
 });
 
-test("recurring updates can move the opening month and keep future amount changes separate", async () => {
-  const [serviceSource, routeSource, clientSource] = await Promise.all([
+test("recurring identity edits stay on the rule and amount edits stay on versions", async () => {
+  const [serviceSource, routeSource, versionRouteSource, clientSource] = await Promise.all([
     readFile(repositoryFile("src/features/recurring/service.ts"), "utf8"),
     readFile(repositoryFile("src/app/api/recurring/[recurringEntryId]/route.ts"), "utf8"),
+    readFile(
+      repositoryFile("src/app/api/recurring/[recurringEntryId]/versions/[versionId]/route.ts"),
+      "utf8",
+    ),
     readFile(repositoryFile("src/components/recurring/recurring-page-client.tsx"), "utf8"),
   ]);
 
   assert.match(routeSource, /effectiveStartMonth: z\.string\(\)\.trim\(\)\.min\(1\)\.optional\(\)/);
-  assert.match(routeSource, /amount: z\.coerce\.number\(\)\.positive\(\)\.optional\(\)/);
+  assert.doesNotMatch(routeSource, /amount: z\.coerce\.number\(\)\.positive\(\)\.optional\(\)/);
   assert.match(serviceSource, /effectiveStartMonth: nextStartMonth/);
+  assert.match(serviceSource, /export async function updateRecurringEntryVersion/);
+  assert.match(serviceSource, /export async function deleteRecurringEntryVersion/);
   assert.match(
     serviceSource,
-    /The starting month must be before the next scheduled amount change/,
+    /You can only remove an amount change that has not started yet/,
   );
-  assert.match(
-    serviceSource,
-    /To change when this rule began, edit Starts on the rule itself/,
-  );
+  assert.match(versionRouteSource, /updateRecurringEntryVersion/);
+  assert.match(versionRouteSource, /deleteRecurringEntryVersion/);
   assert.match(clientSource, /<span>Starts<\/span>/);
   assert.match(clientSource, /If the amount changes later/);
-  assert.match(clientSource, /startsMonth: openingVersion/);
+  assert.match(clientSource, /Fix a wrong amount here/);
+  assert.match(clientSource, /canRemoveAmountChange/);
+  assert.match(clientSource, /handleUpdateVersion/);
+  assert.match(clientSource, /Moving it later takes those months out of reports/);
+  assert.match(clientSource, /max=\{latestAllowedStartMonth\}/);
   assert.doesNotMatch(clientSource, /Schedule a future change/);
   assert.doesNotMatch(clientSource, />Effective month</);
+  assert.doesNotMatch(clientSource, /Amount now/);
 });
 
 test("manual entry save keeps the row in the matching month and explains reports", async () => {
@@ -56,6 +65,9 @@ test("manual entry save keeps the row in the matching month and explains reports
 
   assert.match(clientSource, /setMonthFilter\(entryMonth\)/);
   assert.match(clientSource, /table-row-just-saved/);
+  assert.match(clientSource, /setJustSavedManualEntryId\(\(current\) =>/);
+  assert.match(clientSource, /dismissStatus\(\)/);
+  assert.match(clientSource, /setSavedEntryMonth\(null\)/);
   assert.match(clientSource, /Reports under Income/);
   assert.match(clientSource, /this month’s spending on Reports/);
   assert.match(clientSource, /Add expense or income/);

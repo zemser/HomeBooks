@@ -132,6 +132,7 @@ Use this file for table/enum/constraint-level details. Keep product direction in
   - PK: `id`
   - FK: `recurring_entry_id -> manual_recurring_expenses.id`
   - index: `(recurring_entry_id, effective_start_month)`
+  - each row is one amount period; identity/Starts stay on `manual_recurring_expenses`, amount corrections stay on this table
 - `manual_entries`
   - PK: `id`
   - FK: `workspace_id -> workspaces.id`, optional `payer_member_id -> workspace_members.id`

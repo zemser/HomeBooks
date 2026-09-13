@@ -549,15 +549,21 @@ export function ExpensesPageClient({
     const row = document.querySelector<HTMLElement>(
       `[data-manual-entry-id="${justSavedManualEntryId}"]`,
     );
-    if (!row) {
-      return;
+    if (row) {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      row.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "center",
+      });
     }
 
-    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    row.scrollIntoView({
-      behavior: reduceMotion ? "auto" : "smooth",
-      block: "center",
-    });
+    const timeout = window.setTimeout(() => {
+      setJustSavedManualEntryId((current) =>
+        current === justSavedManualEntryId ? null : current,
+      );
+    }, 800);
+
+    return () => window.clearTimeout(timeout);
   }, [justSavedManualEntryId, oneTimeManualEntries]);
 
   useEffect(() => {
@@ -602,12 +608,17 @@ export function ExpensesPageClient({
     }
   }, [selectedTransactionId, visibleTransactions]);
 
+  function dismissStatus() {
+    setError(null);
+    setMessage(null);
+    setSavedEntryMonth(null);
+  }
+
   function startNewManualEntry() {
     setSelectedManualEntryId(null);
     setManualEntryForm(createInitialManualEntryFormState());
     setManualEntryAllocationForm(emptyAllocationForm);
-    setError(null);
-    setMessage(null);
+    dismissStatus();
     setIsManualEntryModalOpen(true);
   }
 
@@ -666,8 +677,7 @@ export function ExpensesPageClient({
   }
 
   async function submitManualEntry() {
-    setError(null);
-    setMessage(null);
+    dismissStatus();
 
     if (
       manualEntryForm.classificationType === "personal" &&
@@ -739,8 +749,7 @@ export function ExpensesPageClient({
   }
 
   async function deleteManualEntry(manualEntryId: string) {
-    setError(null);
-    setMessage(null);
+    dismissStatus();
     setDeleteConfirmationId(null);
     setPendingDeleteId(manualEntryId);
 
@@ -773,8 +782,7 @@ export function ExpensesPageClient({
     sourceType: "transaction" | "manual";
     form: AllocationFormState;
   }): Promise<boolean> {
-    setError(null);
-    setMessage(null);
+    dismissStatus();
 
     try {
       const response = await fetch("/api/transaction-allocations", {
@@ -843,8 +851,7 @@ export function ExpensesPageClient({
       return false;
     }
 
-    setError(null);
-    setMessage(null);
+    dismissStatus();
 
     try {
       const response = await fetch("/api/transaction-classifications", {

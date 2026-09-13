@@ -289,8 +289,10 @@ The product should treat recurring entries as time-based rules with effective da
 Recommended MVP approach:
 
 - recurring entries should support version history
-- a change should create a new rule version with a start date
-- past generated entries should remain unchanged unless the user explicitly chooses to recompute them
+- a later price change should create a new version with a future start date; past generated months stay as they were
+- correcting a typed-wrong amount should edit that version and rematerialize only the months it covers
+- a scheduled future version can be removed before it starts
+- changing Starts on the rule moves when the first version began, and can add or remove generated months
 
 This avoids accidentally changing historical summaries when a recurring amount changes later.
 

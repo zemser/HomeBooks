@@ -55,7 +55,7 @@ Hosted v1 target:
 - preserve original imported values for auditability
 - separate raw import rows from normalized records
 - separate transaction facts from reporting allocations
-- avoid silent historical rewrites
+- avoid silent historical rewrites; explicit recurring amount corrections rematerialize only the months that version covers
 - treat uploaded source files as temporary processing artifacts
 
 ## Core domain areas
@@ -63,7 +63,7 @@ Hosted v1 target:
 - identity/workspaces: users, workspaces, membership, roles
 - imports: sources, templates, imports, raw rows, checksums
 - expenses/reporting: transactions, classifications, allocations, summaries
-- recurring/manual entries: definitions, generated entries, overrides
+- recurring/manual entries: definitions, versioned amounts, generated entries, overrides
 - shared settlements: split rules, balances, statuses
 - investments: accounts, holdings snapshots, activity imports
 
