@@ -594,6 +594,19 @@ test.describe("transaction review workflow", () => {
       expect(undoBatchId).toBeTruthy();
       await expect(page.getByText("Classification applied to 2 transactions.")).toBeVisible();
 
+      const nextTransactions = before.queue.slice(2, 4);
+      test.skip(nextTransactions.length < 2, "The leftover-form check needs two more review rows.");
+      for (const transaction of nextTransactions) {
+        const row = page.locator(`[data-review-transaction-id="${transaction.id}"]`);
+        await row.getByRole("checkbox").check();
+      }
+      await page.getByRole("button", { name: "Classify selected", exact: true }).click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("radio", { name: /Shared/ })).not.toBeChecked();
+      await expect(dialog.getByRole("combobox", { name: "Category", exact: true })).toHaveValue("");
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).toBeHidden();
+
       const classified = await loadReviewData(page);
       expect(classified.summary.queueCount).toBe(before.summary.queueCount - 2);
 
