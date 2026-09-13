@@ -44,7 +44,6 @@ It is optimized for:
 
 - `personal`
 - `shared`
-- `household`
 - `income`
 - `transfer`
 - `ignore`
@@ -355,6 +354,7 @@ Notes:
 id uuid pk
 transaction_id uuid fk -> transactions.id not null
 classification_type classification_type not null
+split_for_settlement boolean not null default false
 member_owner_id uuid fk -> workspace_members.id nullable
 category text nullable
 confidence numeric(5,4) nullable
@@ -376,6 +376,7 @@ workspace_id uuid fk -> workspaces.id not null
 match_type rule_match_type not null
 match_value text not null
 default_classification_type classification_type not null
+default_split_for_settlement boolean not null default false
 default_member_owner_id uuid fk -> workspace_members.id nullable
 default_category text nullable
 priority integer not null default 100
@@ -404,6 +405,7 @@ title text not null
 total_amount numeric(18,6) not null
 workspace_currency char(3) not null
 classification_type classification_type not null
+split_for_settlement boolean not null default false
 payer_member_id uuid fk -> workspace_members.id nullable
 category text nullable
 reporting_mode reporting_mode not null
@@ -452,6 +454,7 @@ title text not null
 event_kind event_kind not null
 payer_member_id uuid fk -> workspace_members.id nullable
 classification_type classification_type not null
+split_for_settlement boolean not null default false
 category text nullable
 active boolean not null default true
 created_at timestamptz not null
@@ -501,6 +504,7 @@ normalization_rate numeric(18,8) nullable
 normalization_rate_source text nullable
 payer_member_id uuid fk -> workspace_members.id nullable
 classification_type classification_type not null
+split_for_settlement boolean not null default false
 category text nullable
 event_date date not null
 created_at timestamptz not null

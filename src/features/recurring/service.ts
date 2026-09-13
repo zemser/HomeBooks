@@ -14,7 +14,9 @@ import {
   classificationAllowsPayer,
   getEventKindClassificationValidationMessage,
   getMemberAttributionValidationMessage,
+  getSplitForSettlementValidationMessage,
   normalizeMemberAttribution,
+  normalizeSplitForSettlement,
 } from "@/features/expenses/payer";
 import { listWorkspaceMembers } from "@/features/expenses/queries";
 import { syncManualEntryExpenseEvents } from "@/features/reporting/expense-events";
@@ -50,6 +52,7 @@ type CreateRecurringEntryInput = {
   payerMemberId?: string | null;
   receivedByMemberId?: string | null;
   classificationType: ClassificationType;
+  splitForSettlement?: boolean | null;
   category?: string | null;
   categoryId?: string | null;
   effectiveStartMonth: string;
@@ -67,6 +70,7 @@ type UpdateRecurringEntryInput = {
   payerMemberId?: string | null;
   receivedByMemberId?: string | null;
   classificationType: ClassificationType;
+  splitForSettlement?: boolean | null;
   category?: string | null;
   categoryId?: string | null;
   active: boolean;
@@ -110,6 +114,7 @@ type ExistingGeneratedManualEntryRow = {
   personalOwnerMemberId: string | null;
   receivedByMemberId: string | null;
   classificationType: ClassificationType;
+  splitForSettlement: boolean;
   category: string | null;
   categoryId: string | null;
 };
@@ -129,6 +134,7 @@ type RecurringGeneratedRowSeed = {
   personalOwnerMemberId: string | null;
   receivedByMemberId: string | null;
   classificationType: ClassificationType;
+  splitForSettlement: boolean;
   category: string | null;
   categoryId: string | null;
 };
@@ -166,6 +172,7 @@ function generatedManualEntryMatches(
     existing.personalOwnerMemberId === desired.personalOwnerMemberId &&
     existing.receivedByMemberId === desired.receivedByMemberId &&
     existing.classificationType === desired.classificationType &&
+    existing.splitForSettlement === desired.splitForSettlement &&
     existing.category === desired.category &&
     existing.categoryId === desired.categoryId
   );
@@ -213,6 +220,8 @@ function validateRecurringClassification(input: {
   personalOwnerMemberId: string | null;
   payerMemberId: string | null;
   receivedByMemberId: string | null;
+  splitForSettlement?: boolean | null;
+  activeMemberCount: number;
 }) {
   const eventKindValidationMessage = getEventKindClassificationValidationMessage(input);
 
@@ -229,6 +238,17 @@ function validateRecurringClassification(input: {
 
   if (memberValidationMessage) {
     throw new Error(memberValidationMessage);
+  }
+
+  const splitValidationMessage = getSplitForSettlementValidationMessage({
+    classificationType: input.classificationType,
+    splitForSettlement: input.splitForSettlement,
+    activeMemberCount: input.activeMemberCount,
+    writeMode: "interactive",
+  });
+
+  if (splitValidationMessage) {
+    throw new Error(splitValidationMessage);
   }
 }
 
@@ -493,6 +513,7 @@ export async function materializeRecurringEntriesForRange(
           personalOwnerMemberId: entry.personalOwnerMemberId,
           receivedByMemberId: entry.receivedByMemberId,
           classificationType: entry.classificationType,
+          splitForSettlement: entry.splitForSettlement,
           category: entry.category,
           categoryId: entry.categoryId,
         });
@@ -516,6 +537,7 @@ export async function materializeRecurringEntriesForRange(
         personalOwnerMemberId: manualEntries.personalOwnerMemberId,
         receivedByMemberId: manualEntries.receivedByMemberId,
         classificationType: manualEntries.classificationType,
+        splitForSettlement: manualEntries.splitForSettlement,
         category: manualEntries.category,
         categoryId: manualEntries.categoryId,
       })
@@ -605,6 +627,7 @@ export async function materializeRecurringEntriesForRange(
             personalOwnerMemberId: effectiveRow.personalOwnerMemberId,
             receivedByMemberId: effectiveRow.receivedByMemberId,
             classificationType: effectiveRow.classificationType,
+            splitForSettlement: effectiveRow.splitForSettlement,
             category: effectiveRow.category,
             categoryId: effectiveRow.categoryId,
             updatedAt: new Date(),
@@ -634,6 +657,7 @@ export async function materializeRecurringEntriesForRange(
           personalOwnerMemberId: row.personalOwnerMemberId,
           receivedByMemberId: row.receivedByMemberId,
           classificationType: row.classificationType,
+          splitForSettlement: row.splitForSettlement,
           category: row.category,
           categoryId: row.categoryId,
           eventDate: row.eventDate,
@@ -724,6 +748,7 @@ export async function listRecurringEntries(
         personalOwnerMemberId: manualRecurringExpenses.personalOwnerMemberId,
         receivedByMemberId: manualRecurringExpenses.receivedByMemberId,
         classificationType: manualRecurringExpenses.classificationType,
+        splitForSettlement: manualRecurringExpenses.splitForSettlement,
         category: manualRecurringExpenses.category,
         categoryId: manualRecurringExpenses.categoryId,
         active: manualRecurringExpenses.active,
@@ -794,6 +819,7 @@ export async function listRecurringEntries(
         ? memberNames.get(entry.receivedByMemberId) ?? null
         : null,
       classificationType: entry.classificationType,
+      splitForSettlement: Boolean(entry.splitForSettlement),
       category: entry.category,
       categoryId: entry.categoryId,
       active: entry.active,
@@ -828,6 +854,7 @@ export async function listGeneratedManualEntries(
       personalOwnerMemberId: manualEntries.personalOwnerMemberId,
       receivedByMemberId: manualEntries.receivedByMemberId,
       classificationType: manualEntries.classificationType,
+      splitForSettlement: manualEntries.splitForSettlement,
       category: manualEntries.category,
       categoryId: manualEntries.categoryId,
       eventDate: manualEntries.eventDate,
@@ -863,6 +890,7 @@ export async function listGeneratedManualEntries(
       ? memberNames.get(entry.receivedByMemberId) ?? null
       : null,
     classificationType: entry.classificationType,
+    splitForSettlement: Boolean(entry.splitForSettlement),
     category: entry.category,
     categoryId: entry.categoryId,
     eventDate: entry.eventDate,
@@ -877,6 +905,10 @@ export async function createRecurringEntry(
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
   const personalOwnerMemberId = normalizeOptionalText(input.personalOwnerMemberId);
   const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
+  const splitForSettlement = normalizeSplitForSettlement(
+    input.classificationType,
+    input.splitForSettlement,
+  );
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const notes = normalizeOptionalText(input.notes);
   const effectiveStartMonth = normalizeMonthString(input.effectiveStartMonth);
@@ -892,6 +924,7 @@ export async function createRecurringEntry(
     paidByMemberId: payerMemberId,
     receivedByMemberId,
   });
+  const activeMemberCount = (await listWorkspaceMembers(context, db)).length;
 
   validateRecurringClassification({
     eventKind: input.eventKind,
@@ -899,6 +932,8 @@ export async function createRecurringEntry(
     personalOwnerMemberId,
     payerMemberId,
     receivedByMemberId,
+    splitForSettlement,
+    activeMemberCount,
   });
   await assertWorkspaceMember(context, personalOwnerMemberId, db);
   await assertWorkspaceMember(context, payerMemberId, db);
@@ -919,6 +954,7 @@ export async function createRecurringEntry(
         personalOwnerMemberId: attribution.personalOwnerMemberId,
         receivedByMemberId: attribution.receivedByMemberId,
         classificationType: input.classificationType,
+        splitForSettlement,
         category: savedCategory?.name ?? null,
         categoryId: savedCategory?.id ?? null,
         active: true,
@@ -1003,6 +1039,10 @@ export async function updateRecurringEntry(
   const payerMemberId = normalizeOptionalText(input.payerMemberId);
   const personalOwnerMemberId = normalizeOptionalText(input.personalOwnerMemberId);
   const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
+  const splitForSettlement = normalizeSplitForSettlement(
+    input.classificationType,
+    input.splitForSettlement,
+  );
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
   const attribution = normalizeMemberAttribution({
     classificationType: input.classificationType,
@@ -1010,6 +1050,7 @@ export async function updateRecurringEntry(
     paidByMemberId: payerMemberId,
     receivedByMemberId,
   });
+  const activeMemberCount = (await listWorkspaceMembers(context, db)).length;
 
   await assertWorkspaceRecurringEntry(context, recurringEntryId, db);
   validateRecurringClassification({
@@ -1018,6 +1059,8 @@ export async function updateRecurringEntry(
     personalOwnerMemberId,
     payerMemberId,
     receivedByMemberId,
+    splitForSettlement,
+    activeMemberCount,
   });
   await assertWorkspaceMember(context, personalOwnerMemberId, db);
   await assertWorkspaceMember(context, payerMemberId, db);
@@ -1036,6 +1079,7 @@ export async function updateRecurringEntry(
       personalOwnerMemberId: attribution.personalOwnerMemberId,
       receivedByMemberId: attribution.receivedByMemberId,
       classificationType: input.classificationType,
+      splitForSettlement,
       category: savedCategory?.name ?? null,
       categoryId: savedCategory?.id ?? null,
       active: input.active,

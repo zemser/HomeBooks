@@ -329,7 +329,7 @@ test("History month picker includes a manual-only month", async ({ page, request
   const month = `${year}-02`;
   const title = "History manual-only month regression fixture";
   const created = await request.post("/api/manual-entries", { data: {
-    title, eventKind: "expense", classificationType: "household",
+    title, eventKind: "expense", classificationType: "shared",
     amount: 10, eventDate: `${month}-15`,
   } });
   expect(created.status()).toBe(201);

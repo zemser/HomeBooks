@@ -87,7 +87,7 @@ function twoMemberSource() {
       record("2026-01-10", "income", 100, { memberId: "lee" }),
       record("2026-01-11", "personal", 20, { memberId: "lee" }),
       record("2026-01-12", "shared", 10),
-      record("2026-02-01", "household", 30),
+      record("2026-02-01", "shared", 30),
       record("2026-02-02", "personal", 5, { memberId: "sam" }),
     ],
     completeness: [
@@ -118,7 +118,7 @@ test("one-member year summary emits a single personal column", () => {
   assert.deepEqual(personalKeys, ["personal_lee"]);
   assert.deepEqual(
     exportData.yearReport.totals.scopes.map(exportScopeColumnKey),
-    ["personal_lee", "shared", "household"],
+    ["personal_lee", "shared"],
   );
 });
 
@@ -152,7 +152,7 @@ test("two-member and three-member column order matches the year report scopes", 
 
   assert.deepEqual(
     threeMember.yearSummary.columns.map((column) => column.key).slice(3, -2),
-    ["personal_lee", "personal_izzy", "personal_sam", "shared", "household"],
+    ["personal_lee", "personal_izzy", "personal_sam", "shared"],
   );
   assert.deepEqual(
     threeMember.yearSummary.columns.map((column) => column.key).slice(3, -2),
@@ -189,13 +189,13 @@ test("inactive historical member columns appear only when the year report includ
   );
 });
 
-test("personal owner fills personal columns and household or shared payers do not leak", () => {
+test("personal owner fills personal columns and shared payers do not leak", () => {
   const exportData = getYearExportData(
     source({
       members: [lee, izzy],
       includedMonths: ["2026-01-01"],
       records: [
-        record("2026-01-01", "household", 20, { memberId: "lee" }),
+        record("2026-01-01", "shared", 20, { memberId: "lee" }),
         record("2026-01-02", "shared", 10, { memberId: "lee" }),
         record("2026-01-03", "personal", 5, { memberId: "izzy" }),
       ],
@@ -206,8 +206,8 @@ test("personal owner fills personal columns and household or shared payers do no
 
   assert.equal(row?.personal_lee, 0);
   assert.equal(row?.personal_izzy, 5);
-  assert.equal(row?.shared, 10);
-  assert.equal(row?.household, 20);
+  assert.equal(row?.shared, 30);
+  assert.equal(row?.household, undefined);
   assert.equal(row?.total_spent, 35);
 });
 
@@ -302,14 +302,14 @@ test("Uncategorized is emitted when the category is null", () => {
       members: [lee],
       includedMonths: ["2026-01-01"],
       records: [
-        record("2026-01-01", "household", 12, { category: null, categoryId: null }),
+        record("2026-01-01", "shared", 12, { category: null, categoryId: null }),
       ],
       completeness: [completeness("2026-01-01", 1, 1)],
     }),
   );
 
   assert.equal(exportData.categoryDetail.rows[0]?.category, "Uncategorized");
-  assert.equal(exportData.categoryDetail.rows[0]?.household, 12);
+  assert.equal(exportData.categoryDetail.rows[0]?.shared, 12);
 });
 
 test("export filenames include the source reporting mode and currency", () => {
@@ -417,7 +417,7 @@ test("RFC 4180 quoting preserves commas and quotes in category names", () => {
       members: [lee],
       includedMonths: ["2026-01-01"],
       records: [
-        record("2026-01-01", "household", 3, {
+        record("2026-01-01", "shared", 3, {
           category: 'Groceries, "sale"',
           categoryId: "groceries",
         }),
@@ -483,7 +483,7 @@ test("CSV neutralizes formula text without changing numeric amounts", () => {
   assert.deepEqual(parsed[1], ["-12.5", "0", "12.5"]);
 
   const input = twoMemberSource();
-  input.records[0] = record("2026-01-01", "household", 3, { category: "=1+1" });
+  input.records[0] = record("2026-01-01", "shared", 3, { category: "=1+1" });
   const data = getYearExportData(input);
   const detail = readTabularFileFromBuffer({
     buffer: toArrayBuffer(serializeExportTableCsv(data.categoryDetail)), filename: "detail.csv",

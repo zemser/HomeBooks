@@ -16,6 +16,7 @@ import {
   emptyMemberAttributionFormValue,
   MemberAttributionFields,
   memberAttributionForClassificationType,
+  SplitForSettlementField,
 } from "@/components/expenses/member-attribution-fields";
 import { CategoryCombobox } from "@/components/workspaces/category-combobox";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
@@ -26,6 +27,7 @@ import {
   formatClassificationTypeLabel,
   formatClassificationSummary,
   formatDecisionSourceLabel,
+  formatMerchantRulePreview,
   formatMoneyDisplay,
   getTransactionMerchant,
 } from "@/features/expenses/presentation";
@@ -63,6 +65,7 @@ type SingleFormState = {
   personalOwnerMemberId: string;
   paidByMemberId: string;
   receivedByMemberId: string;
+  splitForSettlement: boolean;
   createRule: boolean;
   applyToSimilar: boolean;
 };
@@ -74,6 +77,7 @@ type BulkFormState = {
   personalOwnerMemberId: string;
   paidByMemberId: string;
   receivedByMemberId: string;
+  splitForSettlement: boolean;
 };
 
 type ActiveFilterKey =
@@ -167,6 +171,7 @@ const emptySingleForm: SingleFormState = {
   category: "",
   categoryId: "",
   ...emptyMemberAttributionFormValue(),
+  splitForSettlement: false,
   createRule: false,
   applyToSimilar: false,
 };
@@ -176,6 +181,7 @@ const emptyBulkForm: BulkFormState = {
   category: "",
   categoryId: "",
   ...emptyMemberAttributionFormValue(),
+  splitForSettlement: false,
 };
 
 const emptyReviewSummary: ReviewQueueSummary = {
@@ -577,6 +583,7 @@ export function ReviewQueueClient({
       paidByMemberId: accountOwnerMemberId || classification?.paidByMemberId || "",
       receivedByMemberId:
         accountOwnerMemberId || classification?.receivedByMemberId || "",
+      splitForSettlement: Boolean(classification?.splitForSettlement),
       createRule: false,
       applyToSimilar: false,
     });
@@ -714,6 +721,7 @@ export function ReviewQueueClient({
           receivedByMemberId: current.receivedByMemberId || selectedTransaction?.accountOwnerMemberId || "" },
         selectedTransaction?.accountOwnerMemberId ?? "",
       ),
+      splitForSettlement: classificationType === "shared" ? current.splitForSettlement : false,
     }));
   }
 
@@ -743,8 +751,9 @@ export function ReviewQueueClient({
       categoryId: suggestion.categoryId ?? "",
       personalOwnerMemberId: suggestion.classificationType === "personal" ? selectedTransaction.accountOwnerMemberId ?? "" : "",
       paidByMemberId:
-        ["personal", "household", "shared"].includes(suggestion.classificationType) ? selectedTransaction.accountOwnerMemberId ?? "" : "",
+        ["personal", "shared"].includes(suggestion.classificationType) ? selectedTransaction.accountOwnerMemberId ?? "" : "",
       receivedByMemberId: suggestion.classificationType === "income" ? selectedTransaction.accountOwnerMemberId ?? "" : "",
+      splitForSettlement: Boolean(suggestion.splitForSettlement),
     }));
     setMessage("Suggestion applied. Review it, then save when ready.");
   }
@@ -764,6 +773,7 @@ export function ReviewQueueClient({
       personalOwnerMemberId: singleForm.personalOwnerMemberId,
       paidByMemberId: singleForm.paidByMemberId,
       receivedByMemberId: singleForm.receivedByMemberId,
+      splitForSettlement: singleForm.splitForSettlement,
     });
     setIsBulkModalOpen(true);
   }
@@ -805,6 +815,7 @@ export function ReviewQueueClient({
         personalOwnerMemberId: singleForm.personalOwnerMemberId || null,
         paidByMemberId: singleForm.paidByMemberId || null,
         receivedByMemberId: singleForm.receivedByMemberId || null,
+        splitForSettlement: singleForm.splitForSettlement,
         createRule: singleForm.createRule && merchantCanCreateRule,
         additionalTransactionIds,
       }),
@@ -885,6 +896,7 @@ export function ReviewQueueClient({
         personalOwnerMemberId: bulkForm.personalOwnerMemberId || null,
         paidByMemberId: bulkForm.paidByMemberId || null,
         receivedByMemberId: bulkForm.receivedByMemberId || null,
+        splitForSettlement: bulkForm.splitForSettlement,
       }),
     });
     const data = (await response.json().catch(() => ({}))) as { error?: string; undoBatchId?: string };
@@ -1167,7 +1179,7 @@ export function ReviewQueueClient({
         event.preventDefault();
         setSelectedTransactionId(previousTransactionId);
         focusReviewRow(previousTransactionId);
-      } else if (/^[1-6]$/.test(event.key)) {
+      } else if (/^[1-5]$/.test(event.key)) {
         event.preventDefault();
         const type = CLASSIFICATION_TYPES[Number(event.key) - 1];
         if (type) changeSingleClassificationType(type);
@@ -1439,6 +1451,8 @@ export function ReviewQueueClient({
                       current,
                       bulkAccountOwnerMemberId ?? "",
                     ),
+                    splitForSettlement:
+                      classificationType === "shared" ? current.splitForSettlement : false,
                   }))
                 }
                 legend="Apply which treatment?"
@@ -1467,6 +1481,14 @@ export function ReviewQueueClient({
                   onChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
                 />
               ) : null}
+              <SplitForSettlementField
+                classificationType={bulkForm.classificationType}
+                value={bulkForm.splitForSettlement}
+                canSplit={members.length >= 2}
+                onChange={(splitForSettlement) =>
+                  setBulkForm((current) => ({ ...current, splitForSettlement }))
+                }
+              />
               {!hasDefinedCategories ? <p className="helper-text">Add categories in <Link href="/settings">settings</Link> before assigning one here.</p> : null}
               <div className="action-row">
                 <button className="button" type="button" disabled={isSavingBulk || isSubmittingBulk} onClick={() => startSavingBulk(() => void runBulkClassification())}>
@@ -1829,6 +1851,14 @@ export function ReviewQueueClient({
                     personalOwnerSelectRef={memberSelectRef}
                   />
                 ) : null}
+                <SplitForSettlementField
+                  classificationType={singleForm.classificationType}
+                  value={singleForm.splitForSettlement}
+                  canSplit={members.length >= 2}
+                  onChange={(splitForSettlement) =>
+                    setSingleForm((current) => ({ ...current, splitForSettlement }))
+                  }
+                />
 
                 <label className="checkbox-label merchant-rule-toggle">
                   <input
@@ -1844,7 +1874,11 @@ export function ReviewQueueClient({
                     }
                   />
                   <span>
-                    Automatically classify “{selectedTransaction.merchantRaw?.trim() || "this merchant"}” as {singleForm.classificationType ? formatClassificationTypeLabel(singleForm.classificationType) : "the selected type"}{singleForm.category ? ` / ${singleForm.category}` : ""} <kbd>R</kbd>
+                    Automatically classify “{selectedTransaction.merchantRaw?.trim() || "this merchant"}” as {singleForm.classificationType ? formatMerchantRulePreview({
+                      classificationType: singleForm.classificationType,
+                      category: singleForm.category,
+                      splitForSettlement: singleForm.splitForSettlement,
+                    }) : "the selected type"} <kbd>R</kbd>
                   </span>
                 </label>
                 {selectedTransaction.exactRuleExists ? (
@@ -1965,7 +1999,7 @@ export function ReviewQueueClient({
       >
         <dl className="shortcut-list">
           <div><dt><kbd>↑</kbd> <kbd>↓</kbd></dt><dd>Previous or next transaction</dd></div>
-          <div><dt><kbd>1</kbd>–<kbd>6</kbd></dt><dd>Choose classification type</dd></div>
+          <div><dt><kbd>1</kbd>–<kbd>5</kbd></dt><dd>Choose classification type</dd></div>
           <div><dt><kbd>C</kbd></dt><dd>Open category search</dd></div>
           <div><dt><kbd>R</kbd></dt><dd>Toggle exact merchant rule</dd></div>
           <div><dt><kbd>S</kbd></dt><dd>Skip for now</dd></div>

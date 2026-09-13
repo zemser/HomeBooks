@@ -535,6 +535,7 @@ async function listEligibleSettlementRows(
         eq(expenseEvents.workspaceId, context.workspaceId),
         eq(expenseEvents.eventKind, "expense"),
         eq(expenseEvents.classificationType, "shared"),
+        eq(expenseEvents.splitForSettlement, true),
         inArray(expenseEvents.sourceType, ["transaction", "manual", "recurring"]),
       ),
     )
@@ -685,6 +686,7 @@ export async function upsertSharedSettlement(
           eq(expenseEvents.workspaceId, context.workspaceId),
           eq(expenseEvents.eventKind, "expense"),
           eq(expenseEvents.classificationType, "shared"),
+          eq(expenseEvents.splitForSettlement, true),
           inArray(expenseEvents.sourceType, ["transaction", "manual", "recurring"]),
         ),
       )

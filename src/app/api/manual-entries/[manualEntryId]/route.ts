@@ -21,6 +21,7 @@ const requestSchema = z.object({
   payerMemberId: z.string().uuid().optional().nullable(),
   receivedByMemberId: z.string().uuid().optional().nullable(),
   classificationType: z.enum(ONE_TIME_MANUAL_ENTRY_CLASSIFICATION_TYPES),
+  splitForSettlement: z.boolean().optional().default(false),
   category: z.string().trim().optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),
   amount: z.coerce.number().positive(),

@@ -11,7 +11,6 @@ export type MemberAttribution = {
 const PAYER_CLASSIFICATION_TYPES = new Set<ClassificationType>([
   "personal",
   "shared",
-  "household",
 ]);
 
 export function classificationAllowsPayer(classificationType: ClassificationType) {
@@ -24,6 +23,40 @@ export function classificationAllowsPersonalOwner(classificationType: Classifica
 
 export function classificationAllowsRecipient(classificationType: ClassificationType) {
   return classificationType === "income";
+}
+
+export function classificationAllowsSplit(classificationType: ClassificationType) {
+  return classificationType === "shared";
+}
+
+export function normalizeSplitForSettlement(
+  classificationType: ClassificationType,
+  splitForSettlement?: boolean | null,
+) {
+  return classificationAllowsSplit(classificationType) ? Boolean(splitForSettlement) : false;
+}
+
+export function getSplitForSettlementValidationMessage(input: {
+  classificationType: ClassificationType;
+  splitForSettlement?: boolean | null;
+  activeMemberCount?: number | null;
+  writeMode?: "interactive" | "replay";
+}) {
+  const splitForSettlement = Boolean(input.splitForSettlement);
+
+  if (!splitForSettlement) {
+    return null;
+  }
+
+  if (!classificationAllowsSplit(input.classificationType)) {
+    return `${classificationLabel(input.classificationType)} classifications cannot be split for settlement.`;
+  }
+
+  if ((input.writeMode ?? "interactive") === "interactive" && (input.activeMemberCount ?? 0) < 2) {
+    return "Split this later is only available when this workspace has two active members.";
+  }
+
+  return null;
 }
 
 export function classificationMatchesEventKind(
@@ -52,7 +85,7 @@ export function normalizeClassificationForEventKind<T extends ClassificationType
     return classificationType;
   }
 
-  return eventKind === "income" ? "income" : "household";
+  return eventKind === "income" ? "income" : "shared";
 }
 
 export function getEventKindClassificationValidationMessage(input: {
@@ -76,8 +109,6 @@ function classificationLabel(classificationType: ClassificationType) {
       return "Personal";
     case "shared":
       return "Shared";
-    case "household":
-      return "Household";
     case "income":
       return "Income";
     case "transfer":
@@ -122,7 +153,6 @@ export function compatibilityMemberOwnerId(
     case "personal":
       return attribution.personalOwnerMemberId;
     case "shared":
-    case "household":
       return attribution.paidByMemberId;
     case "income":
       return attribution.receivedByMemberId;
@@ -241,12 +271,6 @@ export function backfillImportedMemberAttribution(input: {
         paidByMemberId: input.memberOwnerId,
         receivedByMemberId: null,
       };
-    case "household":
-      return {
-        personalOwnerMemberId: null,
-        paidByMemberId: input.accountOwnerMemberId,
-        receivedByMemberId: null,
-      };
     case "income":
       return {
         personalOwnerMemberId: null,
@@ -270,7 +294,6 @@ export function backfillManualMemberAttribution(input: {
         receivedByMemberId: null,
       };
     case "shared":
-    case "household":
       return {
         personalOwnerMemberId: null,
         paidByMemberId: input.payerMemberId,
@@ -299,7 +322,6 @@ export function backfillRuleMemberAttribution(input: {
         receivedByMemberId: null,
       };
     case "shared":
-    case "household":
       return {
         personalOwnerMemberId: null,
         paidByMemberId: input.defaultMemberOwnerId,

@@ -418,7 +418,7 @@ export function SharedSettlementsPageClient({
       ) : null}
 
       {data && data.isPairwiseReady && (data.needsSplitSetup.length > 0 || (data.pendingReviewCount ?? 0) > 0) ? (
-        <p className="status warning">Settlement is incomplete: {data.needsSplitSetup.length} shared expenses need payer or split confirmation, and {data.pendingReviewCount ?? 0} imported transactions need review. <Link href="/transactions/review?import=all">Review transactions</Link></p>
+        <p className="status warning">Settlement is incomplete: {data.needsSplitSetup.length} expenses marked Split this later need payer or split confirmation, and {data.pendingReviewCount ?? 0} imported transactions need review. <Link href="/transactions/review?import=all">Review transactions</Link></p>
       ) : null}
       {data && data.isPairwiseReady ? (
         <article className="card">
@@ -448,8 +448,8 @@ export function SharedSettlementsPageClient({
               <div>
                 <h2>Needs split setup</h2>
                 <p className="muted-text">
-                  Shared expenses only affect balances after you confirm payer and split
-                  rules.
+                  Only expenses marked Split this later appear here. Confirm payer and split
+                  rules for those opted-in shared rows.
                 </p>
               </div>
             </div>
@@ -457,7 +457,7 @@ export function SharedSettlementsPageClient({
             {data.needsSplitSetup.length === 0 ? (
               <article className="card">
                 <p className="empty-state">
-                  No shared expenses are waiting for split setup right now.
+                  No expenses marked Split this later are waiting for split setup right now.
                 </p>
               </article>
             ) : null}

@@ -81,7 +81,7 @@ export type MonthlyMemberBreakdownItem = {
   itemCount: number;
 };
 
-export type SpendingScope = "personal" | "shared" | "household";
+export type SpendingScope = "personal" | "shared";
 
 export type SpendingScopeSummary = {
   key: string;
@@ -371,8 +371,8 @@ export async function getMonthCompleteness(
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
         reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
         pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit'), 0)::text`,
-        unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared', 'household') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
-        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'household', 'income'))::int`,
+        unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
+        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income'))::int`,
         excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore'))::int`,
       })
       .from(transactions)
@@ -453,8 +453,8 @@ async function getMonthCompletenessForMonths(
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
         reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
         pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit'), 0)::text`,
-        unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared', 'household') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
-        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'household', 'income'))::int`,
+        unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
+        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income'))::int`,
         excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore'))::int`,
       })
       .from(transactions)
@@ -535,7 +535,7 @@ function divideMoney(amount: number, divisor: number) {
 }
 
 function isSpendingScope(value: ClassificationType): value is SpendingScope {
-  return value === "personal" || value === "shared" || value === "household";
+  return value === "personal" || value === "shared";
 }
 
 function spendingScopeKey(scope: SpendingScope, memberId: string | null) {
@@ -551,7 +551,7 @@ function spendingScopeLabel(
     return `Personal · ${memberId ? memberNames.get(memberId) ?? "Unknown member" : "Unassigned"}`;
   }
 
-  return scope === "shared" ? "Shared" : "Household";
+  return "Shared";
 }
 
 export function buildSpendingScopeSummaries(
@@ -589,7 +589,6 @@ export function buildSpendingScopeSummaries(
   }
 
   ensureSummary("shared", null);
-  ensureSummary("household", null);
 
   for (const record of records) {
     if (record.direction !== "expense" || !isSpendingScope(record.classificationType)) {
@@ -604,7 +603,7 @@ export function buildSpendingScopeSummaries(
 
   return Array.from(summaries.values()).sort((left, right) => {
     if (left.scope !== right.scope) {
-      const order: SpendingScope[] = ["personal", "shared", "household"];
+      const order: SpendingScope[] = ["personal", "shared"];
       return order.indexOf(left.scope) - order.indexOf(right.scope);
     }
 

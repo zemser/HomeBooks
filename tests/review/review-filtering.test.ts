@@ -95,7 +95,7 @@ test("combined review filters and sorting return only matching rows", () => {
       merchantRaw: "Coffee House",
       normalizedAmount: "750",
       suggestion: {
-        classificationType: "household",
+        classificationType: "shared",
         category: "Dining",
         categoryId: "category-1",
         personalOwnerMemberId: null,
@@ -104,6 +104,7 @@ test("combined review filters and sorting return only matching rows", () => {
         paidByName: null,
         receivedByMemberId: null,
         receivedByName: null,
+        splitForSettlement: false,
         matchingTransactionCount: 3,
         supportingTransactionCount: 3,
         confidence: "strong",
@@ -117,7 +118,7 @@ test("combined review filters and sorting return only matching rows", () => {
       merchantRaw: "Coffee House",
       normalizedAmount: "550",
       suggestion: {
-        classificationType: "household",
+        classificationType: "shared",
         category: "Dining",
         categoryId: "category-1",
         personalOwnerMemberId: null,
@@ -126,6 +127,7 @@ test("combined review filters and sorting return only matching rows", () => {
         paidByName: null,
         receivedByMemberId: null,
         receivedByName: null,
+        splitForSettlement: false,
         matchingTransactionCount: 3,
         supportingTransactionCount: 3,
         confidence: "strong",

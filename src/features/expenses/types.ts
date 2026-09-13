@@ -13,6 +13,7 @@ export type TransactionClassificationState = {
   paidByName: string | null;
   receivedByMemberId: string | null;
   receivedByName: string | null;
+  splitForSettlement: boolean;
   decidedBy: DecisionSource;
   reviewedAt: string | null;
 } | null;
@@ -55,6 +56,7 @@ export type ClassificationSuggestion = {
   paidByName: string | null;
   receivedByMemberId: string | null;
   receivedByName: string | null;
+  splitForSettlement: boolean;
   matchingTransactionCount: number;
   supportingTransactionCount: number;
   confidence: "strong" | "likely";

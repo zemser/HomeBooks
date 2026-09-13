@@ -9,6 +9,7 @@ export type HistoricalClassificationDecision = {
   personalOwnerMemberId: string | null;
   paidByMemberId: string | null;
   receivedByMemberId: string | null;
+  splitForSettlement: boolean;
 };
 
 export function normalizeMerchantRuleValue(value: string) {
@@ -30,7 +31,7 @@ export function buildExactMerchantSuggestions(
     const decisionKey = JSON.stringify([
       row.classificationType,
       row.categoryId ?? row.category?.trim().toLocaleLowerCase() ?? null,
-
+      Boolean(row.splitForSettlement),
     ]);
     const decisions = decisionsByMerchant.get(merchantKey) ?? new Map();
     const current = decisions.get(decisionKey);
@@ -57,6 +58,7 @@ export function buildExactMerchantSuggestions(
       paidByName: null,
       receivedByMemberId: null,
       receivedByName: null,
+      splitForSettlement: Boolean(winner.row.splitForSettlement),
       matchingTransactionCount: total,
       supportingTransactionCount: winner.count,
       confidence: winner.count === total ? "strong" : "likely",

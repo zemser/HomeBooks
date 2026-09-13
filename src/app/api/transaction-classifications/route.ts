@@ -19,6 +19,7 @@ const requestSchema = z.object({
   personalOwnerMemberId: z.string().uuid().optional().nullable(),
   paidByMemberId: z.string().uuid().optional().nullable(),
   receivedByMemberId: z.string().uuid().optional().nullable(),
+  splitForSettlement: z.boolean().optional().default(false),
   createRule: z.boolean().optional().default(false),
   additionalTransactionIds: z.array(z.string().uuid()).max(200).optional().default([]),
 });

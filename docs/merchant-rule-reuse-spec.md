@@ -14,7 +14,7 @@ The account owner and the uploader are different concepts. Import preview asks t
 
 | Type | Attribution on the new transaction |
 | --- | --- |
-| Household / shared | Paid by the confirmed source-account owner |
+| Shared | Paid by the confirmed source-account owner. Split-for-settlement follows the saved rule and never creates a split definition. |
 | Personal | Personal owner and paid by both follow the confirmed source-account owner |
 | Income | Received by the confirmed source-account owner |
 | Transfer / ignore | No people |
@@ -54,7 +54,7 @@ Apply Drizzle migration `0013_merchant_rule_reuse.sql` before deploying the appl
 - Alex uploads Sam's statement: Sam is payer and personal owner when Sam owns the account.
 - A new account preview defaults **This account belongs to** to the uploader, and can be changed to the other member or joint.
 - A shared merchant rule works on either member's account without replaying the rule creator's payer.
-- Joint/unknown accounts remain pending for personal, household, shared and income rules.
+- Joint/unknown accounts remain pending for personal, shared and income rules.
 - Personal-owner and payer exceptions stay on the reviewed transaction; a type/category rule can still be saved and later matches follow each account owner.
 - New personal rules store no person; their resulting classifications have valid owners.
 - Legacy person-bearing rules require confirmation; undo preserves their prior snapshots.

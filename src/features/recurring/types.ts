@@ -28,6 +28,7 @@ export type RecurringEntryItem = {
   receivedByMemberId: string | null;
   receivedByName: string | null;
   classificationType: ClassificationType;
+  splitForSettlement: boolean;
   category: string | null;
   categoryId: string | null;
   active: boolean;
@@ -51,6 +52,7 @@ export type GeneratedManualEntryItem = {
   receivedByMemberId: string | null;
   receivedByName: string | null;
   classificationType: ClassificationType;
+  splitForSettlement: boolean;
   category: string | null;
   categoryId: string | null;
   eventDate: string;

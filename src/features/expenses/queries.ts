@@ -70,7 +70,6 @@ type RawTransactionRow = {
   classificationType:
     | "personal"
     | "shared"
-    | "household"
     | "income"
     | "transfer"
     | "ignore"
@@ -80,6 +79,7 @@ type RawTransactionRow = {
   personalOwnerMemberId: string | null;
   paidByMemberId: string | null;
   receivedByMemberId: string | null;
+  splitForSettlement: boolean | null;
   decidedBy: "rule" | "user" | "system_default" | null;
   reviewedAt: Date | null;
 };
@@ -195,6 +195,7 @@ async function mapTransactionRows(
           receivedByName: row.receivedByMemberId
             ? memberNamesById.get(row.receivedByMemberId) ?? null
             : null,
+          splitForSettlement: Boolean(row.splitForSettlement),
           decidedBy: row.decidedBy ?? "user",
           reviewedAt: row.reviewedAt?.toISOString() ?? null,
         }
@@ -315,6 +316,7 @@ async function listTransactionsByWorkspace(input: {
       personalOwnerMemberId: transactionClassifications.personalOwnerMemberId,
       paidByMemberId: transactionClassifications.paidByMemberId,
       receivedByMemberId: transactionClassifications.receivedByMemberId,
+      splitForSettlement: transactionClassifications.splitForSettlement,
       decidedBy: transactionClassifications.decidedBy,
       reviewedAt: transactionClassifications.reviewedAt,
     })
@@ -555,7 +557,8 @@ async function listExistingExactRuleValues(
   const rows = await db
     .select({ matchValue: classificationRules.matchValue,
       classificationType: classificationRules.defaultClassificationType,
-      category: classificationRules.defaultCategory, categoryId: classificationRules.defaultCategoryId })
+      category: classificationRules.defaultCategory, categoryId: classificationRules.defaultCategoryId,
+      splitForSettlement: classificationRules.defaultSplitForSettlement })
     .from(classificationRules)
     .where(
       and(
@@ -568,7 +571,8 @@ async function listExistingExactRuleValues(
   return new Map<string, ClassificationSuggestion>(rows.map((row) => [row.matchValue, {
     classificationType: row.classificationType, category: row.category, categoryId: row.categoryId,
     personalOwnerMemberId: null, personalOwnerName: null, paidByMemberId: null, paidByName: null,
-    receivedByMemberId: null, receivedByName: null, matchingTransactionCount: 0, supportingTransactionCount: 0,
+    receivedByMemberId: null, receivedByName: null, splitForSettlement: Boolean(row.splitForSettlement),
+    matchingTransactionCount: 0, supportingTransactionCount: 0,
     confidence: "strong", source: "saved_rule",
   }]));
 }
@@ -637,6 +641,7 @@ async function listHistoricalClassificationSuggestions(
       personalOwnerMemberId: transactionClassifications.personalOwnerMemberId,
       paidByMemberId: transactionClassifications.paidByMemberId,
       receivedByMemberId: transactionClassifications.receivedByMemberId,
+      splitForSettlement: transactionClassifications.splitForSettlement,
     })
     .from(transactions)
     .innerJoin(

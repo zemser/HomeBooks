@@ -13,12 +13,19 @@ import type { ClassificationType } from "@/features/expenses/constants";
 import {
   compatibilityMemberOwnerId,
   getMemberAttributionValidationMessage,
+  getSplitForSettlementValidationMessage,
   importedMemberAttribution,
   memberAttributionFromSnapshot,
+  normalizeSplitForSettlement,
   type MemberAttribution,
 } from "@/features/expenses/payer";
 import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
-import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
+import { normalizeLegacyRuleScope, normalizeLegacyScope } from "@/features/expenses/spending-scope";
+import {
+  restoreSharedExpenseSplits,
+  snapshotSharedExpenseSplits,
+  syncTransactionExpenseEvents,
+} from "@/features/reporting/expense-events";
 import {
   normalizeOptionalWorkspaceCategoryName,
   resolveWorkspaceCategory,
@@ -30,6 +37,7 @@ type ClassificationMemberInput = {
   personalOwnerMemberId?: string | null;
   paidByMemberId?: string | null;
   receivedByMemberId?: string | null;
+  splitForSettlement?: boolean | null;
 };
 
 type SingleClassificationInput = ClassificationMemberInput & {
@@ -98,13 +106,27 @@ async function assertWorkspaceMembers(
   }
 }
 
+async function countActiveWorkspaceMembers(workspaceId: string, db: DbExecutor) {
+  const [row] = await db
+    .select({
+      count: sql<number>`count(*)::int`,
+    })
+    .from(workspaceMembers)
+    .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.isActive, true)));
+
+  return Number(row?.count ?? 0);
+}
+
 export function validateClassificationInput(input: {
   classificationType: ClassificationType;
   personalOwnerMemberId?: string | null;
   paidByMemberId?: string | null;
   receivedByMemberId?: string | null;
+  splitForSettlement?: boolean | null;
   category: string | null;
   categoryId?: string | null;
+  activeMemberCount?: number | null;
+  writeMode?: "interactive" | "replay";
 }) {
   const memberValidationMessage = getMemberAttributionValidationMessage({
     classificationType: input.classificationType,
@@ -115,6 +137,17 @@ export function validateClassificationInput(input: {
 
   if (memberValidationMessage) {
     throw new ClassificationInputError(memberValidationMessage);
+  }
+
+  const splitValidationMessage = getSplitForSettlementValidationMessage({
+    classificationType: input.classificationType,
+    splitForSettlement: input.splitForSettlement,
+    activeMemberCount: input.activeMemberCount,
+    writeMode: input.writeMode,
+  });
+
+  if (splitValidationMessage) {
+    throw new ClassificationInputError(splitValidationMessage);
   }
   if (["transfer", "ignore"].includes(input.classificationType) && (input.category || input.categoryId)) {
     throw new ClassificationInputError(
@@ -137,6 +170,7 @@ function attributionForImportedRow(input: {
 function classificationWriteValues(input: {
   classificationType: ClassificationType;
   attribution: MemberAttribution;
+  splitForSettlement?: boolean | null;
 }) {
   return {
     classificationType: input.classificationType,
@@ -144,12 +178,17 @@ function classificationWriteValues(input: {
     personalOwnerMemberId: input.attribution.personalOwnerMemberId,
     paidByMemberId: input.attribution.paidByMemberId,
     receivedByMemberId: input.attribution.receivedByMemberId,
+    splitForSettlement: normalizeSplitForSettlement(
+      input.classificationType,
+      input.splitForSettlement,
+    ),
   };
 }
 
 function ruleWriteValues(input: {
   classificationType: ClassificationType;
   attribution: MemberAttribution;
+  splitForSettlement?: boolean | null;
 }) {
   return {
     defaultClassificationType: input.classificationType,
@@ -157,6 +196,10 @@ function ruleWriteValues(input: {
     defaultPersonalOwnerMemberId: input.attribution.personalOwnerMemberId,
     defaultPaidByMemberId: input.attribution.paidByMemberId,
     defaultReceivedByMemberId: input.attribution.receivedByMemberId,
+    defaultSplitForSettlement: normalizeSplitForSettlement(
+      input.classificationType,
+      input.splitForSettlement,
+    ),
   };
 }
 
@@ -168,12 +211,14 @@ export async function upsertTransactionClassification(
   const personalOwnerMemberId = normalizeOptionalText(input.personalOwnerMemberId);
   const paidByMemberId = optionalMemberInput(input.paidByMemberId);
   const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
+  const splitForSettlement = Boolean(input.splitForSettlement);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
   await assertWorkspaceMembers(
     context.workspaceId,
     [personalOwnerMemberId, paidByMemberId, receivedByMemberId],
     db,
   );
+  const activeMemberCount = await countActiveWorkspaceMembers(context.workspaceId, db);
   const savedCategory = await resolveWorkspaceCategory(
     context,
     { categoryId: input.categoryId, categoryName: category },
@@ -243,8 +288,11 @@ export async function upsertTransactionClassification(
     validateClassificationInput({
       classificationType: input.classificationType,
       ...attributionFor(item.accountOwnerMemberId),
+      splitForSettlement,
       category,
       categoryId: input.categoryId,
+      activeMemberCount,
+      writeMode: "interactive",
     });
   }
   await assertWorkspaceMembers(
@@ -280,6 +328,10 @@ export async function upsertTransactionClassification(
             ),
           )
       : null;
+    const previousSplits = await snapshotSharedExpenseSplits(tx, context, {
+      sourceIds: requestedTransactionIds,
+      sourceTypes: ["transaction"],
+    });
     const [decisionBatch] = await tx
       .insert(classificationDecisionBatches)
       .values({
@@ -307,6 +359,7 @@ export async function upsertTransactionClassification(
           createdAt: rule.createdAt.toISOString(),
           updatedAt: rule.updatedAt.toISOString(),
         })) ?? null,
+        previousSplits,
         ruleMatchValue,
         createdAt: now,
         updatedAt: now,
@@ -325,6 +378,7 @@ export async function upsertTransactionClassification(
           ...classificationWriteValues({
             classificationType: input.classificationType,
             attribution,
+            splitForSettlement,
           }),
           category: savedCategory?.name ?? null,
           categoryId: savedCategory?.id ?? null,
@@ -342,6 +396,7 @@ export async function upsertTransactionClassification(
           personalOwnerMemberId: sql`excluded.personal_owner_member_id`,
           paidByMemberId: sql`excluded.paid_by_member_id`,
           receivedByMemberId: sql`excluded.received_by_member_id`,
+          splitForSettlement: sql`excluded.split_for_settlement`,
           category: sql`excluded.category`,
           categoryId: sql`excluded.category_id`,
           confidence: sql`excluded.confidence`,
@@ -375,6 +430,7 @@ export async function upsertTransactionClassification(
       const ruleValues = ruleWriteValues({
         classificationType: input.classificationType,
         attribution: { personalOwnerMemberId: null, paidByMemberId: null, receivedByMemberId: null },
+        splitForSettlement,
       });
 
       if (existingRules.length === 0) {
@@ -441,6 +497,7 @@ export async function bulkClassifyTransactions(
   const personalOwnerMemberId = normalizeOptionalText(input.personalOwnerMemberId);
   const paidByMemberId = optionalMemberInput(input.paidByMemberId);
   const receivedByMemberId = normalizeOptionalText(input.receivedByMemberId);
+  const splitForSettlement = Boolean(input.splitForSettlement);
   const category = normalizeOptionalWorkspaceCategoryName(input.category);
 
   if (transactionIds.length === 0) {
@@ -452,6 +509,7 @@ export async function bulkClassifyTransactions(
     [personalOwnerMemberId, paidByMemberId, receivedByMemberId],
     db,
   );
+  const activeMemberCount = await countActiveWorkspaceMembers(context.workspaceId, db);
   const savedCategory = await resolveWorkspaceCategory(
     context,
     { categoryId: input.categoryId, categoryName: category },
@@ -504,8 +562,11 @@ export async function bulkClassifyTransactions(
     validateClassificationInput({
       classificationType: input.classificationType,
       ...attributionFor(item.accountOwnerMemberId),
+      splitForSettlement,
       category,
       categoryId: input.categoryId,
+      activeMemberCount,
+      writeMode: "interactive",
     });
   }
 
@@ -519,6 +580,10 @@ export async function bulkClassifyTransactions(
     const previousByTransactionId = new Map(
       previousRows.map((classification) => [classification.transactionId, classification]),
     );
+    const previousSplits = await snapshotSharedExpenseSplits(tx, context, {
+      sourceIds: transactionIds,
+      sourceTypes: ["transaction"],
+    });
     const [decisionBatch] = await tx
       .insert(classificationDecisionBatches)
       .values({
@@ -542,6 +607,7 @@ export async function bulkClassifyTransactions(
           };
         }),
         previousRules: null,
+        previousSplits,
         ruleMatchValue: null,
         createdAt: now,
         updatedAt: now,
@@ -561,6 +627,7 @@ export async function bulkClassifyTransactions(
             ...classificationWriteValues({
               classificationType: input.classificationType,
               attribution,
+              splitForSettlement,
             }),
             category: savedCategory?.name ?? null,
             categoryId: savedCategory?.id ?? null,
@@ -579,6 +646,7 @@ export async function bulkClassifyTransactions(
           personalOwnerMemberId: sql`excluded.personal_owner_member_id`,
           paidByMemberId: sql`excluded.paid_by_member_id`,
           receivedByMemberId: sql`excluded.received_by_member_id`,
+          splitForSettlement: sql`excluded.split_for_settlement`,
           category: sql`excluded.category`,
           categoryId: sql`excluded.category_id`,
           confidence: sql`excluded.confidence`,
@@ -652,13 +720,21 @@ export async function undoClassificationDecision(
     if (previousClassifications.length > 0) {
       await tx.insert(transactionClassifications).values(
         previousClassifications.map((classification) => {
-          const attribution = memberAttributionFromSnapshot(classification);
+          const scope = normalizeLegacyScope({
+            classificationType: classification.classificationType,
+            splitForSettlement: classification.splitForSettlement,
+          });
+          const attribution = memberAttributionFromSnapshot({
+            ...classification,
+            classificationType: scope.classificationType,
+          });
           return {
             id: classification.id,
             transactionId: classification.transactionId,
             ...classificationWriteValues({
-              classificationType: classification.classificationType,
+              classificationType: scope.classificationType,
               attribution,
+              splitForSettlement: scope.splitForSettlement,
             }),
             category: classification.category,
             categoryId: classification.categoryId,
@@ -686,8 +762,12 @@ export async function undoClassificationDecision(
       if (batch.previousRules && batch.previousRules.length > 0) {
         await tx.insert(classificationRules).values(
           batch.previousRules.map((rule) => {
+            const scope = normalizeLegacyRuleScope({
+              defaultClassificationType: rule.defaultClassificationType,
+              defaultSplitForSettlement: rule.defaultSplitForSettlement,
+            });
             const attribution = memberAttributionFromSnapshot({
-              classificationType: rule.defaultClassificationType,
+              classificationType: scope.defaultClassificationType,
               defaultMemberOwnerId: rule.defaultMemberOwnerId,
               defaultPersonalOwnerMemberId: rule.defaultPersonalOwnerMemberId,
               defaultPaidByMemberId: rule.defaultPaidByMemberId,
@@ -699,8 +779,9 @@ export async function undoClassificationDecision(
               matchType: rule.matchType,
               matchValue: rule.matchValue,
               ...ruleWriteValues({
-                classificationType: rule.defaultClassificationType,
+                classificationType: scope.defaultClassificationType,
                 attribution,
+                splitForSettlement: scope.defaultSplitForSettlement,
               }),
               defaultCategory: rule.defaultCategory,
               defaultCategoryId: rule.defaultCategoryId,
@@ -715,6 +796,7 @@ export async function undoClassificationDecision(
     }
 
     await syncTransactionExpenseEvents(context, batch.transactionIds, tx);
+    await restoreSharedExpenseSplits(tx, context, batch.previousSplits);
     await tx
       .update(classificationDecisionBatches)
       .set({ undoneAt: now, updatedAt: now })

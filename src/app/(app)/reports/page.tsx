@@ -606,7 +606,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           <div>
             <h2>Spending by scope</h2>
             <p className="muted-text">
-              Personal, shared, and household spending reconcile to Total spent.
+              Personal and shared spending reconcile to Total spent.
             </p>
           </div>
           <div className="summary-strip">
