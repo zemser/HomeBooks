@@ -44,8 +44,8 @@ export function CategoryCombobox({
   const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!isOpen) setQuery(value);
-  }, [isOpen, value]);
+    setQuery(value);
+  }, [value]);
 
   const options = useMemo(() => {
     const seen = new Set<string>();

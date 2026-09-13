@@ -758,6 +758,16 @@ export function ReviewQueueClient({
     setMessage("Suggestion applied. Review it, then save when ready.");
   }
 
+  function openBulkClassification(prefill: BulkFormState = emptyBulkForm) {
+    setBulkForm(prefill);
+    setIsBulkModalOpen(true);
+  }
+
+  function closeBulkClassification() {
+    setIsBulkModalOpen(false);
+    setBulkForm(emptyBulkForm);
+  }
+
   function selectSimilarTransactions() {
     const merchant = selectedTransaction?.merchantRaw?.trim();
     if (!merchant) return;
@@ -766,7 +776,7 @@ export function ReviewQueueClient({
       .filter((transaction) => transaction.merchantRaw?.trim().toLocaleLowerCase() === normalized)
       .map((transaction) => transaction.id);
     setSelectedIds(matchingIds);
-    setBulkForm({
+    openBulkClassification({
       classificationType: singleForm.classificationType,
       category: singleForm.category,
       categoryId: singleForm.categoryId,
@@ -775,7 +785,6 @@ export function ReviewQueueClient({
       receivedByMemberId: singleForm.receivedByMemberId,
       splitForSettlement: singleForm.splitForSettlement,
     });
-    setIsBulkModalOpen(true);
   }
 
   async function submitSingleClassification() {
@@ -908,7 +917,7 @@ export function ReviewQueueClient({
 
     const reviewedTransactionIds = [...selectedIds];
     setSelectedIds([]);
-    setIsBulkModalOpen(false);
+    closeBulkClassification();
     removeReviewedTransactions(reviewedTransactionIds);
     setMessage(`Classification applied to ${reviewedTransactionIds.length} transactions.`);
     setLastUndo(data.undoBatchId ? { batchId: data.undoBatchId, label: `${reviewedTransactionIds.length} transactions` } : null);
@@ -1414,7 +1423,7 @@ export function ReviewQueueClient({
               <div className="review-batch-bar" role="status">
                 <strong>{selectedIds.length} selected</strong>
                 <div className="action-row">
-                  <button className="button" type="button" onClick={() => setIsBulkModalOpen(true)}>
+                  <button className="button" type="button" onClick={() => openBulkClassification()}>
                     Classify selected
                   </button>
                   <button className="link-button" type="button" onClick={() => setSelectedIds([])}>
@@ -1434,7 +1443,7 @@ export function ReviewQueueClient({
 
           <Modal
             open={isBulkModalOpen}
-            onClose={() => setIsBulkModalOpen(false)}
+            onClose={closeBulkClassification}
             title="Classify selected"
             description={`Apply one classification to ${selectedIds.length} selected transactions.`}
             allowContentOverflow
@@ -1459,6 +1468,7 @@ export function ReviewQueueClient({
               />
               {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(bulkForm.classificationType) ? (
                 <CategoryCombobox
+                  key={isBulkModalOpen ? "bulk-open" : "bulk-closed"}
                   categories={categories}
                   recentCategories={recentCategories}
                   value={bulkForm.category}
@@ -1494,7 +1504,7 @@ export function ReviewQueueClient({
                 <button className="button" type="button" disabled={isSavingBulk || isSubmittingBulk} onClick={() => startSavingBulk(() => void runBulkClassification())}>
                   {isSavingBulk || isSubmittingBulk ? "Applying..." : "Apply to selected"}
                 </button>
-                <button className="button button-secondary" type="button" onClick={() => setIsBulkModalOpen(false)}>Cancel</button>
+                <button className="button button-secondary" type="button" onClick={closeBulkClassification}>Cancel</button>
               </div>
             </div>
           </Modal>
@@ -1826,6 +1836,7 @@ export function ReviewQueueClient({
 
                 {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(singleForm.classificationType) ? (
                   <CategoryCombobox
+                    key={selectedTransaction.id}
                     categories={categories}
                     recentCategories={recentCategories}
                     suggestedCategory={selectedTransaction.suggestion?.category ?? null}
