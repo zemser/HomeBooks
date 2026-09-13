@@ -25,7 +25,7 @@ export default function RecurringPage() {
           <div>
             <span className="eyebrow">Recurring</span>
             <h1>Recurring rules</h1>
-            <p>Manage regular income and expenses that imports may miss.</p>
+            <p>Create and update repeating rent, salary, or other monthly amounts.</p>
           </div>
         </section>
 

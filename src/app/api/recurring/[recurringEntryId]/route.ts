@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { CLASSIFICATION_TYPES } from "@/features/expenses/constants";
-import { EVENT_KINDS } from "@/features/recurring/constants";
+import { EVENT_KINDS, NORMALIZATION_MODES, RECURRENCE_RULES } from "@/features/recurring/constants";
 import {
   deleteRecurringEntry,
   updateRecurringEntry,
@@ -23,6 +23,12 @@ const updateSchema = z.object({
   category: z.string().trim().optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),
   active: z.boolean(),
+  effectiveStartMonth: z.string().trim().min(1).optional(),
+  amount: z.coerce.number().positive().optional(),
+  currency: z.string().trim().length(3).optional(),
+  normalizationMode: z.enum(NORMALIZATION_MODES).optional(),
+  recurrenceRule: z.enum(RECURRENCE_RULES).optional(),
+  notes: z.string().trim().optional().nullable(),
 });
 
 type RouteProps = {

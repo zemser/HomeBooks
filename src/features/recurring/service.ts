@@ -40,6 +40,7 @@ import type {
 } from "@/features/recurring/types";
 import {
   currentMonthString,
+  earlierMonthString,
   listMonthStringsBetween,
   normalizeMonthString,
   previousMonthString,
@@ -74,6 +75,12 @@ type UpdateRecurringEntryInput = {
   category?: string | null;
   categoryId?: string | null;
   active: boolean;
+  effectiveStartMonth?: string;
+  amount?: number;
+  currency?: string;
+  normalizationMode?: NormalizationMode;
+  recurrenceRule?: RecurrenceRule;
+  notes?: string | null;
 };
 
 type CreateRecurringVersionInput = {
@@ -1070,6 +1077,71 @@ export async function updateRecurringEntry(
     categoryName: category,
   }, db);
 
+  const existingVersions = await db
+    .select({
+      id: recurringEntryVersions.id,
+      effectiveStartMonth: recurringEntryVersions.effectiveStartMonth,
+      effectiveEndMonth: recurringEntryVersions.effectiveEndMonth,
+      amount: recurringEntryVersions.amount,
+      currency: recurringEntryVersions.currency,
+      normalizationMode: recurringEntryVersions.normalizationMode,
+      recurrenceRule: recurringEntryVersions.recurrenceRule,
+      notes: recurringEntryVersions.notes,
+    })
+    .from(recurringEntryVersions)
+    .where(eq(recurringEntryVersions.recurringEntryId, recurringEntryId))
+    .orderBy(asc(recurringEntryVersions.effectiveStartMonth));
+  const openingVersion = existingVersions[0];
+
+  if (!openingVersion) {
+    throw new Error("This recurring rule is missing an amount to update.");
+  }
+
+  const nextStartMonth = input.effectiveStartMonth
+    ? normalizeMonthString(input.effectiveStartMonth)
+    : openingVersion.effectiveStartMonth;
+  const followingVersion = existingVersions[1];
+
+  if (followingVersion && nextStartMonth >= followingVersion.effectiveStartMonth) {
+    throw new Error("The starting month must be before the next scheduled amount change.");
+  }
+
+  const currentMonth = currentMonthString();
+  const currentVersion =
+    existingVersions.find(
+      (version) =>
+        version.effectiveStartMonth <= currentMonth &&
+        (!version.effectiveEndMonth || version.effectiveEndMonth >= currentMonth),
+    ) ?? openingVersion;
+  const shouldUpdateAmount = input.amount != null;
+
+  if (input.amount != null) {
+    if (input.amount <= 0) {
+      throw new Error("Amount must be greater than zero.");
+    }
+
+    if (!input.currency) {
+      throw new Error("Currency is required when updating the amount.");
+    }
+  }
+
+  const nextCurrency = shouldUpdateAmount
+    ? normalizeCurrencyCode(input.currency ?? currentVersion.currency)
+    : currentVersion.currency;
+  const nextNormalizationMode = shouldUpdateAmount
+    ? getEffectiveNormalizationMode({
+        mode: input.normalizationMode ?? currentVersion.normalizationMode,
+        currency: nextCurrency,
+        workspaceCurrency: context.baseCurrency,
+      })
+    : currentVersion.normalizationMode;
+  const nextRecurrenceRule = shouldUpdateAmount
+    ? (input.recurrenceRule ?? currentVersion.recurrenceRule)
+    : currentVersion.recurrenceRule;
+  const nextNotes = shouldUpdateAmount
+    ? normalizeOptionalText(input.notes)
+    : currentVersion.notes;
+
   await db
     .update(manualRecurringExpenses)
     .set({
@@ -1087,10 +1159,63 @@ export async function updateRecurringEntry(
     })
     .where(eq(manualRecurringExpenses.id, recurringEntryId));
 
+  const previousStartMonth = openingVersion.effectiveStartMonth;
+  const openingNeedsUpdate = nextStartMonth !== openingVersion.effectiveStartMonth;
+  const amountNeedsUpdate =
+    shouldUpdateAmount &&
+    (Number(currentVersion.amount) !== input.amount ||
+      currentVersion.currency !== nextCurrency ||
+      currentVersion.normalizationMode !== nextNormalizationMode ||
+      currentVersion.recurrenceRule !== nextRecurrenceRule ||
+      (currentVersion.notes ?? null) !== nextNotes);
+
+  if (openingNeedsUpdate && currentVersion.id === openingVersion.id && amountNeedsUpdate) {
+    await db
+      .update(recurringEntryVersions)
+      .set({
+        effectiveStartMonth: nextStartMonth,
+        amount: input.amount!.toFixed(6),
+        currency: nextCurrency,
+        normalizationMode: nextNormalizationMode,
+        recurrenceRule: nextRecurrenceRule,
+        notes: nextNotes,
+        updatedAt: new Date(),
+      })
+      .where(eq(recurringEntryVersions.id, openingVersion.id));
+  } else {
+    if (openingNeedsUpdate) {
+      await db
+        .update(recurringEntryVersions)
+        .set({
+          effectiveStartMonth: nextStartMonth,
+          updatedAt: new Date(),
+        })
+        .where(eq(recurringEntryVersions.id, openingVersion.id));
+    }
+
+    if (amountNeedsUpdate) {
+      await db
+        .update(recurringEntryVersions)
+        .set({
+          amount: input.amount!.toFixed(6),
+          currency: nextCurrency,
+          normalizationMode: nextNormalizationMode,
+          recurrenceRule: nextRecurrenceRule,
+          notes: nextNotes,
+          updatedAt: new Date(),
+        })
+        .where(eq(recurringEntryVersions.id, currentVersion.id));
+    }
+  }
+
   if (input.active) {
     const bounds = await getRecurringGeneratedEntryBounds(context, recurringEntryId, db);
-    const startMonth = bounds.earliestVersionMonth;
-    const currentMonth = currentMonthString();
+    const startMonth = earlierMonthString(
+      previousStartMonth,
+      nextStartMonth,
+      bounds.earliestVersionMonth,
+      bounds.earliestGeneratedMonth,
+    );
     const endMonth =
       bounds.latestGeneratedMonth && bounds.latestGeneratedMonth > currentMonth
         ? bounds.latestGeneratedMonth
@@ -1136,7 +1261,7 @@ export async function createRecurringEntryVersion(
   const currentMonth = currentMonthString();
 
   if (effectiveStartMonth <= currentMonth) {
-    throw new Error("New recurring versions must start in a future month.");
+    throw new Error("A scheduled amount change has to start in a future month. To change when this rule began, edit Starts on the rule itself.");
   }
 
   const existingVersions = await db
@@ -1161,7 +1286,7 @@ export async function createRecurringEntryVersion(
   );
 
   if (!previousVersion) {
-    throw new Error("Future edits must start after the first version month.");
+    throw new Error("A scheduled amount change has to start after the month this rule began. To move the start earlier, edit Starts on the rule itself.");
   }
 
   await db.transaction(async (tx) => {

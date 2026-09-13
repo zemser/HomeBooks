@@ -4,8 +4,8 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 test("manual-entry categories use stable catalog IDs", async ({ page }) => {
   await page.goto("/transactions/all");
-  await page.getByRole("button", { name: "Add manual transaction", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Add manual transaction" });
+  await page.getByRole("button", { name: "Add expense or income", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Add expense or income" });
   const category = dialog.getByLabel("Category");
   const values = await category.locator("option").evaluateAll((options) =>
     options.map((option) => (option as HTMLOptionElement).value).filter(Boolean),

@@ -194,6 +194,26 @@ function formatLedgerMonthLabel(value: string) {
   }).format(new Date(`${value}-01T00:00:00.000Z`));
 }
 
+function manualEntrySavedMessage(input: {
+  title: string;
+  eventKind: OneTimeManualEntryEventKind;
+  eventDate: string;
+  isUpdate: boolean;
+}) {
+  const month = formatLedgerMonthLabel(input.eventDate.slice(0, 7));
+  const quotedTitle = input.title.trim() ? `“${input.title.trim()}”` : "That entry";
+
+  if (input.isUpdate) {
+    return `${quotedTitle} is updated. It stays in ${month} below and in Reports.`;
+  }
+
+  if (input.eventKind === "income") {
+    return `${quotedTitle} is saved in ${month} below, and in Reports under Income.`;
+  }
+
+  return `${quotedTitle} is saved in ${month} below, and in this month’s spending on Reports.`;
+}
+
 export function ExpensesPageClient({
   initialData,
 }: ExpensesPageClientProps) {
@@ -242,6 +262,9 @@ export function ExpensesPageClient({
   const [isDeletingManualEntry, startDeletingManualEntry] = useTransition();
   const [isSavingManualAllocation, startSavingManualAllocation] = useTransition();
   const [isSavingTransactionAllocation, startSavingTransactionAllocation] = useTransition();
+  const [justSavedManualEntryId, setJustSavedManualEntryId] = useState<string | null>(null);
+  const [savedEntryMonth, setSavedEntryMonth] = useState<string | null>(null);
+  const pendingManualEntryIdRef = useRef<string | null>(null);
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   function applyExpensesData(
@@ -343,6 +366,9 @@ export function ExpensesPageClient({
         },
         options,
       );
+      if (options?.manualEntryId !== undefined) {
+        pendingManualEntryIdRef.current = null;
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Could not load transactions.");
       setTransactions([]);
@@ -443,7 +469,12 @@ export function ExpensesPageClient({
     previousServerFilterRef.current = filterSignature;
     previousServerQueryRef.current = querySignature;
     setIsLoading(true);
-    void loadExpenses({ transactionId: selectedTransactionId });
+    void loadExpenses({
+      transactionId: selectedTransactionId,
+      ...(pendingManualEntryIdRef.current
+        ? { manualEntryId: pendingManualEntryIdRef.current }
+        : {}),
+    });
     // Filter changes refetch the scoped page; selected row changes only update the URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deferredSearchQuery, importFilter, isUrlStateReady, monthFilter, page, reviewStatusFilter]);
@@ -509,6 +540,25 @@ export function ExpensesPageClient({
         : emptyAllocationForm,
     );
   }, [selectedManualEntry]);
+
+  useEffect(() => {
+    if (!justSavedManualEntryId) {
+      return;
+    }
+
+    const row = document.querySelector<HTMLElement>(
+      `[data-manual-entry-id="${justSavedManualEntryId}"]`,
+    );
+    if (!row) {
+      return;
+    }
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    row.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "center",
+    });
+  }, [justSavedManualEntryId, oneTimeManualEntries]);
 
   useEffect(() => {
     setTransactionAllocationForm(
@@ -659,12 +709,30 @@ export function ExpensesPageClient({
         return;
       }
 
-      await loadExpenses({
-        manualEntryId: payload.manualEntryId ?? selectedManualEntry?.id ?? null,
-        transactionId: selectedTransactionId,
-      });
-      setMessage(selectedManualEntry ? "Manual entry updated." : "Manual entry created.");
+      const savedId = payload.manualEntryId ?? selectedManualEntry?.id ?? null;
+      const entryMonth = manualEntryForm.eventDate.slice(0, 7);
+      pendingManualEntryIdRef.current = savedId;
+      setJustSavedManualEntryId(savedId);
+      setSavedEntryMonth(entryMonth);
+      setMessage(
+        manualEntrySavedMessage({
+          title: manualEntryForm.title,
+          eventKind: manualEntryForm.eventKind,
+          eventDate: manualEntryForm.eventDate,
+          isUpdate: Boolean(selectedManualEntry),
+        }),
+      );
       setIsManualEntryModalOpen(false);
+      if (monthFilter !== entryMonth) {
+        setMonthFilter(entryMonth);
+        setPage(1);
+      } else {
+        pendingManualEntryIdRef.current = null;
+        await loadExpenses({
+          manualEntryId: savedId,
+          transactionId: selectedTransactionId,
+        });
+      }
     } catch {
       setError("Could not save the manual entry.");
     }
@@ -825,7 +893,7 @@ export function ExpensesPageClient({
           </div>
           <div>
             <strong>{showManualsTable ? oneTimeManualEntries.length : 0}</strong>
-            <span>One-time manual entries</span>
+            <span>Cash and one-off entries</span>
           </div>
           <div>
             <strong>{reviewCount}</strong>
@@ -852,15 +920,27 @@ export function ExpensesPageClient({
           </div>
         </div>
       ) : null}
-      {error ? <p className="status error">{error}</p> : null}
-      {message ? <p className="status">{message}</p> : null}
+      {error ? <p className="status error" aria-live="assertive">{error}</p> : null}
+      {message ? (
+        <p className="status success" aria-live="polite">
+          {message}
+          {savedEntryMonth ? (
+            <>
+              {" "}
+              <Link href={`/reports?month=${savedEntryMonth}&mode=payment_date`}>
+                Open {formatLedgerMonthLabel(savedEntryMonth)} report
+              </Link>
+            </>
+          ) : null}
+        </p>
+      ) : null}
 
       <section className="stack">
         <Modal
           open={isManualEntryModalOpen}
           onClose={() => setIsManualEntryModalOpen(false)}
-          title={isEditingManualEntry ? "Edit manual transaction" : "Add manual transaction"}
-          description="Add a one-off transaction that is not part of a bank import."
+          title={isEditingManualEntry ? "Edit expense or income" : "Add expense or income"}
+          description="This is not from a bank import. After you save, you’ll see it in this month and in Reports."
         >
         <article className="stack compact">
           {isEditingManualEntry ? (
@@ -1036,8 +1116,8 @@ export function ExpensesPageClient({
                 {isSavingManualEntry
                   ? "Saving..."
                   : isEditingManualEntry
-                    ? "Save manual entry"
-                    : "Create manual entry"}
+                    ? "Save"
+                    : "Save and show in this month"}
               </button>
               {isEditingManualEntry ? (
                 <button className="link-button" type="button" onClick={startNewManualEntry}>
@@ -1092,7 +1172,7 @@ export function ExpensesPageClient({
         <Modal
           open={Boolean(deleteConfirmationEntry)}
           onClose={() => setDeleteConfirmationId(null)}
-          title="Delete manual transaction?"
+          title="Delete this entry?"
           description={
             deleteConfirmationEntry
               ? `“${deleteConfirmationEntry.title}” will be permanently removed.`
@@ -1119,32 +1199,38 @@ export function ExpensesPageClient({
                 }
               }}
             >
-              {isDeletingManualEntry ? "Deleting..." : "Delete transaction"}
+              {isDeletingManualEntry ? "Deleting..." : "Delete entry"}
             </button>
           </div>
         </Modal>
 
         <article className="card">
           <div className="home-card-header">
-            <h2>Saved manual entries</h2>
+            <div>
+              <h2>Cash and one-off entries</h2>
+              <p className="muted-text">
+                Not from a bank import. Expenses show in this month’s spending. Income shows
+                in Reports under Income.
+              </p>
+            </div>
             <button className="button" type="button" onClick={startNewManualEntry}>
-              Add manual transaction
+              Add expense or income
             </button>
           </div>
 
-          {isLoading ? <p className="status">Loading manual entries...</p> : null}
+          {isLoading ? <p className="status">Loading one-off entries...</p> : null}
 
           {!showManualsTable ? (
             <p className="empty-state">
-              Manual entries belong to a calendar month. Choose a month to see saved one-time
-              entries, or add one with an event date.
+              Pick a month to see cash and one-off entries for that month, or add one now.
             </p>
           ) : null}
 
           {showManualsTable && !isLoading && oneTimeManualEntries.length === 0 ? (
             <p className="empty-state">
-              No one-time manual entries exist yet. Create shared reimbursements, rent
-              corrections, bonuses, or other non-imported items here.
+              Nothing added for {formatLedgerMonthLabel(monthFilter)} yet. Cash, reimbursements,
+              bonuses, and other items that never hit the bank go here — not in the imported
+              table below.
             </p>
           ) : null}
 
@@ -1167,7 +1253,8 @@ export function ExpensesPageClient({
                     <tr
                       className={`table-row-interactive ${
                         selectedManualEntryId === entry.id ? "table-row-active" : ""
-                      }`.trim()}
+                      } ${justSavedManualEntryId === entry.id ? "table-row-just-saved" : ""}`.trim()}
+                      data-manual-entry-id={entry.id}
                       key={entry.id}
                       onClick={() => {
                         setSelectedManualEntryId(entry.id);
@@ -1244,10 +1331,10 @@ export function ExpensesPageClient({
       <article className="card">
         <div className="ledger-action-header">
           <div>
-            <h2>Imported transactions</h2>
+            <h2>Imported from the bank</h2>
             <p className="muted-text">
-              Classification still lives in Review. History is for looking up a month or
-              statement and adjusting reporting details.
+              These rows come from statements. Cash and one-off entries stay in the list above,
+              then both appear together in Reports.
             </p>
           </div>
         </div>
