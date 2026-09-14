@@ -329,7 +329,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
         : "",
       currency: selectedEntry.currentVersion?.currency ?? data?.workspaceCurrency ?? "ILS",
       normalizationMode: selectedEntry.currentVersion?.normalizationMode ?? "none",
-      recurrenceRule: selectedEntry.currentVersion?.recurrenceRule ?? "monthly",
+      recurrenceRule: "monthly",
       notes: selectedEntry.currentVersion?.notes ?? "",
     });
   }, [data?.workspaceCurrency, selectedEntry]);
