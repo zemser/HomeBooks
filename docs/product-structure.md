@@ -290,9 +290,10 @@ Recommended MVP approach:
 
 - recurring entries should support version history
 - a later price change should create a new version with a future start date; past generated months stay as they were
-- correcting a typed-wrong amount should edit that version and rematerialize only the months it covers
+- the current amount lives on the rule form; saving it rematerializes only that period, with a confirm if past months will change
 - a scheduled future version can be removed before it starts
 - changing Starts on the rule moves when the first version began, and can add or remove generated months
+- amount history is a timeline: edit a non-current row only to correct a typo
 
 This avoids accidentally changing historical summaries when a recurring amount changes later.
 

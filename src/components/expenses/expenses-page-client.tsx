@@ -549,13 +549,15 @@ export function ExpensesPageClient({
     const row = document.querySelector<HTMLElement>(
       `[data-manual-entry-id="${justSavedManualEntryId}"]`,
     );
-    if (row) {
-      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      row.scrollIntoView({
-        behavior: reduceMotion ? "auto" : "smooth",
-        block: "center",
-      });
+    if (!row) {
+      return;
     }
+
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    row.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "center",
+    });
 
     const timeout = window.setTimeout(() => {
       setJustSavedManualEntryId((current) =>

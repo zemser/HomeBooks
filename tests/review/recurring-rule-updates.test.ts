@@ -46,15 +46,18 @@ test("recurring identity edits stay on the rule and amount edits stay on version
   assert.match(versionRouteSource, /updateRecurringEntryVersion/);
   assert.match(versionRouteSource, /deleteRecurringEntryVersion/);
   assert.match(clientSource, /<span>Starts<\/span>/);
-  assert.match(clientSource, /If the amount changes later/);
-  assert.match(clientSource, /Fix a wrong amount here/);
+  assert.match(clientSource, /<span>Amount<\/span>/);
+  assert.match(clientSource, /Change amount from a later month/);
+  assert.match(clientSource, /\/versions\/\$\{currentVersion\.id\}/);
   assert.match(clientSource, /canRemoveAmountChange/);
-  assert.match(clientSource, /handleUpdateVersion/);
-  assert.match(clientSource, /Moving it later takes those months out of reports/);
+  assert.match(clientSource, /canEditHistoryAmount/);
+  assert.match(clientSource, /kind: "save-rule"/);
   assert.match(clientSource, /max=\{latestAllowedStartMonth\}/);
+  assert.doesNotMatch(clientSource, /window\.confirm/);
   assert.doesNotMatch(clientSource, /Schedule a future change/);
   assert.doesNotMatch(clientSource, />Effective month</);
   assert.doesNotMatch(clientSource, /Amount now/);
+  assert.doesNotMatch(clientSource, /<span>Recurrence<\/span>/);
 });
 
 test("manual entry save keeps the row in the matching month and explains reports", async () => {
@@ -65,7 +68,7 @@ test("manual entry save keeps the row in the matching month and explains reports
 
   assert.match(clientSource, /setMonthFilter\(entryMonth\)/);
   assert.match(clientSource, /table-row-just-saved/);
-  assert.match(clientSource, /setJustSavedManualEntryId\(\(current\) =>/);
+  assert.match(clientSource, /if \(!row\) \{\s*return;/);
   assert.match(clientSource, /dismissStatus\(\)/);
   assert.match(clientSource, /setSavedEntryMonth\(null\)/);
   assert.match(clientSource, /Reports under Income/);
