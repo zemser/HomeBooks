@@ -40,6 +40,7 @@ import type {
 } from "@/features/recurring/types";
 import {
   currentMonthString,
+  earlierMonthString,
   listMonthStringsBetween,
   normalizeMonthString,
   previousMonthString,
@@ -74,6 +75,7 @@ type UpdateRecurringEntryInput = {
   category?: string | null;
   categoryId?: string | null;
   active: boolean;
+  effectiveStartMonth?: string;
 };
 
 type CreateRecurringVersionInput = {
@@ -83,6 +85,15 @@ type CreateRecurringVersionInput = {
   currency: string;
   normalizationMode: NormalizationMode;
   recurrenceRule: RecurrenceRule;
+  notes?: string | null;
+};
+
+type UpdateRecurringVersionInput = {
+  recurringEntryId: string;
+  versionId: string;
+  amount: number;
+  currency: string;
+  normalizationMode: NormalizationMode;
   notes?: string | null;
 };
 
@@ -195,6 +206,23 @@ async function assertWorkspaceRecurringEntry(
   }
 
   return recurringEntry;
+}
+
+async function listRecurringVersions(recurringEntryId: string, db: DbExecutor) {
+  return db
+    .select({
+      id: recurringEntryVersions.id,
+      effectiveStartMonth: recurringEntryVersions.effectiveStartMonth,
+      effectiveEndMonth: recurringEntryVersions.effectiveEndMonth,
+      amount: recurringEntryVersions.amount,
+      currency: recurringEntryVersions.currency,
+      normalizationMode: recurringEntryVersions.normalizationMode,
+      recurrenceRule: recurringEntryVersions.recurrenceRule,
+      notes: recurringEntryVersions.notes,
+    })
+    .from(recurringEntryVersions)
+    .where(eq(recurringEntryVersions.recurringEntryId, recurringEntryId))
+    .orderBy(asc(recurringEntryVersions.effectiveStartMonth));
 }
 
 async function assertWorkspaceMember(
@@ -441,6 +469,34 @@ async function getRecurringGeneratedEntryBounds(
     earliestGeneratedMonth: earliestGeneratedRow[0]?.eventDate ?? null,
     latestGeneratedMonth: latestGeneratedRow[0]?.eventDate ?? null,
   };
+}
+
+async function rematerializeRecurringVersionRange(
+  context: CurrentWorkspaceContext,
+  recurringEntryId: string,
+  startMonth: string,
+  endMonthHint: string | null,
+  db: DbExecutor,
+) {
+  const currentMonth = currentMonthString();
+  const bounds = await getRecurringGeneratedEntryBounds(context, recurringEntryId, db);
+  const defaultEndMonth =
+    bounds.latestGeneratedMonth && bounds.latestGeneratedMonth > currentMonth
+      ? bounds.latestGeneratedMonth
+      : currentMonth;
+  const endMonth =
+    endMonthHint && endMonthHint < defaultEndMonth ? endMonthHint : defaultEndMonth;
+
+  if (startMonth > endMonth) {
+    return;
+  }
+
+  await materializeRecurringEntriesForRange(context, {
+    startMonth,
+    endMonth,
+    recurringEntryIds: [recurringEntryId],
+    allowFutureMonths: true,
+  }, db);
 }
 
 export async function materializeRecurringEntriesForRange(
@@ -1070,6 +1126,22 @@ export async function updateRecurringEntry(
     categoryName: category,
   }, db);
 
+  const existingVersions = await listRecurringVersions(recurringEntryId, db);
+  const openingVersion = existingVersions[0];
+
+  if (!openingVersion) {
+    throw new Error("This recurring rule is missing an amount to update.");
+  }
+
+  const nextStartMonth = input.effectiveStartMonth
+    ? normalizeMonthString(input.effectiveStartMonth)
+    : openingVersion.effectiveStartMonth;
+  const followingVersion = existingVersions[1];
+
+  if (followingVersion && nextStartMonth >= followingVersion.effectiveStartMonth) {
+    throw new Error("The starting month must be before the next scheduled amount change.");
+  }
+
   await db
     .update(manualRecurringExpenses)
     .set({
@@ -1087,9 +1159,26 @@ export async function updateRecurringEntry(
     })
     .where(eq(manualRecurringExpenses.id, recurringEntryId));
 
+  const previousStartMonth = openingVersion.effectiveStartMonth;
+
+  if (nextStartMonth !== openingVersion.effectiveStartMonth) {
+    await db
+      .update(recurringEntryVersions)
+      .set({
+        effectiveStartMonth: nextStartMonth,
+        updatedAt: new Date(),
+      })
+      .where(eq(recurringEntryVersions.id, openingVersion.id));
+  }
+
   if (input.active) {
     const bounds = await getRecurringGeneratedEntryBounds(context, recurringEntryId, db);
-    const startMonth = bounds.earliestVersionMonth;
+    const startMonth = earlierMonthString(
+      previousStartMonth,
+      nextStartMonth,
+      bounds.earliestVersionMonth,
+      bounds.earliestGeneratedMonth,
+    );
     const currentMonth = currentMonthString();
     const endMonth =
       bounds.latestGeneratedMonth && bounds.latestGeneratedMonth > currentMonth
@@ -1136,7 +1225,7 @@ export async function createRecurringEntryVersion(
   const currentMonth = currentMonthString();
 
   if (effectiveStartMonth <= currentMonth) {
-    throw new Error("New recurring versions must start in a future month.");
+    throw new Error("A scheduled amount change has to start in a future month. To change when this rule began, edit Starts on the rule itself.");
   }
 
   const existingVersions = await db
@@ -1161,7 +1250,7 @@ export async function createRecurringEntryVersion(
   );
 
   if (!previousVersion) {
-    throw new Error("Future edits must start after the first version month.");
+    throw new Error("A scheduled amount change has to start after the month this rule began. To move the start earlier, edit Starts on the rule itself.");
   }
 
   await db.transaction(async (tx) => {
@@ -1198,6 +1287,119 @@ export async function createRecurringEntryVersion(
 
   return {
     recurringEntryId: recurringEntry.id,
+  };
+}
+
+export async function updateRecurringEntryVersion(
+  context: CurrentWorkspaceContext,
+  input: UpdateRecurringVersionInput,
+  db: DbExecutor = getDb(),
+) {
+  if (input.amount <= 0) {
+    throw new Error("Amount must be greater than zero.");
+  }
+
+  const recurringEntry = await assertWorkspaceRecurringEntry(context, input.recurringEntryId, db);
+  const versions = await listRecurringVersions(recurringEntry.id, db);
+  const version = versions.find((candidate) => candidate.id === input.versionId);
+
+  if (!version) {
+    throw new Error("That amount period was not found on this rule.");
+  }
+
+  const currency = normalizeCurrencyCode(input.currency);
+  const normalizationMode = getEffectiveNormalizationMode({
+    mode: input.normalizationMode,
+    currency,
+    workspaceCurrency: context.baseCurrency,
+  });
+  const notes = normalizeOptionalText(input.notes);
+
+  await db
+    .update(recurringEntryVersions)
+    .set({
+      amount: input.amount.toFixed(6),
+      currency,
+      normalizationMode,
+      notes,
+      updatedAt: new Date(),
+    })
+    .where(eq(recurringEntryVersions.id, version.id));
+
+  await rematerializeRecurringVersionRange(
+    context,
+    recurringEntry.id,
+    version.effectiveStartMonth,
+    version.effectiveEndMonth,
+    db,
+  );
+
+  return {
+    recurringEntryId: recurringEntry.id,
+    versionId: version.id,
+  };
+}
+
+export async function deleteRecurringEntryVersion(
+  context: CurrentWorkspaceContext,
+  recurringEntryId: string,
+  versionId: string,
+  db: DbExecutor = getDb(),
+) {
+  const recurringEntry = await assertWorkspaceRecurringEntry(context, recurringEntryId, db);
+  const versions = await listRecurringVersions(recurringEntry.id, db);
+  const versionIndex = versions.findIndex((candidate) => candidate.id === versionId);
+  const version = versions[versionIndex];
+
+  if (!version) {
+    throw new Error("That amount period was not found on this rule.");
+  }
+
+  if (versions.length === 1) {
+    throw new Error("A rule needs at least one amount. Edit this amount instead of removing it.");
+  }
+
+  const currentMonth = currentMonthString();
+
+  if (version.effectiveStartMonth <= currentMonth) {
+    throw new Error("You can only remove an amount change that has not started yet.");
+  }
+
+  const previousVersion = versions[versionIndex - 1];
+
+  if (!previousVersion) {
+    throw new Error("The first amount period cannot be removed. Change Starts on the rule instead.");
+  }
+
+  const nextVersion = versions[versionIndex + 1];
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(recurringEntryVersions)
+      .set({
+        effectiveEndMonth: nextVersion
+          ? previousMonthString(nextVersion.effectiveStartMonth)
+          : null,
+        updatedAt: new Date(),
+      })
+      .where(eq(recurringEntryVersions.id, previousVersion.id));
+
+    await tx
+      .delete(recurringEntryVersions)
+      .where(eq(recurringEntryVersions.id, version.id));
+  });
+
+  await rematerializeRecurringVersionRange(
+    context,
+    recurringEntry.id,
+    version.effectiveStartMonth,
+    version.effectiveEndMonth,
+    db,
+  );
+
+  return {
+    recurringEntryId: recurringEntry.id,
+    versionId: version.id,
   };
 }
 

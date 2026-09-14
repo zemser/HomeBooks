@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 
 import { CurrencyInput } from "@/components/shared/currency-input";
+import { ConfirmationModal } from "@/components/shared/confirmation-modal";
 import { Modal } from "@/components/shared/modal";
 import { NormalizationModeSelect } from "@/components/recurring/normalization-mode-select";
 import { CategorySelect } from "@/components/workspaces/category-select";
@@ -22,14 +23,20 @@ import {
 } from "@/features/expenses/presentation";
 import {
   EVENT_KINDS,
-  NORMALIZATION_MODE_OPTIONS,
-  RECURRENCE_RULES,
   type EventKind,
   type NormalizationMode,
-  type RecurrenceRule,
 } from "@/features/recurring/constants";
-import type { RecurringPageData } from "@/features/recurring/types";
-import { currentMonthString, monthLabel } from "@/features/recurring/utils";
+import type {
+  RecurringEntryItem,
+  RecurringEntryVersionItem,
+  RecurringPageData,
+} from "@/features/recurring/types";
+import {
+  currentMonthString,
+  monthLabel,
+  nextMonthString,
+  previousMonthString,
+} from "@/features/recurring/utils";
 
 type RecurringResponse = RecurringPageData & {
   error?: string;
@@ -46,15 +53,27 @@ type RuleFormState = {
   category: string;
   categoryId: string;
   active: boolean;
+  startsMonth: string;
+  amount: string;
+  currency: string;
+  normalizationMode: NormalizationMode;
 };
 
-type CreateRuleState = RuleFormState & {
+type CreateRuleState = {
+  title: string;
+  eventKind: EventKind;
+  personalOwnerMemberId: string;
+  payerMemberId: string;
+  receivedByMemberId: string;
+  classificationType: (typeof CLASSIFICATION_TYPES)[number];
+  splitForSettlement: boolean;
+  category: string;
+  categoryId: string;
+  active: boolean;
   effectiveStartMonth: string;
   amount: string;
   currency: string;
   normalizationMode: NormalizationMode;
-  recurrenceRule: RecurrenceRule;
-  notes: string;
 };
 
 type VersionFormState = {
@@ -62,9 +81,29 @@ type VersionFormState = {
   amount: string;
   currency: string;
   normalizationMode: NormalizationMode;
-  recurrenceRule: RecurrenceRule;
-  notes: string;
 };
+
+type RecurringConfirm =
+  | {
+      kind: "save-rule";
+      title: string;
+      description: string;
+    }
+  | {
+      kind: "delete-rule";
+    }
+  | {
+      kind: "update-version";
+      versionId: string;
+      title: string;
+      description: string;
+    }
+  | {
+      kind: "delete-version";
+      versionId: string;
+      title: string;
+      description: string;
+    };
 
 function toMonthInputValue(value: string) {
   return value.slice(0, 7);
@@ -72,6 +111,90 @@ function toMonthInputValue(value: string) {
 
 function todayMonthInputValue() {
   return toMonthInputValue(currentMonthString());
+}
+
+function nextMonthInputValue() {
+  return toMonthInputValue(nextMonthString());
+}
+
+function versionsByStart(entry: RecurringEntryItem) {
+  return [...entry.versions].sort((left, right) =>
+    left.effectiveStartMonth.localeCompare(right.effectiveStartMonth),
+  );
+}
+
+function openingVersionOf(entry: RecurringEntryItem) {
+  return versionsByStart(entry)[0] ?? null;
+}
+
+function nextAmountVersionOf(entry: RecurringEntryItem) {
+  return versionsByStart(entry)[1] ?? null;
+}
+
+function canRemoveAmountChange(entry: RecurringEntryItem, version: RecurringEntryVersionItem) {
+  return (
+    versionsByStart(entry).length > 1 && version.effectiveStartMonth > currentMonthString()
+  );
+}
+
+function canEditHistoryAmount(entry: RecurringEntryItem, version: RecurringEntryVersionItem) {
+  return entry.currentVersion?.id !== version.id;
+}
+
+function versionReportsRangeLabel(version: RecurringEntryVersionItem) {
+  const from = monthLabel(version.effectiveStartMonth);
+
+  if (version.effectiveEndMonth) {
+    const until = monthLabel(version.effectiveEndMonth);
+    return from === until ? from : `${from}–${until}`;
+  }
+
+  if (version.effectiveStartMonth >= currentMonthString()) {
+    return `${from} onward`;
+  }
+
+  return `${from}–now`;
+}
+
+function moneyFieldsChanged(
+  version: RecurringEntryVersionItem,
+  next: { amount: string; currency: string; normalizationMode: NormalizationMode },
+) {
+  return (
+    Number(version.amount) !== Number(next.amount) ||
+    version.currency !== next.currency ||
+    version.normalizationMode !== next.normalizationMode
+  );
+}
+
+function versionToFormState(
+  version: RecurringEntryVersionItem,
+  workspaceCurrency: string,
+): VersionFormState {
+  return {
+    effectiveStartMonth: toMonthInputValue(version.effectiveStartMonth),
+    amount: Number(version.amount).toFixed(2),
+    currency: version.currency || workspaceCurrency,
+    normalizationMode: version.normalizationMode,
+  };
+}
+
+function recurringCardAmountLine(entry: RecurringEntryItem) {
+  const currentVersion = entry.currentVersion;
+
+  if (!currentVersion) {
+    return null;
+  }
+
+  const amount = formatMoneyDisplay(currentVersion.amount, currentVersion.currency);
+  const openingVersion = openingVersionOf(entry);
+  const openingMonth = openingVersion?.effectiveStartMonth ?? currentVersion.effectiveStartMonth;
+
+  if (openingVersion && openingVersion.id !== currentVersion.id) {
+    return `${amount} from ${monthLabel(currentVersion.effectiveStartMonth)} · started ${monthLabel(openingMonth)}`;
+  }
+
+  return `${amount} starting ${monthLabel(openingMonth)}`;
 }
 
 const initialCreateState: CreateRuleState = {
@@ -89,17 +212,13 @@ const initialCreateState: CreateRuleState = {
   amount: "",
   currency: "ILS",
   normalizationMode: "none",
-  recurrenceRule: "monthly",
-  notes: "",
 };
 
 const initialVersionState: VersionFormState = {
-  effectiveStartMonth: todayMonthInputValue(),
+  effectiveStartMonth: nextMonthInputValue(),
   amount: "",
   currency: "ILS",
   normalizationMode: "none",
-  recurrenceRule: "monthly",
-  notes: "",
 };
 
 function isForeignCurrency(currency: string, workspaceCurrency: string | undefined) {
@@ -113,6 +232,8 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
   const [createState, setCreateState] = useState<CreateRuleState>(initialCreateState);
   const [editState, setEditState] = useState<RuleFormState | null>(null);
   const [versionState, setVersionState] = useState<VersionFormState>(initialVersionState);
+  const [editingVersionId, setEditingVersionId] = useState<string | null>(null);
+  const [versionEditState, setVersionEditState] = useState<VersionFormState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -120,7 +241,10 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
   const [isSavingCreate, startSavingCreate] = useTransition();
   const [isSavingEdit, startSavingEdit] = useTransition();
   const [isSavingVersion, startSavingVersion] = useTransition();
+  const [isSavingVersionEdit, startSavingVersionEdit] = useTransition();
   const [isDeleting, startDeleting] = useTransition();
+  const [isDeletingVersion, startDeletingVersion] = useTransition();
+  const [confirmDialog, setConfirmDialog] = useState<RecurringConfirm | null>(null);
 
   async function loadPage() {
     setError(null);
@@ -183,6 +307,20 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
     versionState.currency,
     data?.workspaceCurrency,
   );
+  const versionEditUsesForeignCurrency = isForeignCurrency(
+    versionEditState?.currency ?? "",
+    data?.workspaceCurrency,
+  );
+  const editUsesForeignCurrency = isForeignCurrency(
+    editState?.currency ?? "",
+    data?.workspaceCurrency,
+  );
+  const openingVersion = selectedEntry ? openingVersionOf(selectedEntry) : null;
+  const currentVersion = selectedEntry?.currentVersion ?? openingVersion;
+  const nextAmountVersion = selectedEntry ? nextAmountVersionOf(selectedEntry) : null;
+  const latestAllowedStartMonth = nextAmountVersion
+    ? toMonthInputValue(previousMonthString(nextAmountVersion.effectiveStartMonth))
+    : undefined;
   const createClassificationOptions = classificationsForEventKind(
     createState.eventKind,
     CLASSIFICATION_TYPES,
@@ -194,9 +332,11 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
   useEffect(() => {
     if (!selectedEntry) {
       setEditState(null);
+      setEditingVersionId(null);
+      setVersionEditState(null);
       setVersionState((current) => ({
         ...current,
-        effectiveStartMonth: todayMonthInputValue(),
+        effectiveStartMonth: nextMonthInputValue(),
       }));
       return;
     }
@@ -205,6 +345,8 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       selectedEntry.eventKind,
       selectedEntry.classificationType,
     );
+    const openingVersion = openingVersionOf(selectedEntry);
+    const currentVersion = selectedEntry.currentVersion ?? openingVersion;
 
     setEditState({
       title: selectedEntry.title,
@@ -217,17 +359,18 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       category: selectedEntry.category ?? "",
       categoryId: selectedEntry.categoryId ?? "",
       active: selectedEntry.active,
+      startsMonth: openingVersion
+        ? toMonthInputValue(openingVersion.effectiveStartMonth)
+        : todayMonthInputValue(),
+      amount: currentVersion?.amount ? Number(currentVersion.amount).toFixed(2) : "",
+      currency: currentVersion?.currency ?? data?.workspaceCurrency ?? "ILS",
+      normalizationMode: currentVersion?.normalizationMode ?? "none",
     });
     setVersionState({
-      effectiveStartMonth: todayMonthInputValue(),
-      amount: selectedEntry.currentVersion?.amount
-        ? Number(selectedEntry.currentVersion.amount).toFixed(2)
-        : "",
-      currency: selectedEntry.currentVersion?.currency ?? data?.workspaceCurrency ?? "ILS",
-      normalizationMode: selectedEntry.currentVersion?.normalizationMode ?? "none",
-      recurrenceRule:
-        selectedEntry.currentVersion?.recurrenceRule === "monthly" ? "monthly" : "monthly",
-      notes: selectedEntry.currentVersion?.notes ?? "",
+      effectiveStartMonth: nextMonthInputValue(),
+      amount: currentVersion?.amount ? Number(currentVersion.amount).toFixed(2) : "",
+      currency: currentVersion?.currency ?? data?.workspaceCurrency ?? "ILS",
+      normalizationMode: currentVersion?.normalizationMode ?? "none",
     });
   }, [data?.workspaceCurrency, selectedEntry]);
 
@@ -249,6 +392,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
         categoryId: createState.categoryId || null,
         effectiveStartMonth: `${createState.effectiveStartMonth}-01`,
         amount: Number(createState.amount),
+        recurrenceRule: "monthly",
       }),
     });
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -265,19 +409,66 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
     }));
     setMessage(
       createState.effectiveStartMonth <= todayMonthInputValue()
-        ? `Recurring definition saved. Applicable months through ${monthLabel(currentMonthString())} are ready for reports.`
-        : `Recurring definition saved. It will start in ${monthLabel(createState.effectiveStartMonth)}.`,
+        ? `Rule saved. Reports include it through ${monthLabel(currentMonthString())}.`
+        : `Rule saved. It will start in ${monthLabel(createState.effectiveStartMonth)}.`,
     );
     setIsCreateModalOpen(false);
   }
 
-  async function handleSaveRecurringEntry() {
+  async function handleSaveRecurringEntry(options?: { skipConfirm?: boolean }) {
     if (!selectedEntry || !editState) {
+      return;
+    }
+
+    const previousStartMonth = openingVersion
+      ? toMonthInputValue(openingVersion.effectiveStartMonth)
+      : "";
+    const startChanged = editState.startsMonth !== previousStartMonth;
+    const startMovedLater = startChanged && editState.startsMonth > previousStartMonth;
+    const amountChanged = Boolean(
+      currentVersion &&
+        moneyFieldsChanged(currentVersion, {
+          amount: editState.amount,
+          currency: editState.currency,
+          normalizationMode: editState.normalizationMode,
+        }),
+    );
+    const amountTouchesHistory = Boolean(
+      amountChanged &&
+        currentVersion &&
+        currentVersion.effectiveStartMonth <= currentMonthString(),
+    );
+
+    if (!options?.skipConfirm && (startMovedLater || amountTouchesHistory)) {
+      const lines = [
+        startMovedLater
+          ? `Moving Starts later takes months before ${monthLabel(editState.startsMonth)} out of reports.`
+          : null,
+        amountTouchesHistory && currentVersion
+          ? `The amount will update ${versionReportsRangeLabel(currentVersion)} in reports.`
+          : null,
+      ].filter((line): line is string => Boolean(line));
+
+      setConfirmDialog({
+        kind: "save-rule",
+        title: startMovedLater && amountTouchesHistory
+          ? "Update start and amount?"
+          : startMovedLater
+            ? "Move the start month?"
+            : "Update this amount in reports?",
+        description: lines.join(" "),
+      });
+      return;
+    }
+
+    if (!options?.skipConfirm) {
+      startSavingEdit(() => void handleSaveRecurringEntry({ skipConfirm: true }));
       return;
     }
 
     setError(null);
     setMessage(null);
+    setConfirmDialog(null);
 
     const response = await fetch(`/api/recurring/${selectedEntry.id}`, {
       method: "PATCH",
@@ -285,11 +476,17 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        ...editState,
+        title: editState.title,
+        eventKind: editState.eventKind,
         personalOwnerMemberId: editState.personalOwnerMemberId || null,
         payerMemberId: editState.payerMemberId || null,
         receivedByMemberId: editState.receivedByMemberId || null,
+        classificationType: editState.classificationType,
+        splitForSettlement: editState.splitForSettlement,
+        category: editState.category,
         categoryId: editState.categoryId || null,
+        active: editState.active,
+        effectiveStartMonth: `${editState.startsMonth}-01`,
       }),
     });
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -299,11 +496,42 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       return;
     }
 
+    if (amountChanged && currentVersion) {
+      const amountResponse = await fetch(
+        `/api/recurring/${selectedEntry.id}/versions/${currentVersion.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            amount: Number(editState.amount),
+            currency: editState.currency,
+            normalizationMode: editState.normalizationMode,
+            notes: currentVersion.notes,
+          }),
+        },
+      );
+      const amountPayload = (await amountResponse.json().catch(() => ({}))) as { error?: string };
+
+      if (!amountResponse.ok) {
+        setError(amountPayload.error ?? "Could not update that amount.");
+        return;
+      }
+    }
+
     await loadPage();
+    setIsEditModalOpen(false);
     setMessage(
-      editState.active
-        ? "Recurring definition updated."
-        : "Recurring definition paused. Current and future recurring rows were removed from reports.",
+      !editState.active
+        ? "Rule paused. Current and future months were removed from reports."
+        : startChanged && amountChanged
+          ? `Rule updated. It now starts in ${monthLabel(editState.startsMonth)}, and the amount is updated.`
+          : startChanged
+            ? `Rule updated. It now starts in ${monthLabel(editState.startsMonth)}.`
+            : amountChanged
+              ? "Amount updated."
+              : "Rule updated.",
     );
   }
 
@@ -324,6 +552,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
         ...versionState,
         effectiveStartMonth: `${versionState.effectiveStartMonth}-01`,
         amount: Number(versionState.amount),
+        recurrenceRule: "monthly",
       }),
     });
     const payload = (await response.json().catch(() => ({}))) as { error?: string };
@@ -334,24 +563,130 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
     }
 
     await loadPage();
-    setMessage("Future change saved.");
+    setMessage(
+      `Amount change saved. From ${monthLabel(versionState.effectiveStartMonth)} onward, reports will use the new amount.`,
+    );
   }
 
-  async function handleDeleteRecurringEntry() {
-    if (!selectedEntry) {
+  async function handleUpdateVersion(options?: { skipConfirm?: boolean }) {
+    if (!selectedEntry || !editingVersionId || !versionEditState) {
       return;
     }
 
-    const shouldDelete = window.confirm(
-      `Delete "${selectedEntry.title}" and remove its recurring rows from reports?`,
-    );
+    const version = selectedEntry.versions.find((candidate) => candidate.id === editingVersionId);
 
-    if (!shouldDelete) {
+    if (!version) {
+      return;
+    }
+
+    if (!options?.skipConfirm && version.effectiveStartMonth <= currentMonthString()) {
+      setConfirmDialog({
+        kind: "update-version",
+        versionId: version.id,
+        title: "Update this amount in reports?",
+        description: `This will update ${versionReportsRangeLabel(version)} in reports.`,
+      });
+      return;
+    }
+
+    if (!options?.skipConfirm) {
+      startSavingVersionEdit(() => void handleUpdateVersion({ skipConfirm: true }));
       return;
     }
 
     setError(null);
     setMessage(null);
+    setConfirmDialog(null);
+
+    const response = await fetch(
+      `/api/recurring/${selectedEntry.id}/versions/${editingVersionId}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          amount: Number(versionEditState.amount),
+          currency: versionEditState.currency,
+          normalizationMode: versionEditState.normalizationMode,
+          notes: version.notes,
+        }),
+      },
+    );
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      setError(payload.error ?? "Could not update that amount.");
+      return;
+    }
+
+    setEditingVersionId(null);
+    setVersionEditState(null);
+    await loadPage();
+    setMessage(`Amount updated for ${versionReportsRangeLabel(version)}.`);
+  }
+
+  async function handleDeleteVersion(
+    version: RecurringEntryVersionItem,
+    options?: { skipConfirm?: boolean },
+  ) {
+    if (!selectedEntry) {
+      return;
+    }
+
+    if (!options?.skipConfirm) {
+      setConfirmDialog({
+        kind: "delete-version",
+        versionId: version.id,
+        title: "Remove this amount change?",
+        description: `Remove the ${formatMoneyDisplay(version.amount, version.currency)} change from ${monthLabel(version.effectiveStartMonth)}? Reports will keep the previous amount.`,
+      });
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+    setConfirmDialog(null);
+
+    const response = await fetch(
+      `/api/recurring/${selectedEntry.id}/versions/${version.id}`,
+      {
+        method: "DELETE",
+      },
+    );
+    const payload = (await response.json().catch(() => ({}))) as { error?: string };
+
+    if (!response.ok) {
+      setError(payload.error ?? "Could not remove that amount change.");
+      return;
+    }
+
+    if (editingVersionId === version.id) {
+      setEditingVersionId(null);
+      setVersionEditState(null);
+    }
+
+    await loadPage();
+    setMessage(
+      `Amount change removed. From ${monthLabel(version.effectiveStartMonth)} onward, reports use the previous amount.`,
+    );
+  }
+
+  async function handleDeleteRecurringEntry(options?: { skipConfirm?: boolean }) {
+    if (!selectedEntry) {
+      return;
+    }
+
+    if (!options?.skipConfirm) {
+      setConfirmDialog({
+        kind: "delete-rule",
+      });
+      return;
+    }
+
+    setError(null);
+    setMessage(null);
+    setConfirmDialog(null);
 
     const response = await fetch(`/api/recurring/${selectedEntry.id}`, {
       method: "DELETE",
@@ -363,21 +698,76 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
       return;
     }
 
+    setIsEditModalOpen(false);
     await loadPage();
-    setMessage("Recurring definition deleted.");
+    setMessage("Rule deleted.");
+  }
+
+  function confirmDialogCopy(dialog: RecurringConfirm) {
+    if (dialog.kind === "delete-rule") {
+      return {
+        title: selectedEntry ? `Delete ${selectedEntry.title}?` : "Delete this rule?",
+        description: "This removes its recurring rows from reports.",
+        confirmLabel: isDeleting ? "Deleting..." : "Delete rule",
+        danger: true,
+      };
+    }
+
+    if (dialog.kind === "delete-version") {
+      return {
+        title: dialog.title,
+        description: dialog.description,
+        confirmLabel: isDeletingVersion ? "Removing..." : "Remove change",
+        danger: true,
+      };
+    }
+
+    return {
+      title: dialog.title,
+      description: dialog.description,
+      confirmLabel: dialog.kind === "save-rule"
+        ? (isSavingEdit ? "Saving..." : "Update reports")
+        : (isSavingVersionEdit ? "Saving..." : "Update reports"),
+      danger: false,
+    };
+  }
+
+  function runConfirmDialog(dialog: RecurringConfirm) {
+    if (dialog.kind === "save-rule") {
+      startSavingEdit(() => void handleSaveRecurringEntry({ skipConfirm: true }));
+      return;
+    }
+
+    if (dialog.kind === "delete-rule") {
+      startDeleting(() => void handleDeleteRecurringEntry({ skipConfirm: true }));
+      return;
+    }
+
+    if (dialog.kind === "update-version") {
+      startSavingVersionEdit(() => void handleUpdateVersion({ skipConfirm: true }));
+      return;
+    }
+
+    const version = selectedEntry?.versions.find((candidate) => candidate.id === dialog.versionId);
+    if (!version) {
+      setConfirmDialog(null);
+      return;
+    }
+
+    startDeletingVersion(() => void handleDeleteVersion(version, { skipConfirm: true }));
   }
 
   return (
     <section className="stack recurring-sections">
-      {error ? <p className="status error">{error}</p> : null}
-      {message ? <p className="status">{message}</p> : null}
+      {error ? <p className="status error" aria-live="assertive">{error}</p> : null}
+      {message ? <p className="status success" aria-live="polite">{message}</p> : null}
 
       <section className="two-up">
         <Modal
           open={isCreateModalOpen}
           onClose={() => setIsCreateModalOpen(false)}
           title="Add recurring rule"
-          description="Create a regular income or expense for future reports."
+          description="Rent, salary, or anything that repeats every month. It will show in reports from the starting month on."
         >
         <article className="stack compact">
           <div className="stack compact">
@@ -505,7 +895,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
               </label>
 
               <label className="field">
-                <span>Effective month</span>
+                <span>Starts</span>
                 <input
                   className="input"
                   type="month"
@@ -525,7 +915,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                   className="input"
                   type="number"
                   step="0.01"
-                  min="0"
+                  min="0.01"
                   value={createState.amount}
                   onChange={(event) =>
                     setCreateState((current) => ({ ...current, amount: event.target.value }))
@@ -551,6 +941,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 />
               </label>
             </div>
+            <p className="field-hint">Included in reports from this month onward.</p>
 
             {!hasDefinedCategories ? (
               <p className="helper-text">
@@ -558,47 +949,14 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
               </p>
             ) : null}
 
-            <div className="inline-form">
-              {createUsesForeignCurrency ? (
-                <NormalizationModeSelect
-                  value={createState.normalizationMode}
-                  onChange={(normalizationMode) =>
-                    setCreateState((current) => ({ ...current, normalizationMode }))
-                  }
-                />
-              ) : null}
-
-              <label className="field">
-                <span>Recurrence</span>
-                <select
-                  className="input"
-                  value={createState.recurrenceRule}
-                  onChange={(event) =>
-                    setCreateState((current) => ({
-                      ...current,
-                      recurrenceRule: event.target.value as RecurrenceRule,
-                    }))
-                  }
-                >
-                  {RECURRENCE_RULES.map((rule) => (
-                    <option key={rule} value={rule}>
-                      {rule}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="field">
-                <span>Notes</span>
-                <input
-                  className="input"
-                  value={createState.notes}
-                  onChange={(event) =>
-                    setCreateState((current) => ({ ...current, notes: event.target.value }))
-                  }
-                />
-              </label>
-            </div>
+            {createUsesForeignCurrency ? (
+              <NormalizationModeSelect
+                value={createState.normalizationMode}
+                onChange={(normalizationMode) =>
+                  setCreateState((current) => ({ ...current, normalizationMode }))
+                }
+              />
+            ) : null}
 
             <button
               className="button"
@@ -606,7 +964,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
               disabled={isSavingCreate}
               onClick={() => startSavingCreate(() => void handleCreateRecurringEntry())}
             >
-              {isSavingCreate ? "Saving..." : "Save recurring definition"}
+              {isSavingCreate ? "Saving..." : "Save rule"}
             </button>
           </div>
         </article>
@@ -683,47 +1041,47 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
           ) : null}
 
           <div className="stack compact">
-            {data?.recurringEntries.map((entry) => (
-              <button
-                className={`selector-card ${selectedEntryId === entry.id ? "selector-card-active" : ""}`}
-                key={entry.id}
-                type="button"
-                onClick={() => {
-                  setSelectedEntryId(entry.id);
-                  setIsEditModalOpen(true);
-                }}
-              >
-                <div className="selector-card-header">
-                  <strong>{entry.title}</strong>
-                  <span className={`badge ${entry.active ? "badge-neutral" : "badge-warning"}`}>
-                    {entry.active ? "Active" : "Paused"}
-                  </span>
-                </div>
-                <p className="table-note">
-                  {entry.eventKind} / {formatClassificationTypeLabel(entry.classificationType)}
-                  {entry.category ? ` / ${entry.category}` : ""}
-                </p>
-                {entry.currentVersion ? (
+            {data?.recurringEntries.map((entry) => {
+              const amountLine = recurringCardAmountLine(entry);
+
+              return (
+                <button
+                  className={`selector-card ${selectedEntryId === entry.id ? "selector-card-active" : ""}`}
+                  key={entry.id}
+                  type="button"
+                  onClick={() => {
+                    setSelectedEntryId(entry.id);
+                    setIsEditModalOpen(true);
+                  }}
+                >
+                  <div className="selector-card-header">
+                    <strong>{entry.title}</strong>
+                    <span className={`badge ${entry.active ? "badge-neutral" : "badge-warning"}`}>
+                      {entry.active ? "Active" : "Paused"}
+                    </span>
+                  </div>
                   <p className="table-note">
-                    Current:{" "}
-                    {formatMoneyDisplay(
-                      entry.currentVersion.amount,
-                      entry.currentVersion.currency,
-                    )}{" "}
-                    from {monthLabel(entry.currentVersion.effectiveStartMonth)}
+                    {entry.eventKind} / {formatClassificationTypeLabel(entry.classificationType)}
+                    {entry.category ? ` / ${entry.category}` : ""}
                   </p>
-                ) : null}
-              </button>
-            ))}
+                  {amountLine ? <p className="table-note">{amountLine}</p> : null}
+                </button>
+              );
+            })}
           </div>
         </article>
 
         <Modal
           open={isEditModalOpen && Boolean(selectedEntry && editState)}
-          onClose={() => setIsEditModalOpen(false)}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setConfirmDialog(null);
+            setEditingVersionId(null);
+            setVersionEditState(null);
+          }}
           size="wide"
           title={selectedEntry ? `Edit ${selectedEntry.title}` : "Edit recurring rule"}
-          description="Update the rule or schedule a future change."
+          description="Change the name, start month, or amount. To raise it later, add that below."
         >
         <article className="stack compact">
           {!selectedEntry || !editState ? (
@@ -731,11 +1089,8 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
           ) : (
             <div className="stack">
               <div className="stack compact">
-                <h3>Definition</h3>
                 <p className="muted-text">
-                  Edit the recurring definition here. Effective months live in the version
-                  history below, while the active toggle removes current and future report rows without
-                  deleting the rule.
+                  Pause the rule to take it out of reports without deleting it.
                 </p>
                 <label className="field">
                   <span>Title</span>
@@ -894,39 +1249,111 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                   </label>
                 </div>
 
+                <div className="inline-form">
+                  <label className="field">
+                    <span>Starts</span>
+                    <input
+                      className="input"
+                      type="month"
+                      max={latestAllowedStartMonth}
+                      value={editState.startsMonth}
+                      onChange={(event) =>
+                        setEditState((current) =>
+                          current ? { ...current, startsMonth: event.target.value } : current,
+                        )
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Amount</span>
+                    <input
+                      className="input"
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      value={editState.amount}
+                      onChange={(event) =>
+                        setEditState((current) =>
+                          current ? { ...current, amount: event.target.value } : current,
+                        )
+                      }
+                    />
+                  </label>
+                  <label className="field">
+                    <span>Currency</span>
+                    <CurrencyInput
+                      value={editState.currency}
+                      workspaceCurrency={data?.workspaceCurrency ?? editState.currency}
+                      onChange={(currency) =>
+                        setEditState((current) =>
+                          current
+                            ? {
+                                ...current,
+                                currency,
+                                normalizationMode:
+                                  currency === data?.workspaceCurrency
+                                    ? "none"
+                                    : current.normalizationMode,
+                              }
+                            : current,
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+                {editUsesForeignCurrency ? (
+                  <NormalizationModeSelect
+                    value={editState.normalizationMode}
+                    onChange={(normalizationMode) =>
+                      setEditState((current) =>
+                        current ? { ...current, normalizationMode } : current,
+                      )
+                    }
+                  />
+                ) : null}
+                <p className="helper-text">
+                  {currentVersion && selectedEntry.versions.length > 1
+                    ? `Amount is what reports use from ${monthLabel(currentVersion.effectiveStartMonth)}. Earlier months stay in the timeline below.`
+                    : "Change Starts if this began in a different month. Change Amount if the number was wrong."}
+                  {nextAmountVersion
+                    ? ` Starts has to stay before ${monthLabel(nextAmountVersion.effectiveStartMonth)}.`
+                    : ""}
+                </p>
+
                 <div className="action-row">
                   <button
                     className="button"
                     type="button"
                     disabled={isSavingEdit}
-                    onClick={() => startSavingEdit(() => void handleSaveRecurringEntry())}
+                    onClick={() => void handleSaveRecurringEntry()}
                   >
-                    {isSavingEdit ? "Saving..." : "Save recurring definition"}
+                    {isSavingEdit ? "Saving..." : "Save rule"}
                   </button>
                   <button
                     className="button button-danger"
                     type="button"
                     disabled={isDeleting}
-                    onClick={() => startDeleting(() => void handleDeleteRecurringEntry())}
+                    onClick={() => void handleDeleteRecurringEntry()}
                   >
-                    {isDeleting ? "Deleting..." : "Delete definition"}
+                    {isDeleting ? "Deleting..." : "Delete rule"}
                   </button>
                 </div>
               </div>
 
               <details className="disclosure">
-                <summary>Schedule a future change</summary>
+                <summary>Change amount from a later month</summary>
                 <div className="stack compact">
                   <p className="muted-text">
-                    Use a new effective month when rent, salary, or another recurring amount
-                    changes. Existing prepared months stay unchanged.
+                    Rent going up in January? Keep the old amount through December, then start
+                    the new amount from January. Past months stay as they were.
                   </p>
                 <div className="inline-form">
                   <label className="field">
-                    <span>Effective month</span>
+                    <span>New amount starts</span>
                     <input
                       className="input"
                       type="month"
+                      min={nextMonthInputValue()}
                       value={versionState.effectiveStartMonth}
                       onChange={(event) =>
                         setVersionState((current) => ({
@@ -942,7 +1369,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                       className="input"
                       type="number"
                       step="0.01"
-                      min="0"
+                      min="0.01"
                       value={versionState.amount}
                       onChange={(event) =>
                         setVersionState((current) => ({
@@ -971,50 +1398,14 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                   </label>
                 </div>
 
-                <div className="inline-form">
-                  {versionUsesForeignCurrency ? (
-                    <NormalizationModeSelect
-                      value={versionState.normalizationMode}
-                      onChange={(normalizationMode) =>
-                        setVersionState((current) => ({ ...current, normalizationMode }))
-                      }
-                    />
-                  ) : null}
-
-                  <label className="field">
-                    <span>Recurrence</span>
-                    <select
-                      className="input"
-                      value={versionState.recurrenceRule}
-                      onChange={(event) =>
-                        setVersionState((current) => ({
-                          ...current,
-                          recurrenceRule: event.target.value as RecurrenceRule,
-                        }))
-                      }
-                    >
-                      {RECURRENCE_RULES.map((rule) => (
-                        <option key={rule} value={rule}>
-                          {rule}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-
-                  <label className="field">
-                    <span>Notes</span>
-                    <input
-                      className="input"
-                      value={versionState.notes}
-                      onChange={(event) =>
-                        setVersionState((current) => ({
-                          ...current,
-                          notes: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
+                {versionUsesForeignCurrency ? (
+                  <NormalizationModeSelect
+                    value={versionState.normalizationMode}
+                    onChange={(normalizationMode) =>
+                      setVersionState((current) => ({ ...current, normalizationMode }))
+                    }
+                  />
+                ) : null}
 
                 <button
                   className="button"
@@ -1022,52 +1413,180 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                   disabled={isSavingVersion}
                   onClick={() => startSavingVersion(() => void handleCreateVersion())}
                 >
-                  {isSavingVersion ? "Saving..." : "Add future version"}
+                  {isSavingVersion ? "Saving..." : "Save amount change"}
                 </button>
                 </div>
               </details>
 
-              <div className="stack compact">
-                <h3>Version history</h3>
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Start</th>
-                        <th>End</th>
-                        <th>Amount</th>
-                        <th>Mode</th>
-                        <th>Notes</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selectedEntry.versions.map((version) => (
-                        <tr key={version.id}>
-                          <td>{monthLabel(version.effectiveStartMonth)}</td>
-                          <td>
-                            {version.effectiveEndMonth
-                              ? monthLabel(version.effectiveEndMonth)
-                              : "Open"}
-                          </td>
-                          <td>{formatMoneyDisplay(version.amount, version.currency)}</td>
-                          <td>
-                            {version.currency === data?.workspaceCurrency
-                              ? "Not needed"
-                              : NORMALIZATION_MODE_OPTIONS.find(
-                                  (option) => option.value === version.normalizationMode,
-                                )?.label ?? version.normalizationMode}
-                          </td>
-                          <td>{version.notes ?? "-"}</td>
+              {selectedEntry.versions.length > 1 ? (
+                <div className="stack compact">
+                  <h3>Amount timeline</h3>
+                  <p className="muted-text">
+                    The amount on the form is the current period. Edit an earlier or later
+                    row only to fix a typo.
+                  </p>
+                  {versionEditState && editingVersionId ? (
+                    <div className="stack compact">
+                      <p className="helper-text">
+                        Editing {monthLabel(versionEditState.effectiveStartMonth)}.
+                      </p>
+                      <div className="inline-form">
+                        <label className="field">
+                          <span>Amount</span>
+                          <input
+                            className="input"
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            value={versionEditState.amount}
+                            onChange={(event) =>
+                              setVersionEditState((current) =>
+                                current ? { ...current, amount: event.target.value } : current,
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Currency</span>
+                          <CurrencyInput
+                            value={versionEditState.currency}
+                            workspaceCurrency={
+                              data?.workspaceCurrency ?? versionEditState.currency
+                            }
+                            onChange={(currency) =>
+                              setVersionEditState((current) =>
+                                current
+                                  ? {
+                                      ...current,
+                                      currency,
+                                      normalizationMode:
+                                        currency === data?.workspaceCurrency
+                                          ? "none"
+                                          : current.normalizationMode,
+                                    }
+                                  : current,
+                              )
+                            }
+                          />
+                        </label>
+                        {versionEditUsesForeignCurrency ? (
+                          <NormalizationModeSelect
+                            value={versionEditState.normalizationMode}
+                            onChange={(normalizationMode) =>
+                              setVersionEditState((current) =>
+                                current ? { ...current, normalizationMode } : current,
+                              )
+                            }
+                          />
+                        ) : null}
+                      </div>
+                      <div className="action-row">
+                        <button
+                          className="button"
+                          type="button"
+                          disabled={isSavingVersionEdit}
+                          onClick={() => void handleUpdateVersion()}
+                        >
+                          {isSavingVersionEdit ? "Saving..." : "Save amount"}
+                        </button>
+                        <button
+                          className="link-button"
+                          type="button"
+                          onClick={() => {
+                            setEditingVersionId(null);
+                            setVersionEditState(null);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>From</th>
+                          <th>Until</th>
+                          <th>Amount</th>
+                          <th> </th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {versionsByStart(selectedEntry).map((version) => (
+                          <tr
+                            className={
+                              selectedEntry.currentVersion?.id === version.id
+                                ? "table-row-active"
+                                : ""
+                            }
+                            key={version.id}
+                          >
+                            <td>{monthLabel(version.effectiveStartMonth)}</td>
+                            <td>
+                              {version.effectiveEndMonth
+                                ? monthLabel(version.effectiveEndMonth)
+                                : "Ongoing"}
+                            </td>
+                            <td>{formatMoneyDisplay(version.amount, version.currency)}</td>
+                            <td>
+                              <div className="action-row">
+                                {canEditHistoryAmount(selectedEntry, version) ? (
+                                  <button
+                                    className="link-button"
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingVersionId(version.id);
+                                      setVersionEditState(
+                                        versionToFormState(
+                                          version,
+                                          data?.workspaceCurrency ?? version.currency,
+                                        ),
+                                      );
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                ) : (
+                                  <span className="table-note">Current</span>
+                                )}
+                                {canRemoveAmountChange(selectedEntry, version) ? (
+                                  <button
+                                    className="link-button"
+                                    type="button"
+                                    disabled={isDeletingVersion}
+                                    onClick={() => void handleDeleteVersion(version)}
+                                  >
+                                    Remove
+                                  </button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           )}
         </article>
         </Modal>
+        {confirmDialog ? (
+          <ConfirmationModal
+            open
+            title={confirmDialogCopy(confirmDialog).title}
+            description={confirmDialogCopy(confirmDialog).description}
+            confirmLabel={confirmDialogCopy(confirmDialog).confirmLabel}
+            danger={confirmDialogCopy(confirmDialog).danger}
+            confirmDisabled={
+              isSavingEdit || isSavingVersionEdit || isDeleting || isDeletingVersion
+            }
+            onClose={() => setConfirmDialog(null)}
+            onConfirm={() => runConfirmDialog(confirmDialog)}
+          />
+        ) : null}
       </section>
     </section>
   );

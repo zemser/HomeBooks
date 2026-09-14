@@ -186,13 +186,21 @@ test("import persistence keeps parsing and Storage work outside DB transactions"
 });
 
 test("recurring services and API callers use the explicit transaction executor", async () => {
-  const [serviceSource, routeSource, generateRouteSource, detailRouteSource, versionRouteSource] =
+  const [
+    serviceSource,
+    routeSource,
+    generateRouteSource,
+    detailRouteSource,
+    versionRouteSource,
+    versionDetailRouteSource,
+  ] =
     await Promise.all([
       readFile(recurringServicePath, "utf8"),
       readFile(new URL("../../src/app/api/recurring/route.ts", import.meta.url), "utf8"),
       readFile(new URL("../../src/app/api/recurring/generate/route.ts", import.meta.url), "utf8"),
       readFile(new URL("../../src/app/api/recurring/[recurringEntryId]/route.ts", import.meta.url), "utf8"),
       readFile(new URL("../../src/app/api/recurring/[recurringEntryId]/versions/route.ts", import.meta.url), "utf8"),
+      readFile(new URL("../../src/app/api/recurring/[recurringEntryId]/versions/[versionId]/route.ts", import.meta.url), "utf8"),
     ]);
 
   assert.match(serviceSource, /listRecurringEntries\([\s\S]*db: DbExecutor = getDb\(\)/);
@@ -201,10 +209,13 @@ test("recurring services and API callers use the explicit transaction executor",
   assert.match(serviceSource, /createRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(serviceSource, /updateRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(serviceSource, /deleteRecurringEntry\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /updateRecurringEntryVersion\([\s\S]*db: DbExecutor = getDb\(\)/);
+  assert.match(serviceSource, /deleteRecurringEntryVersion\([\s\S]*db: DbExecutor = getDb\(\)/);
   assert.match(routeSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
   assert.match(generateRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
   assert.match(detailRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
   assert.match(versionRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
+  assert.match(versionDetailRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
 });
 
 test("reporting reads and callers use the explicit transaction executor", async () => {

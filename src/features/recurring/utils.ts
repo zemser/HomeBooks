@@ -25,6 +25,22 @@ export function previousMonthString(value: string) {
   return monthKey(addMonths(new Date(`${normalizeMonthString(value)}T00:00:00.000Z`), -1));
 }
 
+export function nextMonthString(value: string = currentMonthString()) {
+  return monthKey(addMonths(new Date(`${normalizeMonthString(value)}T00:00:00.000Z`), 1));
+}
+
+export function earlierMonthString(...values: Array<string | null | undefined>) {
+  const months = values
+    .filter((value): value is string => Boolean(value))
+    .map((value) => normalizeMonthString(value));
+
+  if (months.length === 0) {
+    return null;
+  }
+
+  return months.reduce((earliest, month) => (month < earliest ? month : earliest));
+}
+
 export function listMonthStringsBetween(startMonth: string, endMonth: string) {
   return listMonthsBetween(
     new Date(`${normalizeMonthString(startMonth)}T00:00:00.000Z`),

@@ -23,6 +23,7 @@ const updateSchema = z.object({
   category: z.string().trim().optional().nullable(),
   categoryId: z.string().uuid().optional().nullable(),
   active: z.boolean(),
+  effectiveStartMonth: z.string().trim().min(1).optional(),
 });
 
 type RouteProps = {

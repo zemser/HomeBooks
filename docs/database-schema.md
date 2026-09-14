@@ -485,6 +485,8 @@ Constraint:
 
 - versions for the same recurring entry must not overlap in effective month range
 
+Amount periods live on this table. The current amount is edited on the rule and rematerializes that period. Adding a future version is a later price change; past months stay. Identity fields and Starts stay on `manual_recurring_expenses`.
+
 ### `manual_entries`
 
 One-off or generated manual records that feed reporting.

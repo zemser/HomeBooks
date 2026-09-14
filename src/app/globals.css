@@ -1313,6 +1313,26 @@ select.input:focus {
   background: rgba(39, 93, 76, 0.08);
 }
 
+.table-row-just-saved {
+  animation: row-saved 420ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes row-saved {
+  from {
+    background: #e8f5ee;
+  }
+  to {
+    background: rgba(39, 93, 76, 0.08);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .table-row-just-saved {
+    animation: none;
+    background: rgba(39, 93, 76, 0.08);
+  }
+}
+
 .table-row-interactive {
   cursor: pointer;
 }
@@ -2627,6 +2647,11 @@ kbd {
   align-items: flex-start;
   justify-content: space-between;
   margin-bottom: 0.75rem;
+}
+
+.home-card-header p {
+  margin: 0.35rem 0 0;
+  max-width: 38rem;
 }
 
 @media (max-width: 640px) {
