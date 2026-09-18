@@ -688,7 +688,7 @@ The MVP is useful if a household can:
 
 Still needed for the fuller vision:
 
-- handle foreign-currency expenses in reporting beyond placeholder rates
+- Max FX labeling and settlement conversion: implement `docs/max-fx-normalization-spec.md` (stop 1:1 USD/EUR→ILS, infer original currency, seed monthly averages). Live rate refresh and recurring real rates stay later
 - expand shared settlements beyond pairwise v1 and add reimbursement-ledger history
 - dogfood more real investment export files and tighten provider-specific mapping where real files expose gaps
 

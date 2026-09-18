@@ -55,6 +55,7 @@ This is the source-of-truth guard against accidental direct pushes to `master`.
 - general information: `docs/general-information.md`
 - implementation sequencing and progress: `docs/implementation-plan.md`
 - focused budgeting experience and reporting requirements: `docs/focused-budgeting-experience-spec.md`
+- Max import FX labeling and monthly-average settlement conversion: `docs/max-fx-normalization-spec.md`
 - implemented schema reference: `docs/schema-reference.md`
 - agent operational notes: `AGENT.md`
 
