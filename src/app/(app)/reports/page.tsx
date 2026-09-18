@@ -2,6 +2,14 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
+import { buildReportsHref } from "@/features/reporting/line-item-slice";
+import {
+  ReportDrilldown,
+  ReportIncludedLineItems,
+  ReportSliceControl,
+  ReportSliceInputs,
+  ReportsMonthLink,
+} from "@/features/reporting/report-drilldown";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import {
   getMonthlyReport,
@@ -20,12 +28,10 @@ import {
   type YearReportData,
 } from "@/features/reporting/monthly-report";
 import {
-  formatClassificationTypeLabel,
   formatMonthInputValue,
   formatReportMoney,
   formatReportMonthLabel,
   formatReportingModeLabel,
-  formatSourceKind,
   getMonthCompletenessPresentation,
   getMonthCompletenessProgressCopy,
 } from "@/features/reporting/presentation";
@@ -37,23 +43,13 @@ type ReportsPageProps = {
     month?: string | string[];
     mode?: string | string[];
     view?: string | string[];
+    kind?: string | string[];
+    member?: string | string[];
+    category?: string | string[];
   }>;
 };
 
 type ReportsView = "month" | "year";
-
-function buildReportsHref(
-  view: ReportsView,
-  month: string,
-  mode: ReportingViewMode,
-) {
-  const params = new URLSearchParams({
-    view,
-    month: month.slice(0, 7),
-    mode,
-  });
-  return `/reports?${params.toString()}`;
-}
 
 function buildYearExportHref(
   kind: "year_summary" | "category_detail" | "workbook",
@@ -79,13 +75,14 @@ function ReportViewSwitch({
 }) {
   return (
     <nav className="report-view-switch" aria-label="Report view">
-      <Link
+      <ReportsMonthLink
         className={`button ${view === "month" ? "" : "button-secondary"}`}
-        href={buildReportsHref("month", month, mode)}
-        aria-current={view === "month" ? "page" : undefined}
+        month={month}
+        mode={mode}
+        current={view === "month"}
       >
         Month
-      </Link>
+      </ReportsMonthLink>
       <Link
         className={`button ${view === "year" ? "" : "button-secondary"}`}
         href={buildReportsHref("year", month, mode)}
@@ -95,10 +92,6 @@ function ReportViewSwitch({
       </Link>
     </nav>
   );
-}
-
-function formatFxAmount(amount: number | null, currency: string | null) {
-  return amount === null || currency === null ? null : formatReportMoney(amount, currency);
 }
 
 function PeriodSummarySection({
@@ -197,6 +190,7 @@ function AdvancedMonthlyReporting({
       <div className="stack">
         <form className="inline-form report-controls-form" method="GET">
           <input type="hidden" name="view" value="month" />
+          <ReportSliceInputs />
           <input
             type="hidden"
             name="month"
@@ -509,13 +503,12 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
       workspaceCurrency: item.workspaceCurrency,
     }).usesPlaceholderRate;
   }).length;
-  const showFxColumn = fxLineItemCount > 0;
   const completeness = report.completeness;
   const completenessPresentation = getMonthCompletenessPresentation(completeness.status);
   const reportMonthLabel = formatReportMonthLabel(report.summary.selectedMonth);
 
   return (
-    <div className="stack" data-testid="reports-content">
+    <ReportDrilldown report={report}>
         <section className="card stack compact">
           <ReportViewSwitch
             view="month"
@@ -524,7 +517,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           />
           <div className="report-controls-header">
             <div>
-              <h2>{formatReportMonthLabel(report.summary.selectedMonth)}</h2>
+              <h2 id="report-summary" tabIndex={-1}>{formatReportMonthLabel(report.summary.selectedMonth)}</h2>
               <p className="muted-text">
                 {formatReportingModeLabel(report.summary.reportingMode)} view.
                 {" "}
@@ -535,6 +528,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
             </div>
             <form className="inline-form report-controls-form" method="GET">
               <input type="hidden" name="view" value="month" />
+              <ReportSliceInputs />
               <input type="hidden" name="mode" value={report.summary.reportingMode} />
               <label className="field">
                 <span>Selected month</span>
@@ -580,12 +574,16 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           ) : null}
           <div className="summary-strip">
             <div>
-              <strong>{formatReportMoney(report.summary.incomeTotal, report.summary.workspaceCurrency)}</strong>
-              <span>Income</span>
+              <ReportSliceControl slice={{ kind: "income" }} selectable={report.summary.incomeTotal !== 0}>
+                <strong>{formatReportMoney(report.summary.incomeTotal, report.summary.workspaceCurrency)}</strong>
+                <span>Income</span>
+              </ReportSliceControl>
             </div>
             <div>
-              <strong>{formatReportMoney(report.summary.expenseTotal, report.summary.workspaceCurrency)}</strong>
-              <span>Total spent</span>
+              <ReportSliceControl slice={{ kind: "expense" }} selectable={report.summary.expenseTotal !== 0}>
+                <strong>{formatReportMoney(report.summary.expenseTotal, report.summary.workspaceCurrency)}</strong>
+                <span>Total spent</span>
+              </ReportSliceControl>
             </div>
             <div>
               <strong>{formatReportMoney(report.summary.savingsTotal, report.summary.workspaceCurrency)}</strong>
@@ -612,10 +610,18 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           <div className="summary-strip">
             {report.spendingScopes.map((scope) => (
               <div key={scope.key}>
-                <strong>
-                  {formatReportMoney(scope.expenseTotal, report.summary.workspaceCurrency)}
-                </strong>
-                <span>{scope.label} · {scope.itemCount} item{scope.itemCount === 1 ? "" : "s"}</span>
+                <ReportSliceControl
+                  slice={{
+                    kind: scope.scope,
+                    memberId: scope.scope === "personal" ? scope.memberId ?? "unassigned" : undefined,
+                  }}
+                  selectable={scope.itemCount > 0}
+                >
+                  <strong>
+                    {formatReportMoney(scope.expenseTotal, report.summary.workspaceCurrency)}
+                  </strong>
+                  <span>{scope.label} · {scope.itemCount} item{scope.itemCount === 1 ? "" : "s"}</span>
+                </ReportSliceControl>
               </div>
             ))}
           </div>
@@ -644,16 +650,37 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
                   <tbody>
                     {report.categoryScopeBreakdown.map((item) => (
                       <tr key={item.categoryId ?? item.category}>
-                        <td>{item.category}</td>
+                        <td>
+                          <ReportSliceControl
+                            slice={{ kind: "expense", categoryId: item.categoryId ?? "uncategorized" }}
+                            selectable={item.itemCount > 0}
+                          >
+                            {item.category}
+                          </ReportSliceControl>
+                        </td>
                         {item.amounts.map((amount, index) => (
                           <td key={report.spendingScopes[index].key}>
-                            {formatReportMoney(amount.amount, report.summary.workspaceCurrency)}
+                            <ReportSliceControl
+                              slice={{
+                                kind: amount.scope,
+                                memberId: amount.scope === "personal" ? amount.memberId ?? "unassigned" : undefined,
+                                categoryId: item.categoryId ?? "uncategorized",
+                              }}
+                              selectable={amount.itemCount > 0}
+                              label={`${item.category} · ${report.spendingScopes[index].label}`}
+                            >
+                              {formatReportMoney(amount.amount, report.summary.workspaceCurrency)}
+                            </ReportSliceControl>
                           </td>
                         ))}
                         <td>
-                          <strong>
-                            {formatReportMoney(item.expenseTotal, report.summary.workspaceCurrency)}
-                          </strong>
+                          <ReportSliceControl
+                            slice={{ kind: "expense", categoryId: item.categoryId ?? "uncategorized" }}
+                            selectable={item.itemCount > 0}
+                            label={`${item.category} total`}
+                          >
+                            <strong>{formatReportMoney(item.expenseTotal, report.summary.workspaceCurrency)}</strong>
+                          </ReportSliceControl>
                         </td>
                       </tr>
                     ))}
@@ -663,17 +690,44 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
               <div className="scope-category-cards">
                 {report.categoryScopeBreakdown.map((item) => (
                   <article className="scope-category-card" key={item.categoryId ?? item.category}>
-                    <h3>{item.category}</h3>
+                    <h3>
+                      <ReportSliceControl
+                        slice={{ kind: "expense", categoryId: item.categoryId ?? "uncategorized" }}
+                        selectable={item.itemCount > 0}
+                      >
+                        {item.category}
+                      </ReportSliceControl>
+                    </h3>
                     <dl className="scope-category-list">
                       {item.amounts.map((amount, index) => (
                         <div key={report.spendingScopes[index].key}>
                           <dt>{report.spendingScopes[index].label}</dt>
-                          <dd>{formatReportMoney(amount.amount, report.summary.workspaceCurrency)}</dd>
+                          <dd>
+                            <ReportSliceControl
+                              slice={{
+                                kind: amount.scope,
+                                memberId: amount.scope === "personal" ? amount.memberId ?? "unassigned" : undefined,
+                                categoryId: item.categoryId ?? "uncategorized",
+                              }}
+                              selectable={amount.itemCount > 0}
+                              label={`${item.category} · ${report.spendingScopes[index].label}`}
+                            >
+                              {formatReportMoney(amount.amount, report.summary.workspaceCurrency)}
+                            </ReportSliceControl>
+                          </dd>
                         </div>
                       ))}
                       <div className="scope-category-total">
                         <dt>Total</dt>
-                        <dd>{formatReportMoney(item.expenseTotal, report.summary.workspaceCurrency)}</dd>
+                        <dd>
+                          <ReportSliceControl
+                            slice={{ kind: "expense", categoryId: item.categoryId ?? "uncategorized" }}
+                            selectable={item.itemCount > 0}
+                            label={`${item.category} total`}
+                          >
+                            {formatReportMoney(item.expenseTotal, report.summary.workspaceCurrency)}
+                          </ReportSliceControl>
+                        </dd>
                       </div>
                     </dl>
                   </article>
@@ -692,117 +746,22 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
             <div className="summary-strip">
               {report.memberIncome.map((income) => (
                 <div key={income.memberId ?? "unassigned"}>
-                  <strong>
-                    {formatReportMoney(income.incomeTotal, report.summary.workspaceCurrency)}
-                  </strong>
-                  <span>{income.memberName} · {income.itemCount} item{income.itemCount === 1 ? "" : "s"}</span>
+                  <ReportSliceControl
+                    slice={{ kind: "income", memberId: income.memberId ?? "unassigned" }}
+                    selectable={income.itemCount > 0}
+                  >
+                    <strong>
+                      {formatReportMoney(income.incomeTotal, report.summary.workspaceCurrency)}
+                    </strong>
+                    <span>{income.memberName} · {income.itemCount} item{income.itemCount === 1 ? "" : "s"}</span>
+                  </ReportSliceControl>
                 </div>
               ))}
             </div>
           </section>
         ) : null}
 
-        <section className="card">
-          <h2>Included line items</h2>
-          <p className="muted-text">
-            {report.summary.reportingMode === "allocated_period"
-              ? "Adjusted-period rows come from materialized allocations, so one source event can appear in multiple months once split coverage is introduced."
-              : "Recurring-generated and manual entries are shown alongside imported classified transactions so you can verify what fed the payment month."}
-          </p>
-
-          {report.lineItems.length === 0 ? (
-            <p className="empty-state">Nothing qualified for reporting in this month yet.</p>
-          ) : (
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>{report.summary.reportingMode === "allocated_period" ? "Report month" : "Date"}</th>
-                    <th>Title</th>
-                    <th>Source</th>
-                    <th>Type</th>
-                    <th>Category</th>
-                    <th>Member</th>
-                    <th>Amount</th>
-                    {showFxColumn ? <th>FX</th> : null}
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.lineItems.map((item) => {
-                    const fxState = item.fxDetails
-                      ? getCurrencyNormalizationDisplayState({
-                          ...item.fxDetails,
-                          workspaceCurrency: item.workspaceCurrency,
-                        })
-                      : null;
-                    const originalFxAmount = item.fxDetails
-                      ? formatFxAmount(
-                          item.fxDetails.originalAmount,
-                          item.fxDetails.originalCurrency,
-                        )
-                      : null;
-                    const settlementFxAmount = item.fxDetails
-                      ? formatFxAmount(
-                          item.fxDetails.settlementAmount,
-                          item.fxDetails.settlementCurrency,
-                        )
-                      : null;
-                    const showSettlementAmount =
-                      settlementFxAmount !== null && settlementFxAmount !== originalFxAmount;
-
-                    return (
-                      <tr key={item.id}>
-                        <td>{item.eventDate}</td>
-                        <td>{item.title}</td>
-                        <td>
-                          <span
-                            className={`badge ${item.sourceKind === "recurring_generated" ? "badge-warning" : "badge-neutral"}`}
-                          >
-                            {formatSourceKind(item.sourceKind)}
-                          </span>
-                        </td>
-                        <td>{formatClassificationTypeLabel(item.classificationType)}</td>
-                        <td>{item.category ?? "Uncategorized"}</td>
-                        <td>{item.memberName ?? "-"}</td>
-                        <td>{formatReportMoney(item.normalizedAmount, item.workspaceCurrency)}</td>
-                        {showFxColumn ? (
-                          <td>
-                            {fxState?.label ? (
-                              <div className="stack compact">
-                                <span
-                                  className={`badge ${
-                                    fxState.tone === "warning"
-                                      ? "badge-warning"
-                                      : "badge-neutral"
-                                  }`}
-                                >
-                                  {fxState.label}
-                                </span>
-                                {originalFxAmount ? (
-                                  <div className="table-note">Original {originalFxAmount}</div>
-                                ) : null}
-                                {showSettlementAmount ? (
-                                  <div className="table-note">
-                                    Settlement {settlementFxAmount}
-                                  </div>
-                                ) : null}
-                                {!originalFxAmount && !showSettlementAmount && fxState.shortDescription ? (
-                                  <div className="table-note">{fxState.shortDescription}</div>
-                                ) : null}
-                              </div>
-                            ) : (
-                              "-"
-                            )}
-                          </td>
-                        ) : null}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+        <ReportIncludedLineItems />
 
         <AdvancedMonthlyReporting
           report={report}
@@ -811,7 +770,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
           fxLineItemCount={fxLineItemCount}
           placeholderFxLineItemCount={placeholderFxLineItemCount}
         />
-    </div>
+    </ReportDrilldown>
   );
 }
 

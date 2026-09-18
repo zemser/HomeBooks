@@ -442,6 +442,8 @@ type MemberIncomeSummary = {
 
 ### Transaction drill-down
 
+Implementation source of truth: `docs/report-line-item-drilldown-spec.md`. Selection stays on Reports and filters Included line items. Do not send this question to History.
+
 Selecting any total or matrix cell reveals contributing items with:
 
 - date or report month

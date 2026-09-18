@@ -1464,6 +1464,70 @@ select.input:focus {
   color: var(--muted);
 }
 
+.report-slice-control {
+  appearance: none;
+  display: inline-block;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  padding: 0.5rem;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.summary-strip .report-slice-control {
+  width: 100%;
+  text-align: start;
+}
+
+.report-slice-control:hover,
+.report-slice-control[aria-pressed="true"] {
+  background: var(--surface);
+  border-color: var(--accent);
+}
+
+.report-slice-control[aria-pressed="true"] {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.report-slice-control:active,
+.home-category-link:active {
+  transform: scale(0.97);
+}
+
+.report-line-items-header,
+.report-slice-description {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.report-slice-description {
+  justify-content: flex-start;
+}
+
+#line-items,
+#report-summary {
+  scroll-margin-top: 1.5rem;
+}
+
+.home-category-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-slice-control:active,
+  .home-category-link:active {
+    transform: none;
+  }
+}
+
 .scope-category-cards {
   display: none;
 }

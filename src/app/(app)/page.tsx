@@ -1,3 +1,4 @@
+import { buildReportsHref } from "@/features/reporting/line-item-slice";
 import Link from "next/link";
 import { cache, Suspense } from "react";
 
@@ -158,7 +159,8 @@ async function HomeReporting({ searchParams }: HomePageProps) {
           <p className="empty-state">No reportable spending exists for this month yet.</p>
         ) : (
           reporting.topSpendingCategories.map((category) => (
-            <div className="activity-row" key={category.categoryId ?? category.category}>
+            <Link className="activity-row home-category-link" key={category.categoryId ?? category.category}
+              href={buildReportsHref("month", reporting.selectedMonth, "payment_date", { kind: "expense", categoryId: category.categoryId ?? "uncategorized" }, true)}>
               <div>
                 <strong>{category.category}</strong>
                 <p>{category.itemCount} item{category.itemCount === 1 ? "" : "s"}</p>
@@ -166,7 +168,7 @@ async function HomeReporting({ searchParams }: HomePageProps) {
               <strong>
                 {formatReportMoney(category.expenseTotal, reporting.workspaceCurrency)}
               </strong>
-            </div>
+            </Link>
           ))
         )}
       </section>
