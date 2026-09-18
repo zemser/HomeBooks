@@ -17,6 +17,7 @@ import type {
   InvestmentPreviewParser,
   InvestmentPreviewResult,
 } from "@/features/investments/types";
+import { formatMoneyWithCurrency } from "@/lib/money/format";
 import {
   extractTimestampText,
   findMatchingHeaderRowIndex,
@@ -337,7 +338,7 @@ function buildActivityNotes(input: {
   const notes: string[] = [];
 
   if (input.commission !== null && Math.abs(input.commission) > 0.000001) {
-    notes.push(`Commission: ${input.commission.toFixed(2)} ILS`);
+    notes.push(`Commission: ${formatMoneyWithCurrency(input.commission, "ILS")}`);
   }
 
   if (input.usedHeuristic && input.rawAssetName !== cleanActivityAssetName(input.rawAssetName)) {

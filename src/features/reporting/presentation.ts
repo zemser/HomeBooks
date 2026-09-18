@@ -4,6 +4,7 @@ import type {
   MonthCompletenessStatus,
   ReportingViewMode,
 } from "@/features/reporting/monthly-report";
+import { formatMoneyWithCurrency } from "@/lib/money/format";
 
 const MONTH_COMPLETENESS_PRESENTATION = {
   empty: { label: "Empty", tone: "neutral" },
@@ -77,7 +78,7 @@ export function formatReportMonthLabel(value: string) {
 }
 
 export function formatReportMoney(amount: number, currency: string) {
-  return `${amount.toFixed(2)} ${currency}`;
+  return formatMoneyWithCurrency(amount, currency);
 }
 
 export function formatSourceKind(value: "imported_transaction" | "one_time_manual" | "recurring_generated") {
