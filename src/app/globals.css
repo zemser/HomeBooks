@@ -1473,9 +1473,14 @@ select.input:focus {
   color: inherit;
   font: inherit;
   text-align: inherit;
-  padding: 0.5rem;
-  min-height: 44px;
+  padding: 0.15rem 0.3rem;
   cursor: pointer;
+}
+
+.summary-strip .report-slice-control,
+.scope-category-card .report-slice-control {
+  min-height: 44px;
+  padding: 0.5rem;
 }
 
 .summary-strip .report-slice-control {
@@ -1525,6 +1530,10 @@ select.input:focus {
   .report-slice-control:active,
   .home-category-link:active {
     transform: none;
+  }
+
+  .activity-row.home-category-link {
+    transition: none;
   }
 }
 
@@ -2649,6 +2658,17 @@ kbd {
 .activity-row:last-child {
   padding-bottom: 0;
   border-bottom: 0;
+}
+
+.activity-row.home-category-link {
+  border-radius: 0.75rem;
+  margin-inline: -0.5rem;
+  padding-inline: 0.5rem;
+  transition: background 140ms ease;
+}
+
+.activity-row.home-category-link:hover {
+  background: var(--accent-soft);
 }
 
 .review-import-row {

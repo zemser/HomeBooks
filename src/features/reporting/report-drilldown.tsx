@@ -31,6 +31,10 @@ function focusAndScroll(element: HTMLElement | null) {
   element?.scrollIntoView({ block: "start", behavior: "instant" });
 }
 
+function isFormFieldTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest("input, select, textarea"));
+}
+
 export function ReportDrilldown({ report, children }: { report: MonthlyReportData; children: ReactNode }) {
   const searchParams = useSearchParams();
   const state = parseReportLineItemSlice(new URLSearchParams(searchParams.toString()), report.sliceMetadata);
@@ -77,7 +81,7 @@ export function ReportDrilldown({ report, children }: { report: MonthlyReportDat
       },
     }}>
       <div className="stack" data-testid="reports-content" onKeyDown={(event) => {
-        if (event.key === "Escape" && state.status !== "none") {
+        if (event.key === "Escape" && state.status !== "none" && !isFormFieldTarget(event.target)) {
           event.preventDefault();
           clear();
         }
