@@ -8,6 +8,7 @@ import {
   manualEntries,
   transactionClassifications,
   transactions,
+  workspaceCategories,
 } from "@/db/schema";
 import type { ClassificationType } from "@/features/expenses/constants";
 import {
@@ -124,6 +125,8 @@ export type MonthlyReportLineItem = {
   id: string;
   sourceKind: "imported_transaction" | "one_time_manual" | "recurring_generated";
   sourceRecordId: string | null;
+  sourceEventDate: string | null;
+  sourceNormalizedAmount: number | null;
   title: string;
   eventDate: string;
   direction: ReportDirection;
@@ -131,6 +134,8 @@ export type MonthlyReportLineItem = {
   workspaceCurrency: string;
   classificationType: ClassificationType;
   category: string | null;
+  categoryId: string | null;
+  memberId: string | null;
   memberName: string | null;
   personalOwnerName: string | null;
   paidByName: string | null;
@@ -145,6 +150,7 @@ export type MonthlyReportLineItem = {
 };
 
 export type MonthlyReportData = {
+  sliceMetadata: { members: ReportMember[]; categories: { id: string; name: string }[] };
   summary: MonthlyReportSummary;
   completeness: MonthCompleteness;
   spendingScopes: SpendingScopeSummary[];
@@ -245,6 +251,8 @@ type ReportRecord = {
   id: string;
   sourceKind: MonthlyReportLineItem["sourceKind"];
   sourceRecordId: string | null;
+  sourceEventDate: string | null;
+  sourceNormalizedAmount: number | null;
   title: string;
   eventDate: string;
   direction: ReportDirection;
@@ -1060,6 +1068,8 @@ async function listPaymentDateReportRecordsForRange(
       id: transaction.id,
       sourceKind: "imported_transaction" as const,
       sourceRecordId: transaction.id,
+      sourceEventDate: transaction.transactionDate,
+      sourceNormalizedAmount: toNumber(transaction.normalizedAmount),
       title: transaction.merchantRaw?.trim() || transaction.description,
       eventDate: transaction.transactionDate,
       direction: normalizeImportedDirection(transaction.classificationType),
@@ -1095,6 +1105,8 @@ async function listPaymentDateReportRecordsForRange(
       id: entry.id,
       sourceKind: entry.sourceType,
       sourceRecordId: entry.id,
+      sourceEventDate: entry.eventDate,
+      sourceNormalizedAmount: toNumber(entry.normalizedAmount),
       title: entry.title,
       eventDate: entry.eventDate,
       direction: entry.eventKind,
@@ -1133,6 +1145,10 @@ async function listAllocatedPeriodReportRecordsForRange(
       sourceId: expenseEvents.sourceId,
       sourceType: expenseEvents.sourceType,
       reportMonth: expenseAllocations.reportMonth,
+      transactionDate: transactions.transactionDate,
+      transactionAmount: transactions.normalizedAmount,
+      manualEventDate: manualEntries.eventDate,
+      manualAmount: manualEntries.normalizedAmount,
       allocatedAmount: expenseAllocations.allocatedAmount,
       eventKind: expenseEvents.eventKind,
       title: expenseEvents.title,
@@ -1158,6 +1174,14 @@ async function listAllocatedPeriodReportRecordsForRange(
         eq(transactions.id, expenseEvents.sourceId),
       ),
     )
+    .leftJoin(
+      manualEntries,
+      and(
+        ne(expenseEvents.sourceType, "transaction"),
+        eq(manualEntries.workspaceId, context.workspaceId),
+        eq(manualEntries.id, expenseEvents.sourceId),
+      ),
+    )
     .where(
       and(
         eq(expenseEvents.workspaceId, context.workspaceId),
@@ -1175,11 +1199,14 @@ async function listAllocatedPeriodReportRecordsForRange(
         paidByMemberId: row.payerMemberId,
         receivedByMemberId: row.receivedByMemberId,
       };
+      const sourceAmount = row.sourceType === "transaction" ? row.transactionAmount : row.manualAmount;
 
       return {
       id: row.id,
       sourceKind: expenseEventSourceToLineItemSourceKind(row.sourceType),
       sourceRecordId: row.sourceId,
+      sourceEventDate: row.sourceType === "transaction" ? row.transactionDate : row.manualEventDate,
+      sourceNormalizedAmount: sourceAmount === null ? null : toNumber(sourceAmount),
       title: row.title,
       eventDate: row.reportMonth,
       direction: row.eventKind,
@@ -1235,10 +1262,13 @@ export async function getMonthlyReport(
   const selectedMonth = normalizeMonthInput(input?.month);
   const reportingMode = normalizeReportingModeInput(input?.mode);
 
-  const [members, allRecords, completeness] = await Promise.all([
+  const [members, allRecords, completeness, categories] = await Promise.all([
     getReportMembers(context, db),
     listReportRecordsForRange(context, selectedMonth, selectedMonth, reportingMode, db),
     getMonthCompleteness(context, { month: selectedMonth }, db),
+    db.select({ id: workspaceCategories.id, name: workspaceCategories.name })
+      .from(workspaceCategories)
+      .where(eq(workspaceCategories.workspaceId, context.workspaceId)),
   ]);
   const memberNames = new Map(members.map((member) => [member.id, member.displayName]));
   const spendingScopes = buildSpendingScopeSummaries(allRecords, members);
@@ -1268,6 +1298,7 @@ export async function getMonthlyReport(
       manualEntryCount: manualRecords.length,
     },
     completeness,
+    sliceMetadata: { members, categories },
     spendingScopes,
     categoryScopeBreakdown: buildCategoryScopeBreakdown(allRecords, spendingScopes),
     memberIncome: buildMemberIncomeSummaries(allRecords, members),
@@ -1277,6 +1308,8 @@ export async function getMonthlyReport(
       id: record.id,
       sourceKind: record.sourceKind,
       sourceRecordId: record.sourceRecordId,
+      sourceEventDate: record.sourceEventDate,
+      sourceNormalizedAmount: record.sourceNormalizedAmount,
       title: record.title,
       eventDate: record.eventDate,
       direction: record.direction,
@@ -1284,6 +1317,8 @@ export async function getMonthlyReport(
       workspaceCurrency: context.baseCurrency,
       classificationType: record.classificationType,
       category: record.category,
+      categoryId: record.categoryId,
+      memberId: record.memberId,
       memberName: formatLineItemMemberName(record, memberNames),
       personalOwnerName: record.personalOwnerMemberId
         ? memberNames.get(record.personalOwnerMemberId) ?? "Unknown member"
