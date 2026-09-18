@@ -55,7 +55,7 @@ async function HomeReporting({ searchParams }: HomePageProps) {
     <div className="stack" data-testid="home-content">
       <section className="card">
         <div className="report-controls-header">
-          <div>
+          <div className="home-month-intro">
             <span className="eyebrow">{reporting.workspaceName}</span>
             <h2>{monthLabel}</h2>
             <p className="muted-text">Choose the month you want to finish or understand.</p>
