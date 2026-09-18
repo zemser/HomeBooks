@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
+import { formatMoneyDisplay } from "@/features/expenses/presentation";
 import { ImportSourceCell } from "@/components/shared/import-source-cell";
 
 type PreviewTransaction = {
@@ -564,18 +565,28 @@ export function ImportPreviewClient({
                         <td>{transaction.merchantRaw}</td>
                         <td>{transaction.category ?? "-"}</td>
                         <td>
-                          {transaction.direction === "credit" ? "-" : ""}
-                          {transaction.originalAmount.toFixed(2)} {transaction.originalCurrency}
+                          {formatMoneyDisplay(
+                            transaction.originalAmount,
+                            transaction.originalCurrency,
+                            transaction.direction,
+                          )}
                         </td>
                         <td>
                           {transaction.settlementAmount
-                            ? `${transaction.direction === "credit" ? "-" : ""}${transaction.settlementAmount.toFixed(2)} ${transaction.settlementCurrency ?? transaction.originalCurrency}`
+                            ? formatMoneyDisplay(
+                                transaction.settlementAmount,
+                                transaction.settlementCurrency ?? transaction.originalCurrency,
+                                transaction.direction,
+                              )
                             : "-"}
                         </td>
                         <td>
                           <div className="stack compact">
                             <span>
-                              {transaction.normalizedAmount.toFixed(2)} {transaction.workspaceCurrency}
+                              {formatMoneyDisplay(
+                                transaction.normalizedAmount,
+                                transaction.workspaceCurrency,
+                              )}
                             </span>
                             {currencyState.label ? (
                               <>

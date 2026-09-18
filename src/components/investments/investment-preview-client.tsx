@@ -12,6 +12,7 @@ import type {
   PersistedInvestmentActivity,
 } from "@/features/investments/types";
 import type { WorkspaceMemberSettingsItem } from "@/features/workspaces/types";
+import { formatMoneyWithCurrency } from "@/lib/money/format";
 
 type InvestmentPreviewHolding = {
   assetName: string;
@@ -113,10 +114,7 @@ function formatMoneyValue(value: number | null | undefined, currency: string) {
     return "-";
   }
 
-  return `${formatNumberValue(value, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })} ${currency}`;
+  return formatMoneyWithCurrency(value, currency);
 }
 
 function formatSignedMoneyValue(value: number | null | undefined, currency: string) {
@@ -124,13 +122,7 @@ function formatSignedMoneyValue(value: number | null | undefined, currency: stri
     return "-";
   }
 
-  const formatted = new Intl.NumberFormat("en", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-    signDisplay: "exceptZero",
-  }).format(value);
-
-  return `${formatted} ${currency}`;
+  return formatMoneyWithCurrency(value, currency, { signDisplay: "exceptZero" });
 }
 
 function formatPercentValue(

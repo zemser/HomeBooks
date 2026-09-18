@@ -1294,6 +1294,7 @@ select.input:focus {
   text-align: left;
   vertical-align: top;
   font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .member-status-cell {
@@ -1435,6 +1436,8 @@ select.input:focus {
 .summary-strip strong {
   display: block;
   font-size: 1.4rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
 .summary-strip span {
@@ -1535,6 +1538,7 @@ select.input:focus {
 .year-report-table th,
 .year-report-table td {
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .report-controls-header > div {
@@ -2017,6 +2021,7 @@ kbd {
 
 .review-table {
   min-width: 52rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .review-table th:first-child,
@@ -2529,6 +2534,7 @@ kbd {
   justify-content: space-between;
   padding: 0.85rem 0;
   border-bottom: 1px solid rgba(230, 223, 210, 0.9);
+  font-variant-numeric: tabular-nums;
 }
 
 .info-row:last-child,

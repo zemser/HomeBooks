@@ -5,6 +5,7 @@ import type {
   TransactionClassificationState,
 } from "@/features/expenses/types";
 import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
+import { formatMoneyWithCurrency } from "@/lib/money/format";
 
 const CLASSIFICATION_LABELS: Record<ClassificationType, string> = {
   personal: "Personal",
@@ -147,7 +148,7 @@ export function formatMoneyDisplay(
 
   const signedAmount = direction === "credit" ? numericAmount * -1 : numericAmount;
 
-  return `${signedAmount.toFixed(2)} ${currency}`;
+  return formatMoneyWithCurrency(signedAmount, currency);
 }
 
 export function getTransactionMerchant(item: ExpenseTransactionItem) {
