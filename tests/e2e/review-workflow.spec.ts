@@ -81,13 +81,37 @@ test.describe("transaction review workflow", () => {
     await expect(page.locator('.review-table td[data-label="Suggestion"]')).toHaveCount(0);
   });
 
+  test("checking a row reviews that same row in the panel", async ({ page }) => {
+    const before = await loadReviewData(page);
+    test.skip(before.queue.length < 2, "The checkbox focus test needs two review rows.");
+
+    await page.goto("/transactions/review");
+    const firstId = before.queue[0]!.id;
+    const secondId = before.queue[1]!.id;
+    const currentRow = page.locator('[data-review-transaction-id][aria-current="true"]');
+    await expect(currentRow).toHaveAttribute("data-review-transaction-id", firstId);
+
+    const secondRow = page.locator(`[data-review-transaction-id="${secondId}"]`);
+    await secondRow.getByRole("checkbox").check();
+    await expect(currentRow).toHaveAttribute("data-review-transaction-id", secondId);
+    await expect(secondRow).toHaveClass(/table-row-active/);
+    await expect(secondRow).toHaveClass(/table-row-checked/);
+
+    const merchant = (await secondRow.locator('td[data-label="Merchant"] strong').innerText()).trim();
+    const panel = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "This transaction" }),
+    });
+    await expect(panel.getByText(merchant, { exact: true }).first()).toBeVisible();
+    await expect(panel.getByText(/This is 1 of 1 marked row/)).toBeVisible();
+  });
+
   test("review form infers payer from the account and only asks whose personal expense", async ({ page }) => {
     const before = await loadReviewData(page);
     test.skip(before.queue.length === 0, "The member-control test needs a review row.");
 
     await page.goto("/transactions/review");
     const panel = page.getByRole("article").filter({
-      has: page.getByRole("heading", { name: "Selected transaction" }),
+      has: page.getByRole("heading", { name: "This transaction" }),
     });
     await expect(panel).toBeVisible();
     const hasAccountOwner = Boolean(before.queue[0]?.accountOwnerMemberId);
@@ -141,7 +165,7 @@ test.describe("transaction review workflow", () => {
     const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
     const startingId = await activeRow.getAttribute("data-review-transaction-id");
 
-    await page.getByRole("heading", { name: "Selected transaction" }).click();
+    await page.getByRole("heading", { name: "This transaction" }).click();
     await page.getByRole("searchbox", { name: "Search" }).blur();
     await page.keyboard.press("1");
     await expect(page.getByRole("radio", { name: /Personal/ })).toBeChecked();
@@ -288,7 +312,7 @@ test.describe("transaction review workflow", () => {
       const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
       await expect(activeRow).toHaveAttribute("data-review-transaction-id", transaction.id);
 
-      await page.getByRole("heading", { name: "Selected transaction" }).click();
+      await page.getByRole("heading", { name: "This transaction" }).click();
       await page.getByRole("searchbox", { name: "Search" }).blur();
       await page.keyboard.press("5");
       await expect(page.getByRole("radio", { name: /Ignore/ })).toBeChecked();
@@ -633,7 +657,7 @@ test.describe("responsive review workflow", () => {
 
   test("mobile review does not overflow the viewport", async ({ page }) => {
     await page.goto("/transactions/review");
-    await expect(page.getByRole("heading", { name: "Selected transaction" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "This transaction" })).toBeVisible();
 
     const dimensions = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,

@@ -603,6 +603,7 @@ export function ReviewQueueClient({
         ? current.filter((value) => value !== transactionId)
         : [...current, transactionId],
     );
+    setSelectedTransactionId(transactionId);
   }
 
   function toggleAllVisible() {
@@ -1413,7 +1414,7 @@ export function ReviewQueueClient({
             <div>
               <h2>Review queue</h2>
               <p className="muted-text">
-                Choose a row to review it. Checkboxes are only for applying one decision to several rows.
+                The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.
               </p>
             </div>
           </div>
@@ -1421,21 +1422,21 @@ export function ReviewQueueClient({
           <div className="page-actions review-list-actions">
             {selectedIds.length > 0 ? (
               <div className="review-batch-bar" role="status">
-                <strong>{selectedIds.length} selected</strong>
+                <strong>{selectedIds.length} marked for batch</strong>
                 <div className="action-row">
                   <button className="button" type="button" onClick={() => openBulkClassification()}>
                     Classify selected
                   </button>
                   <button className="link-button" type="button" onClick={() => setSelectedIds([])}>
-                    Clear selection
+                    Clear marks
                   </button>
                 </div>
               </div>
             ) : (
               <div className="review-selection-prompt">
-                <p className="helper-text">Select rows to classify several transactions together.</p>
+                <p className="helper-text">Mark rows to classify several transactions together.</p>
                 <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
-                  Select all {visibleQueue.length} on this page
+                  Mark all {visibleQueue.length} on this page
                 </button>
               </div>
             )}
@@ -1571,7 +1572,7 @@ export function ReviewQueueClient({
                         type="checkbox"
                         checked={allVisibleSelected}
                         onChange={toggleAllVisible}
-                        aria-label="Select all visible rows"
+                        aria-label="Mark all visible rows for batch"
                       />
                     </th>
                     <th>Date</th>
@@ -1588,13 +1589,15 @@ export function ReviewQueueClient({
                     const description = transaction.description.trim();
                     const showDescription =
                       description.length > 0 && description.toLowerCase() !== merchant.trim().toLowerCase();
+                    const isCurrent = selectedTransactionId === transaction.id;
+                    const isMarked = selectedIds.includes(transaction.id);
 
                     return (
                       <tr
-                        className={`table-row-interactive ${selectedTransactionId === transaction.id ? "table-row-active" : ""}`}
+                        className={`table-row-interactive${isCurrent ? " table-row-active" : ""}${isMarked ? " table-row-checked" : ""}`}
                         data-review-transaction-id={transaction.id}
-                        tabIndex={selectedTransactionId === transaction.id ? 0 : -1}
-                        aria-current={selectedTransactionId === transaction.id ? "true" : undefined}
+                        tabIndex={isCurrent ? 0 : -1}
+                        aria-current={isCurrent ? "true" : undefined}
                         onClick={() => setSelectedTransactionId(transaction.id)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " ") {
@@ -1604,13 +1607,13 @@ export function ReviewQueueClient({
                         }}
                         key={transaction.id}
                       >
-                        <td className="checkbox-cell" data-label="Select">
+                        <td className="checkbox-cell" data-label="Mark">
                           <input
                             type="checkbox"
-                            checked={selectedIds.includes(transaction.id)}
+                            checked={isMarked}
                             onClick={(event) => event.stopPropagation()}
                             onChange={() => toggleSelectedTransaction(transaction.id)}
-                            aria-label={`Select ${merchant}`}
+                            aria-label={`Mark ${merchant} for batch`}
                           />
                         </td>
                         <td data-label="Date">{transaction.transactionDate}</td>
@@ -1691,17 +1694,17 @@ export function ReviewQueueClient({
         <article className="card review-detail">
           <div className="page-actions">
             <div>
-              <h2>Selected transaction</h2>
+              <span className="eyebrow">Reviewing</span>
+              <h2>This transaction</h2>
               <p className="muted-text">
-                Save one row at a time here. You can also open already-classified items from
-                History to correct them.
+                Classify this row here. Checkboxes only mark other rows for a batch.
               </p>
             </div>
           </div>
 
           {!selectedTransaction ? (
             <p className="empty-state">
-              Select a queue row to review it. If you came from History, the chosen
+              Choose a queue row to review it. If you came from History, the chosen
               transaction will appear here automatically.
             </p>
           ) : (
@@ -1710,6 +1713,14 @@ export function ReviewQueueClient({
                 <p className="status warning">
                   This transaction is already classified, so it is shown here as a focused
                   edit rather than as part of the default queue.
+                </p>
+              ) : null}
+
+              {selectedIds.length > 0 ? (
+                <p className="helper-text">
+                  {selectedIds.includes(selectedTransaction.id)
+                    ? `This is 1 of ${selectedIds.length} marked row${selectedIds.length === 1 ? "" : "s"}. Saving here classifies this row only.`
+                    : `You're reviewing this row. Classify selected applies to the ${selectedIds.length} marked row${selectedIds.length === 1 ? "" : "s"}.`}
                 </p>
               ) : null}
 
@@ -1932,7 +1943,7 @@ export function ReviewQueueClient({
                 {similarVisibleTransactionIds.length > 0 && selectedTransactionInQueue && !singleForm.applyToSimilar ? (
                   <button className="similar-transactions-action" type="button" onClick={selectSimilarTransactions}>
                     <span><strong>{similarVisibleTransactionIds.length} more</strong> transaction{similarVisibleTransactionIds.length === 1 ? "" : "s"} from this merchant</span>
-                    <span>Select and classify together →</span>
+                    <span>Mark and classify together →</span>
                   </button>
                 ) : null}
               </div>
