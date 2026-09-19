@@ -1314,6 +1314,10 @@ select.input:focus {
   background: rgba(39, 93, 76, 0.08);
 }
 
+.table-row-checked:not(.table-row-active) {
+  background: rgba(39, 93, 76, 0.035);
+}
+
 .table-row-just-saved {
   animation: row-saved 420ms cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -2130,6 +2134,14 @@ kbd {
   top: 9rem;
   max-height: calc(100vh - 10rem);
   overflow: auto;
+}
+
+.review-detail .eyebrow {
+  margin-bottom: 0.35rem;
+}
+
+.review-detail h2 {
+  margin: 0.2rem 0 0.4rem;
 }
 
 .review-table-wrap {
@@ -3017,6 +3029,10 @@ kbd {
   .review-table .table-row-active {
     border-color: var(--review-focus);
     box-shadow: inset 4px 0 var(--review-focus);
+  }
+
+  .review-table .table-row-checked:not(.table-row-active) {
+    background: rgba(39, 93, 76, 0.04);
   }
 
   .review-table td,

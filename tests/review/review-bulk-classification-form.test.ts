@@ -18,6 +18,18 @@ test("bulk Classify selected starts from an empty form instead of the last class
   assert.match(reviewQueue, /closeBulkClassification\(\);\s*removeReviewedTransactions/);
 });
 
+test("checking a review row also focuses it in the detail panel", async () => {
+  const reviewQueue = await source("src/components/expenses/review-queue-client.tsx");
+
+  assert.match(
+    reviewQueue,
+    /function toggleSelectedTransaction\(transactionId: string\) \{\s*setSelectedIds\([\s\S]*?\);\s*setSelectedTransactionId\(transactionId\);\s*\}/,
+  );
+  assert.match(reviewQueue, /<h2>This transaction<\/h2>/);
+  assert.match(reviewQueue, /table-row-checked/);
+  assert.doesNotMatch(reviewQueue, /Selected transaction/);
+});
+
 test("category combobox follows the controlled value when the selected row changes", async () => {
   const [combobox, reviewQueue] = await Promise.all([
     source("src/components/workspaces/category-combobox.tsx"),
