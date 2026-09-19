@@ -44,8 +44,7 @@ The current product loop is:
 
 ## Current caveats
 
-- foreign-currency rows are now explicitly labeled, but they are still normalized into the workspace currency using placeholder FX behavior
-- the app preserves original and settlement amounts, but full multicurrency reporting is not finished yet
+- foreign-currency Max charges use the ILS settlement when Max already billed shekels, or a seeded Bank of Israel monthly average when the card billed USD/EUR. Placeholder FX is only the missing-rate fallback, and those rows are excluded from totals until a month is seeded
 - investment composition is currently estimated from holding names when the source workbook does not expose a dedicated asset-type field
 - investment activity imports currently support the checked-in Excellence Excel export and stay local to `/investments`
 - provider action labels in that first activity pass are still mapped heuristically into buy, sell, dividend, cash, and tax-or-fee buckets

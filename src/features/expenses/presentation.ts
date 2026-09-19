@@ -5,7 +5,7 @@ import type {
   TransactionClassificationState,
 } from "@/features/expenses/types";
 import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
-import { formatMoneyWithCurrency } from "@/lib/money/format";
+import { formatMoneyNumber, formatMoneyWithCurrency } from "@/lib/money/format";
 
 const CLASSIFICATION_LABELS: Record<ClassificationType, string> = {
   personal: "Personal",
@@ -136,19 +136,25 @@ export function formatMoneyDisplay(
   currency: string | null | undefined,
   direction?: string,
 ) {
-  if (amount === null || amount === undefined || currency === null || currency === undefined) {
+  if (amount === null || amount === undefined) {
     return "-";
   }
 
   const numericAmount = Number(amount);
+  const currencyCode = currency?.trim() ?? "";
+  const hasCurrencyCode = currencyCode.length === 3;
 
   if (!Number.isFinite(numericAmount)) {
-    return `${amount} ${currency}`;
+    return hasCurrencyCode ? `${amount} ${currencyCode}` : String(amount);
   }
 
   const signedAmount = direction === "credit" ? numericAmount * -1 : numericAmount;
 
-  return formatMoneyWithCurrency(signedAmount, currency);
+  if (!hasCurrencyCode) {
+    return formatMoneyNumber(signedAmount);
+  }
+
+  return formatMoneyWithCurrency(signedAmount, currencyCode);
 }
 
 export function getTransactionMerchant(item: ExpenseTransactionItem) {

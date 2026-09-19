@@ -33,7 +33,7 @@ export type NormalizedBankTransaction = {
   merchantRaw: string;
   category?: string;
   originalAmount: number;
-  originalCurrency: string;
+  originalCurrency: string | null;
   settlementAmount?: number;
   settlementCurrency?: string;
   statementSection?: string;

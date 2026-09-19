@@ -21,6 +21,7 @@ import {
 } from "@/features/reporting/periods";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
+import { isReportableFxNormalizedSpend } from "@/features/currency/recompute-imported-fx";
 import {
   addMonths,
   listMonthsBetween,
@@ -50,6 +51,7 @@ export type MonthCompletenessStatus = "empty" | "in_progress" | "complete";
 export type MonthCompleteness = {
   pendingOutflowTotal?: number;
   unresolvedAttributionCount?: number;
+  placeholderFxTransactionCount?: number;
   month: string;
   status: MonthCompletenessStatus;
   importedTransactionCount: number;
@@ -378,10 +380,11 @@ export async function getMonthCompleteness(
       .select({
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
         reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
-        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit'), 0)::text`,
+        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit' and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%'), 0)::text`,
         unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
-        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income'))::int`,
-        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore'))::int`,
+        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%')::int`,
+        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore') or (${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%'))::int`,
+        placeholderFxTransactionCount: sql<number>`count(*) filter (where coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%' or coalesce(${transactions.normalizationRateSource}, '') like '%placeholder%')::int`,
       })
       .from(transactions)
       .leftJoin(
@@ -409,6 +412,7 @@ export async function getMonthCompleteness(
   return buildMonthCompleteness(selectedMonth, {
     pendingOutflowTotal: Number(transactionCounts?.pendingOutflowTotal ?? 0),
     unresolvedAttributionCount: Number(transactionCounts?.unresolvedAttributionCount ?? 0),
+    placeholderFxTransactionCount: Number(transactionCounts?.placeholderFxTransactionCount ?? 0),
     importedTransactionCount: Number(transactionCounts?.importedTransactionCount ?? 0),
     reviewedTransactionCount: Number(transactionCounts?.reviewedTransactionCount ?? 0),
     reportableTransactionCount: Number(transactionCounts?.reportableTransactionCount ?? 0),
@@ -460,10 +464,11 @@ async function getMonthCompletenessForMonths(
         month: transactionMonth,
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
         reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
-        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit'), 0)::text`,
+        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit' and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%'), 0)::text`,
         unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
-        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income'))::int`,
-        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore'))::int`,
+        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%')::int`,
+        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore') or (${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%'))::int`,
+        placeholderFxTransactionCount: sql<number>`count(*) filter (where coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%' or coalesce(${transactions.normalizationRateSource}, '') like '%placeholder%')::int`,
       })
       .from(transactions)
       .leftJoin(
@@ -504,6 +509,7 @@ async function getMonthCompletenessForMonths(
     return buildMonthCompleteness(month, {
       pendingOutflowTotal: Number(counts?.pendingOutflowTotal ?? 0),
       unresolvedAttributionCount: Number(counts?.unresolvedAttributionCount ?? 0),
+      placeholderFxTransactionCount: Number(counts?.placeholderFxTransactionCount ?? 0),
       importedTransactionCount: Number(counts?.importedTransactionCount ?? 0),
       reviewedTransactionCount: Number(counts?.reviewedTransactionCount ?? 0),
       reportableTransactionCount: Number(counts?.reportableTransactionCount ?? 0),
@@ -1057,14 +1063,17 @@ async function listPaymentDateReportRecordsForRange(
       ),
   ]);
 
-  const importedRecords: ReportRecord[] = importedTransactions.map((transaction) => {
+  const importedRecords: ReportRecord[] = importedTransactions.flatMap((transaction) => {
+    if (!isReportableFxNormalizedSpend(transaction)) {
+      return [];
+    }
     const attribution = {
       personalOwnerMemberId: transaction.personalOwnerMemberId,
       paidByMemberId: transaction.paidByMemberId,
       receivedByMemberId: transaction.receivedByMemberId,
     };
 
-    return {
+    return [{
       id: transaction.id,
       sourceKind: "imported_transaction" as const,
       sourceRecordId: transaction.id,
@@ -1091,7 +1100,7 @@ async function listPaymentDateReportRecordsForRange(
         settlementCurrency: transaction.settlementCurrency,
         normalizationRateSource: transaction.normalizationRateSource,
       },
-    };
+    }];
   });
 
   const manualRecords: ReportRecord[] = rangedManualEntries.map((entry) => {
@@ -1193,6 +1202,7 @@ async function listAllocatedPeriodReportRecordsForRange(
     );
 
   return allocatedRows
+    .filter((row) => row.sourceType !== "transaction" || isReportableFxNormalizedSpend(row))
     .map<ReportRecord>((row) => {
       const attribution = {
         personalOwnerMemberId: row.personalOwnerMemberId,

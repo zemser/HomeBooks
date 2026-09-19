@@ -530,9 +530,11 @@ Recommended model:
 
 Recommended calculation rule:
 
-- for reporting, use the monthly average exchange rate of the transaction month
-- store the original amount and currency
-- store the normalized amount used in reporting
+- reports always normalize from **settlement** into the workspace currency
+- if settlement is already the workspace currency, use that amount (`same-currency`). Original currency is inferred for Max ILS-billed FX and is display/audit only
+- if settlement is a foreign currency, use the seeded Bank of Israel monthly average for that month (`exchange-rate-monthly:seed-boi-monthly-average`)
+- if that monthly rate is missing, store `normalized_amount = 0` with source `missing-monthly-rate` and exclude the row from totals
+- original-currency inference for Max files compares the implied Max rate with the same seeded ILS monthly averages; it does not invent a reporting cross rate
 
 Why monthly average:
 

@@ -27,7 +27,7 @@ test("signed money keeps an explicit plus for gains", () => {
   assert.equal(formatMoneyWithCurrency(-55, "ILS", { signDisplay: "exceptZero" }), "-55.00 ILS");
 });
 
-test("missing money values stay as a dash", () => {
+test("missing money amounts stay as a dash, but a present amount without currency still shows", () => {
   assert.equal(formatMoneyDisplay(null, "ILS"), "-");
-  assert.equal(formatMoneyDisplay(55, null), "-");
+  assert.equal(formatMoneyDisplay(55, null), "55.00");
 });

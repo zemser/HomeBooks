@@ -2,7 +2,7 @@ import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
+import { parseBankWorkbookWithMonthlyRates } from "@/features/imports/parse-bank-workbook";
 import { analyzeParsedBankImport } from "@/features/imports/persistence";
 import { detectBankTemplate } from "@/features/imports/templates/detect";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
@@ -14,34 +14,19 @@ const requestSchema = z.object({
 });
 
 function buildPreviewWarnings(input: {
-  workspaceCurrency: string;
-  previewTransactions: Array<{ normalizationRateSource: string; settlementCurrency?: string }>;
+  previewTransactions: Array<{ normalizationRateSource: string }>;
 }): string[] {
-  const warnings: string[] = [];
-
-  if (
-    input.previewTransactions.some(
-      (transaction) =>
-        transaction.settlementCurrency &&
-        transaction.settlementCurrency !== input.workspaceCurrency,
-    )
-  ) {
-    warnings.push(
-      "Foreign-currency rows are still normalized into the workspace currency for now. Full multicurrency reporting is not finished yet.",
-    );
-  }
-
   if (
     input.previewTransactions.some((transaction) =>
-      transaction.normalizationRateSource.includes("placeholder"),
+      transaction.normalizationRateSource.includes("missing-monthly-rate"),
     )
   ) {
-    warnings.push(
-      "Rows marked Placeholder FX are still estimates in the workspace currency until historical FX support lands.",
-    );
+    return [
+      "Some rows are flagged Placeholder FX because a monthly average rate is missing. Those amounts are excluded from ILS totals until a rate exists.",
+    ];
   }
 
-  return warnings;
+  return [];
 }
 
 export async function POST(request: Request) {
@@ -77,14 +62,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = parseBankWorkbookToPreview({
-      workbook,
-      workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),
+    const { importPlan, members, result } = await withCurrentWorkspaceDb(async (context, db) => {
+      const result = await parseBankWorkbookWithMonthlyRates({
+        workbook,
+        workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),
+        db,
+      });
+
+      return {
+        result,
+        importPlan: await analyzeParsedBankImport({ context, parsed: result.parsed, db }),
+        members: await listWorkspaceMembersForSettings(context, db),
+      };
     });
-    const { importPlan, members } = await withCurrentWorkspaceDb(async (context, db) => ({
-      importPlan: await analyzeParsedBankImport({ context, parsed: result.parsed, db }),
-      members: await listWorkspaceMembersForSettings(context, db),
-    }));
 
     return NextResponse.json({
       detectedTemplate,
@@ -100,7 +90,6 @@ export async function POST(request: Request) {
       members: members.filter((member) => member.isActive).map((member) => ({ id: member.id, displayName: member.displayName })),
       previewTransactions: result.previewTransactions.slice(0, 50),
       warnings: buildPreviewWarnings({
-        workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),
         previewTransactions: result.previewTransactions,
       }),
     });

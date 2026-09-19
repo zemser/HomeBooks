@@ -4,10 +4,11 @@ import Link from "next/link";
 import type { MonthlyReportLineItem, ReportingViewMode } from "./monthly-report";
 import { buildReportHistoryHref } from "./line-item-slice";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
+import { formatMoneyDisplay } from "@/features/expenses/presentation";
 import { formatClassificationTypeLabel, formatReportMoney, formatSourceKind } from "./presentation";
 
 function formatFxAmount(amount: number | null, currency: string | null) {
-  return amount === null || currency === null ? null : formatReportMoney(amount, currency);
+  return amount === null ? null : formatMoneyDisplay(amount, currency);
 }
 
 export function ReportLineItemsTable({ items, mode }: { items: MonthlyReportLineItem[]; mode: ReportingViewMode }) {

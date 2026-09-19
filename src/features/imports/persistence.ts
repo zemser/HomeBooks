@@ -20,7 +20,13 @@ import {
   compatibilityMemberOwnerId,
 } from "@/features/expenses/payer";
 import { getSupportedBankImportCatalog } from "@/features/imports/catalog";
-import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
+import { parseBankWorkbookToPreview, collectWorkbookRateMonths } from "@/features/imports/parse-bank-workbook";
+import {
+  createMonthlyAverageNormalizer,
+  createRateLookupFromMap,
+  loadSeededMonthlyRates,
+} from "@/features/currency/monthly-rates";
+import { backfillImportedFxForWorkspace } from "@/features/currency/backfill-imported-fx";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import type {
   ParsedBankStatement,
@@ -99,6 +105,7 @@ export type SaveImportResult =
       duplicateTransactionCount: number;
       automaticRuleCount: number;
       importStatus: string;
+      updatedCount: number;
       duplicateOfImportId?: undefined;
     }
   | {
@@ -108,6 +115,7 @@ export type SaveImportResult =
       duplicateTransactionCount: number;
       automaticRuleCount: number;
       importStatus: string;
+      updatedCount: number;
       duplicateOfImportId: string;
     };
 
@@ -516,16 +524,31 @@ export async function persistBankImport(input: {
         duplicateTransactionCount: existingTransactionCount,
         automaticRuleCount: 0,
         importStatus: existingImport.importStatus,
+        updatedCount: 0,
       },
     };
   });
 
-  if (duplicateCheck?.duplicate) return duplicateCheck.duplicate;
+  if (duplicateCheck?.duplicate) {
+    const fxRepair = await withDbTransaction(input.context.userId, (db) =>
+      backfillImportedFxForWorkspace(input.context, db),
+    );
+    return { ...duplicateCheck.duplicate, updatedCount: fxRepair.updatedCount };
+  }
   const retryImport = duplicateCheck?.retryImport ?? null;
 
+  const yearMonths = collectWorkbookRateMonths(input.workbook);
+  const { fxRepair, rateMap } = await withDbTransaction(input.context.userId, async (db) => {
+    const fxRepair = await backfillImportedFxForWorkspace(input.context, db);
+    const rateMap = await loadSeededMonthlyRates(db, yearMonths);
+    return { fxRepair, rateMap };
+  });
+  const rates = createRateLookupFromMap(rateMap);
   const preview = parseBankWorkbookToPreview({
     workbook: input.workbook,
     workspaceCurrency: input.context.baseCurrency,
+    rates,
+    currencyNormalizer: createMonthlyAverageNormalizer(input.context.baseCurrency, rates),
   });
   const importPlan = await withDbTransaction(input.context.userId, (db) =>
     analyzeParsedBankImport({
@@ -750,6 +773,7 @@ export async function persistBankImport(input: {
       duplicateTransactionCount: importPlan.duplicateTransactionCount,
       automaticRuleCount: importPlan.automaticRuleCount,
       importStatus: "completed",
+      updatedCount: fxRepair.updatedCount,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Import persistence failed";
