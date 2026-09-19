@@ -1,9 +1,14 @@
+import type { CurrencyRateLookup } from "@/features/currency/monthly-rates";
 import type {
   ParsedBankTransaction,
   ParsedBankStatement,
   TabularRow,
   WorkbookData,
 } from "@/features/imports/types";
+import {
+  inferMaxSectionCurrency,
+  resolveMaxTransactionCurrencies,
+} from "@/features/imports/templates/max-fx";
 import {
   findFirstRowIndex,
   isEffectivelyEmptyRow,
@@ -14,33 +19,19 @@ import {
 
 const HEADER_TITLE = "תאריך\nעסקה";
 
-function inferSectionCurrency(sectionLabel: string | undefined): string {
-  if (!sectionLabel) {
-    return "ILS";
-  }
-
-  if (sectionLabel.includes("דולר")) {
-    return "USD";
-  }
-
-  if (sectionLabel.includes("יורו")) {
-    return "EUR";
-  }
-
-  return "ILS";
-}
-
 function parseTransactionRow(
   row: TabularRow,
   sectionName: string | undefined,
   sourceSheetName: string,
   sourceRowIndex: number,
+  rates?: CurrencyRateLookup,
 ): ParsedBankTransaction | undefined {
   const normalizedRow = normalizeRow(row);
   const transactionDate = parseDate(row[0]);
   const merchantRaw = normalizedRow[1];
   const originalAmount = parseNumber(row[2]);
   const settlementAmount = parseNumber(row[3]);
+  const transactionType = normalizedRow[4] || undefined;
   const category = normalizedRow[5] || undefined;
   const notes = normalizedRow[6] || undefined;
 
@@ -48,7 +39,17 @@ function parseTransactionRow(
     return undefined;
   }
 
-  const settlementCurrency = inferSectionCurrency(sectionName);
+  const absOriginalAmount = Math.abs(originalAmount);
+  const absSettlementAmount =
+    settlementAmount !== undefined ? Math.abs(settlementAmount) : absOriginalAmount;
+  const currencies = resolveMaxTransactionCurrencies({
+    originalAmount: absOriginalAmount,
+    settlementAmount: absSettlementAmount,
+    sectionCurrency: inferMaxSectionCurrency(sectionName),
+    transactionDate,
+    transactionType,
+    rates,
+  });
   const direction: "debit" | "credit" =
     (settlementAmount ?? originalAmount) < 0 ? "credit" : "debit";
 
@@ -57,10 +58,10 @@ function parseTransactionRow(
     description: merchantRaw,
     merchantRaw,
     category,
-    originalAmount: Math.abs(originalAmount),
-    originalCurrency: settlementCurrency,
-    settlementAmount: settlementAmount !== undefined ? Math.abs(settlementAmount) : undefined,
-    settlementCurrency,
+    originalAmount: absOriginalAmount,
+    originalCurrency: currencies.originalCurrency,
+    settlementAmount: settlementAmount !== undefined ? absSettlementAmount : undefined,
+    settlementCurrency: currencies.settlementCurrency,
     statementSection: sectionName,
     notes,
     sourceSheetName,
@@ -70,7 +71,10 @@ function parseTransactionRow(
   };
 }
 
-export function parseMaxWorkbook(workbook: WorkbookData): ParsedBankStatement {
+export function parseMaxWorkbook(
+  workbook: WorkbookData,
+  rates?: CurrencyRateLookup,
+): ParsedBankStatement {
   const sheet = workbook.sheets[0];
   const headerRowIndex = findFirstRowIndex(sheet.rows, (row) => row[0] === HEADER_TITLE);
 
@@ -103,7 +107,7 @@ export function parseMaxWorkbook(workbook: WorkbookData): ParsedBankStatement {
       continue;
     }
 
-    const parsed = parseTransactionRow(row, currentSectionName, sheet.name, i);
+    const parsed = parseTransactionRow(row, currentSectionName, sheet.name, i, rates);
     if (parsed) {
       transactions.push(parsed);
     }
@@ -116,3 +120,5 @@ export function parseMaxWorkbook(workbook: WorkbookData): ParsedBankStatement {
     transactions,
   };
 }
+
+export { inferMaxSectionCurrency, isMaxInstallmentType } from "@/features/imports/templates/max-fx";

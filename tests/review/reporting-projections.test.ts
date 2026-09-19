@@ -191,6 +191,9 @@ test("import projection persistence preserves duplicate, rollback, and Storage b
   assert.ok(importCompletion > projectionSync);
   assert.ok(storageCleanup > importCompletion);
   assert.match(source, /existingImport\.importStatus === "failed" && existingTransactionCount === 0/);
-  assert.match(source, /if \(duplicateCheck\?\.duplicate\) return duplicateCheck\.duplicate/);
+  assert.match(
+    source,
+    /if \(duplicateCheck\?\.duplicate\) \{[\s\S]*backfillImportedFxForWorkspace[\s\S]*return \{ \.\.\.duplicateCheck\.duplicate, updatedCount: fxRepair\.updatedCount \}/,
+  );
   assert.match(source, /catch \(error\) \{[\s\S]*importStatus: "failed"/);
 });

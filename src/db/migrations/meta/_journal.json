@@ -120,6 +120,13 @@
       "when": 1789316448082,
       "tag": "0016_shiny_clint_barton",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789830000000,
+      "tag": "0017_seed_boi_monthly_averages",
+      "breakpoints": true
     }
   ]
 }

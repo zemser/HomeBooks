@@ -209,20 +209,25 @@ function AdvancedMonthlyReporting({
           </div>
         </form>
 
-        {fxLineItemCount > 0 ? (
+        {placeholderFxLineItemCount > 0 ? (
           <section className="card">
             <div>
               <h2>FX transparency</h2>
               <p className="muted-text">
-                {placeholderFxLineItemCount > 0
-                  ? `${placeholderFxLineItemCount} imported line item${placeholderFxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} still use Placeholder FX. Full multicurrency reporting is not finished yet, so those amounts remain normalized into ${report.summary.workspaceCurrency}.`
-                  : `${fxLineItemCount} imported line item${fxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} came from foreign-currency activity. They are still shown in ${report.summary.workspaceCurrency} while full multicurrency reporting is unfinished.`}
+                {`${placeholderFxLineItemCount} imported line item${placeholderFxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} are flagged Placeholder FX. They are excluded from ${report.summary.workspaceCurrency} totals until a monthly rate exists.`}
               </p>
             </div>
           </section>
-        ) : (
-          <p className="muted-text">No foreign-currency details apply to this month.</p>
-        )}
+        ) : fxLineItemCount > 0 ? (
+          <section className="card">
+            <div>
+              <h2>FX transparency</h2>
+              <p className="muted-text">
+                {`${fxLineItemCount} imported line item${fxLineItemCount === 1 ? "" : "s"} in ${formatReportMonthLabel(report.summary.selectedMonth)} came from foreign-currency activity. ILS charges and monthly-average conversions are included in totals.`}
+              </p>
+            </div>
+          </section>
+        ) : null}
 
         <PeriodSummarySection
           title="Year to date"
@@ -483,6 +488,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
         }, db),
       ]),
   );
+  const completeness = report.completeness;
   const fxLineItemCount = report.lineItems.filter((item) => {
     if (!item.fxDetails) {
       return false;
@@ -493,17 +499,19 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
       workspaceCurrency: item.workspaceCurrency,
     }).label;
   }).length;
-  const placeholderFxLineItemCount = report.lineItems.filter((item) => {
-    if (!item.fxDetails) {
-      return false;
-    }
+  const placeholderFxLineItemCount = Math.max(
+    report.lineItems.filter((item) => {
+      if (!item.fxDetails) {
+        return false;
+      }
 
-    return getCurrencyNormalizationDisplayState({
-      ...item.fxDetails,
-      workspaceCurrency: item.workspaceCurrency,
-    }).usesPlaceholderRate;
-  }).length;
-  const completeness = report.completeness;
+      return getCurrencyNormalizationDisplayState({
+        ...item.fxDetails,
+        workspaceCurrency: item.workspaceCurrency,
+      }).usesPlaceholderRate;
+    }).length,
+    completeness.placeholderFxTransactionCount ?? 0,
+  );
   const completenessPresentation = getMonthCompletenessPresentation(completeness.status);
   const reportMonthLabel = formatReportMonthLabel(report.summary.selectedMonth);
 

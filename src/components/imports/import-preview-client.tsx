@@ -14,7 +14,7 @@ type PreviewTransaction = {
   merchantRaw: string;
   category?: string;
   originalAmount: number;
-  originalCurrency: string;
+  originalCurrency: string | null;
   settlementAmount?: number;
   settlementCurrency?: string;
   normalizedAmount: number;
@@ -73,6 +73,7 @@ type SaveOutcome = {
   transactionCount: number;
   duplicateTransactionCount: number;
   automaticRuleCount: number;
+  updatedCount: number;
 };
 
 type PendingSave = {
@@ -267,6 +268,7 @@ export function ImportPreviewClient({
         transactionCount?: number;
         duplicateTransactionCount?: number;
         automaticRuleCount?: number;
+        updatedCount?: number;
         message?: string;
         error?: string;
         import?: SavedImportSummary | null;
@@ -277,6 +279,7 @@ export function ImportPreviewClient({
         transactionCount: data.transactionCount ?? 0,
         duplicateTransactionCount: data.duplicateTransactionCount ?? 0,
         automaticRuleCount: data.automaticRuleCount ?? 0,
+        updatedCount: data.updatedCount ?? 0,
       });
 
       if (savedImport) {
@@ -338,13 +341,16 @@ export function ImportPreviewClient({
   const hasSavedOutcome = saveState === "saved" || saveState === "duplicate";
   const savedTransactionCount = saveOutcome?.transactionCount ?? highlightedImport?.transactionCount ?? 0;
   const savedReviewPendingCount = highlightedImport?.reviewPendingCount ?? 0;
+  const savedUpdatedCount = saveOutcome?.updatedCount ?? 0;
   const savedOutcomeTitle = saveState === "duplicate" ? "Already imported" : "Import saved";
   const savedOutcomeCopy =
     saveState === "duplicate"
       ? "This file is already in the workspace."
       : `${savedTransactionCount} new transaction${savedTransactionCount === 1 ? "" : "s"} imported.`;
   const savedOutcomeNextStep =
-    savedReviewPendingCount > 0
+    savedUpdatedCount > 0
+      ? `Updated ${savedUpdatedCount} older foreign charges with monthly rates.`
+      : savedReviewPendingCount > 0
       ? `${savedReviewPendingCount} need review before reports are complete.`
       : "Nothing from this import is waiting in the review queue.";
 

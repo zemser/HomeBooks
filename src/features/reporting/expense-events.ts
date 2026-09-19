@@ -20,6 +20,7 @@ import {
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
 import { addMonths, monthKey, startOfMonth } from "@/lib/dates/months";
 import { recordReportingProjection, withTelemetrySpan } from "@/lib/telemetry/server";
+import { isReportableFxNormalizedSpend } from "@/features/currency/recompute-imported-fx";
 
 type DbClient = ReturnType<typeof getDb>;
 type DbTransaction = Parameters<Parameters<DbClient["transaction"]>[0]>[0];
@@ -193,7 +194,7 @@ async function applyExpenseEventSync(
       : row.reportingMode;
     const shouldResetFixedSharedSplit = Boolean(
       primaryRow &&
-        row.sourceType === "manual" &&
+        (row.sourceType === "manual" || row.sourceType === "transaction") &&
         row.eventKind === "expense" &&
         row.classificationType === "shared" &&
         primaryRow.splitMode === "fixed" &&
@@ -419,6 +420,7 @@ export async function syncTransactionExpenseEvents(
         category: transactionClassifications.category,
         categoryId: transactionClassifications.categoryId,
         transactionDate: transactions.transactionDate,
+        normalizationRateSource: transactions.normalizationRateSource,
       })
       .from(transactions)
       .innerJoin(
@@ -439,7 +441,9 @@ export async function syncTransactionExpenseEvents(
     }),
   ]);
 
-  const activeRows: ActiveSourceRow[] = qualifiedTransactions.map((transaction) => ({
+  const activeRows: ActiveSourceRow[] = qualifiedTransactions
+    .filter((transaction) => isReportableFxNormalizedSpend(transaction))
+    .map((transaction) => ({
     sourceId: transaction.id,
     sourceType: "transaction",
     eventKind: classificationToEventKind(transaction.classificationType),

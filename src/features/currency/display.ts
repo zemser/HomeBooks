@@ -1,6 +1,9 @@
+import { formatMoneyNumber } from "@/lib/money/format";
+
 export type CurrencyNormalizationDisplayInput = {
   originalCurrency?: string | null;
   settlementCurrency?: string | null;
+  settlementAmount?: number | string | null;
   workspaceCurrency?: string | null;
   normalizationRateSource?: string | null;
 };
@@ -20,7 +23,8 @@ function normalizeCurrencyCode(value?: string | null) {
 }
 
 export function usesPlaceholderNormalizationRate(value?: string | null) {
-  return value?.trim().toLowerCase().includes("placeholder") ?? false;
+  const source = value?.trim().toLowerCase() ?? "";
+  return source.includes("placeholder") || source.includes("missing-monthly-rate");
 }
 
 export function getCurrencyNormalizationDisplayState(
@@ -33,50 +37,72 @@ export function getCurrencyNormalizationDisplayState(
   const isForeignCurrency = [originalCurrency, settlementCurrency].some(
     (currency) => currency && currency !== workspaceCurrency,
   );
-  const usesPlaceholderRate =
-    isForeignCurrency && usesPlaceholderNormalizationRate(input.normalizationRateSource);
-
-  if (usesPlaceholderRate) {
-    return {
-      isForeignCurrency,
-      usesPlaceholderRate,
-      label: "Placeholder FX",
-      tone: "warning",
-      shortDescription: `Shown in ${currencyFallback} with placeholder FX.`,
-      fullDescription: `This foreign-currency row is normalized into ${currencyFallback} with placeholder FX. Full multicurrency reporting is not finished yet.`,
-    };
-  }
+  const source = input.normalizationRateSource?.trim() ?? "";
+  const numericSettlementAmount = Number(input.settlementAmount);
+  const usesPlaceholderRate = usesPlaceholderNormalizationRate(source);
+  const settlementAmountLabel =
+    input.settlementAmount !== null &&
+    input.settlementAmount !== undefined &&
+    input.settlementAmount !== "" &&
+    Number.isFinite(numericSettlementAmount)
+      ? formatMoneyNumber(numericSettlementAmount)
+      : null;
 
   if (
     originalCurrency &&
     workspaceCurrency &&
     originalCurrency !== workspaceCurrency &&
-    settlementCurrency === workspaceCurrency
+    settlementCurrency === workspaceCurrency &&
+    !usesPlaceholderRate
   ) {
+    const settlementCopy = settlementAmountLabel
+      ? `${settlementAmountLabel} ${workspaceCurrency}`
+      : workspaceCurrency;
+
     return {
       isForeignCurrency,
-      usesPlaceholderRate,
+      usesPlaceholderRate: false,
       label: "Foreign settled",
       tone: "neutral",
-      shortDescription: `Original ${originalCurrency} charge, settled in ${workspaceCurrency}.`,
-      fullDescription: `This row started in ${originalCurrency} and settled in ${workspaceCurrency}. Reports still use the workspace-currency amount while full multicurrency reporting is unfinished.`,
+      shortDescription: `Original ${originalCurrency} charge, settled in ${workspaceCurrency}. Month totals use ${settlementCopy}.`,
+      fullDescription: `Original ${originalCurrency} charge, settled in ${workspaceCurrency}. Month totals use ${settlementCopy}.`,
     };
   }
 
-  if (isForeignCurrency) {
+  if (
+    settlementCurrency &&
+    workspaceCurrency &&
+    settlementCurrency !== workspaceCurrency &&
+    source.startsWith("exchange-rate-monthly")
+  ) {
+    const chargedCopy = settlementAmountLabel
+      ? `${settlementAmountLabel} ${settlementCurrency}`
+      : settlementCurrency;
+
     return {
       isForeignCurrency,
-      usesPlaceholderRate,
-      label: "Foreign currency",
+      usesPlaceholderRate: false,
+      label: "Converted",
       tone: "neutral",
-      shortDescription: `Shown in ${currencyFallback} for now.`,
-      fullDescription: `This row uses foreign currency but is shown in ${currencyFallback} for now. Full multicurrency reporting is not finished yet.`,
+      shortDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at monthly average.`,
+      fullDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at monthly average.`,
+    };
+  }
+
+  if (usesPlaceholderRate) {
+    return {
+      isForeignCurrency,
+      usesPlaceholderRate: true,
+      label: "Placeholder FX",
+      tone: "warning",
+      shortDescription: `Shown in ${currencyFallback} with placeholder FX.`,
+      fullDescription: `This row is waiting on a monthly average rate. It is flagged Placeholder FX and excluded from ${currencyFallback} totals until a rate exists.`,
     };
   }
 
   return {
     isForeignCurrency,
-    usesPlaceholderRate,
+    usesPlaceholderRate: false,
     label: null,
     tone: "neutral",
     shortDescription: null,

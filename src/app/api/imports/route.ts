@@ -70,6 +70,7 @@ export async function POST(request: Request) {
     revalidatePath("/transactions");
     revalidatePath("/transactions/review");
     revalidatePath("/transactions/all");
+    revalidatePath("/reports");
 
     return NextResponse.json(
       {

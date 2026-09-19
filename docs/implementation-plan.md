@@ -74,7 +74,7 @@ Completed in code:
   - stronger review-queue progress cues, including reviewed totals, remaining totals, and per-import “what is left” breakdowns
   - ledger filtering and search on `/expenses`, plus smoother deep links from review into ledger and month-specific reports
   - easier reopening of saved one-time manual entries from the expenses surface
-  - explicit FX transparency across imports, review, ledger, reports, and home follow-up cues so placeholder-normalized foreign rows are visibly labeled instead of silently blended into the workspace currency
+  - explicit FX transparency across imports, review, ledger, reports, and home follow-up cues. Max ILS charges keep their billed amount, USD/EUR settlements convert with seeded monthly averages, and Placeholder FX is only a missing-rate fallback
   - clearer queue-cleared handoff into month-aware reports from review, ledger, and `/`
 - investment snapshot persistence sidecar with:
   - dedicated `/investments` upload, preview, and save flow
@@ -688,7 +688,8 @@ The MVP is useful if a household can:
 
 Still needed for the fuller vision:
 
-- handle foreign-currency expenses in reporting beyond placeholder rates
+- Max FX labeling and settlement conversion from `docs/max-fx-normalization-spec.md`: ILS-settled originals are inferred, USD/EUR settlements convert with seeded monthly averages, and missing months stay Placeholder FX at 0
+  - remaining FX work is live rate refresh, recurring real rates, and seeding months after the last completed Bank of Israel monthly average
 - expand shared settlements beyond pairwise v1 and add reimbursement-ledger history
 - dogfood more real investment export files and tighten provider-specific mapping where real files expose gaps
 
