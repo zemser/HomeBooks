@@ -184,92 +184,6 @@ const emptyBulkForm: BulkFormState = {
   splitForSettlement: false,
 };
 
-const REVIEW_STACKED_LAYOUT = "(max-width: 960px)";
-
-function isStackedReviewLayout() {
-  return window.matchMedia(REVIEW_STACKED_LAYOUT).matches;
-}
-
-function BulkClassificationFields({
-  form,
-  onChange,
-  categories,
-  recentCategories,
-  members,
-  accountOwnerMemberId,
-  lockPayerToAccount,
-  hasDefinedCategories,
-  categoryIdForName,
-  onCreateCategory,
-  comboboxKey,
-}: {
-  form: BulkFormState;
-  onChange: (next: BulkFormState) => void;
-  categories: string[];
-  recentCategories: string[];
-  members: WorkspaceMemberOption[];
-  accountOwnerMemberId: string | null;
-  lockPayerToAccount: boolean;
-  hasDefinedCategories: boolean;
-  categoryIdForName: (name: string) => string;
-  onCreateCategory: (name: string) => Promise<string>;
-  comboboxKey: string;
-}) {
-  return (
-    <>
-      <ClassificationTypePicker
-        value={form.classificationType}
-        onChange={(classificationType) =>
-          onChange({
-            ...form,
-            classificationType,
-            ...memberAttributionForClassificationType(
-              classificationType,
-              form,
-              accountOwnerMemberId ?? "",
-            ),
-            splitForSettlement:
-              classificationType === "shared" ? form.splitForSettlement : false,
-          })
-        }
-        legend="Apply which treatment?"
-      />
-      {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(form.classificationType) ? (
-        <CategoryCombobox
-          key={comboboxKey}
-          categories={categories}
-          recentCategories={recentCategories}
-          value={form.category}
-          onChange={(category) => onChange({ ...form, category, categoryId: categoryIdForName(category) })}
-          blankLabel="Keep uncategorized"
-          onCreateCategory={onCreateCategory}
-        />
-      ) : null}
-      {form.classificationType ? (
-        <MemberAttributionFields
-          classificationType={form.classificationType}
-          value={form}
-          members={members}
-          accountOwnerMemberId={accountOwnerMemberId}
-          lockPayerToAccount={lockPayerToAccount}
-          onChange={(next) => onChange({ ...form, ...next })}
-        />
-      ) : null}
-      <SplitForSettlementField
-        classificationType={form.classificationType}
-        value={form.splitForSettlement}
-        canSplit={members.length >= 2}
-        onChange={(splitForSettlement) => onChange({ ...form, splitForSettlement })}
-      />
-      {!hasDefinedCategories ? (
-        <p className="helper-text">
-          Add categories in <Link href="/settings">settings</Link> before assigning one here.
-        </p>
-      ) : null}
-    </>
-  );
-}
-
 const emptyReviewSummary: ReviewQueueSummary = {
   totalTransactionCount: 0,
   reviewedCount: 0,
@@ -370,7 +284,6 @@ export function ReviewQueueClient({
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const reviewWorkspaceRef = useRef<HTMLElement>(null);
-  const reviewDetailRef = useRef<HTMLElement>(null);
   const filterDisclosureRef = useRef<HTMLDetailsElement>(null);
   const memberSelectRef = useRef<HTMLSelectElement>(null);
   const previousServerQueryRef = useRef<string | null>(null);
@@ -383,10 +296,9 @@ export function ReviewQueueClient({
 
   function focusReviewRow(transactionId: string) {
     window.requestAnimationFrame(() => {
-      const row = reviewWorkspaceRef.current
-        ?.querySelector<HTMLElement>(`[data-review-transaction-id="${transactionId}"]`);
-      row?.focus({ preventScroll: true });
-      row?.scrollIntoView({ block: "nearest", inline: "nearest" });
+      reviewWorkspaceRef.current
+        ?.querySelector<HTMLElement>(`[data-review-transaction-id="${transactionId}"]`)
+        ?.focus();
     });
   }
 
@@ -583,7 +495,6 @@ export function ReviewQueueClient({
   const allVisibleSelected =
     allQueueIds.length > 0 &&
     allQueueIds.every((transactionId) => selectedIds.includes(transactionId));
-  const isBatching = selectedIds.length >= 2;
   const hasDefinedCategories = categories.length > 0;
   const defaultImportId = summary.remainingByImport[0]?.importId ?? REVIEW_IMPORT_UNRESOLVED;
   const filtersActive = hasActiveReviewFilters(
@@ -687,34 +598,17 @@ export function ReviewQueueClient({
   }, [selectedTransaction]);
 
   function toggleSelectedTransaction(transactionId: string) {
-    setSelectedIds((current) => {
-      if (current.includes(transactionId)) {
-        const next = current.filter((value) => value !== transactionId);
-        if (next.length === 0) setBulkForm(emptyBulkForm);
-        return next;
-      }
-      if (current.length === 0) setBulkForm(emptyBulkForm);
-      return [...current, transactionId];
-    });
+    setSelectedIds((current) =>
+      current.includes(transactionId)
+        ? current.filter((value) => value !== transactionId)
+        : [...current, transactionId],
+    );
     setSelectedTransactionId(transactionId);
   }
 
   function toggleAllVisible() {
-    if (allVisibleSelected) {
-      setSelectedIds([]);
-      setBulkForm(emptyBulkForm);
-      return;
-    }
-    if (selectedIds.length === 0) setBulkForm(emptyBulkForm);
-    setSelectedIds(allQueueIds);
+    setSelectedIds(allVisibleSelected ? [] : allQueueIds);
   }
-
-  function clearMarks() {
-    setSelectedIds([]);
-    setBulkForm(emptyBulkForm);
-    closeBulkClassification();
-  }
-
 
   function clearFilters() {
     setSearchQuery(defaultReviewFilterState.searchQuery);
@@ -731,7 +625,6 @@ export function ReviewQueueClient({
     setImportFilter(importId);
     setPage(1);
     setSelectedIds([]);
-    setBulkForm(emptyBulkForm);
   }
 
   function removeReviewedTransactions(transactionIds: string[]) {
@@ -883,7 +776,8 @@ export function ReviewQueueClient({
     const matchingIds = visibleQueue
       .filter((transaction) => transaction.merchantRaw?.trim().toLocaleLowerCase() === normalized)
       .map((transaction) => transaction.id);
-    const prefill: BulkFormState = {
+    setSelectedIds(matchingIds);
+    openBulkClassification({
       classificationType: singleForm.classificationType,
       category: singleForm.category,
       categoryId: singleForm.categoryId,
@@ -891,13 +785,7 @@ export function ReviewQueueClient({
       paidByMemberId: singleForm.paidByMemberId,
       receivedByMemberId: singleForm.receivedByMemberId,
       splitForSettlement: singleForm.splitForSettlement,
-    };
-    setSelectedIds(matchingIds);
-    if (isStackedReviewLayout()) {
-      openBulkClassification(prefill);
-      return;
-    }
-    setBulkForm(prefill);
+    });
   }
 
   async function submitSingleClassification() {
@@ -1151,22 +1039,6 @@ export function ReviewQueueClient({
     )
     ? selectedQueueTransactions[0]?.accountOwnerMemberId ?? null
     : null;
-
-  function changeBulkClassificationType(classificationType: ClassificationType) {
-    setBulkForm((current) => ({
-      ...current,
-      classificationType,
-      category: ["transfer", "ignore"].includes(classificationType) ? "" : current.category,
-      categoryId: ["transfer", "ignore"].includes(classificationType) ? "" : current.categoryId,
-      ...memberAttributionForClassificationType(
-        classificationType,
-        current,
-        bulkAccountOwnerMemberId ?? "",
-      ),
-      splitForSettlement: classificationType === "shared" ? current.splitForSettlement : false,
-    }));
-  }
-
   const selectedQueuePosition =
     selectedTransactionInQueue && selectedTransaction && visibleQueue.some((transaction) => transaction.id === selectedTransaction.id)
       ? visibleQueue.findIndex((transaction) => transaction.id === selectedTransaction.id) + 1
@@ -1304,11 +1176,7 @@ export function ReviewQueueClient({
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         if (isTyping && !isInsideReviewDetail) return;
         event.preventDefault();
-        if (isBatching) {
-          if (!isSavingBulk && !isSubmittingBulk) startSavingBulk(() => void runBulkClassification());
-        } else if (!isSavingSingle && !isSubmittingSingle) {
-          startSavingSingle(() => void runSingleClassification());
-        }
+        if (!isSavingSingle && !isSubmittingSingle) startSavingSingle(() => void runSingleClassification());
         return;
       }
       if (isTyping) return;
@@ -1324,13 +1192,11 @@ export function ReviewQueueClient({
       } else if (/^[1-5]$/.test(event.key)) {
         event.preventDefault();
         const type = CLASSIFICATION_TYPES[Number(event.key) - 1];
-        if (!type) return;
-        if (isBatching) changeBulkClassificationType(type);
-        else changeSingleClassificationType(type);
+        if (type) changeSingleClassificationType(type);
       } else if (event.key.toLocaleLowerCase() === "c") {
         event.preventDefault();
         reviewWorkspaceRef.current?.querySelector<HTMLInputElement>(".review-detail .category-combobox input")?.focus();
-      } else if (event.key.toLocaleLowerCase() === "r" && merchantCanCreateRule && !isBatching) {
+      } else if (event.key.toLocaleLowerCase() === "r" && merchantCanCreateRule) {
         event.preventDefault();
         setSingleForm((current) => ({ ...current, createRule: !current.createRule }));
       } else if (event.key.toLocaleLowerCase() === "s" && nextTransactionId) {
@@ -1348,7 +1214,7 @@ export function ReviewQueueClient({
 
   return (
     <section className="stack review-workspace" ref={reviewWorkspaceRef}>
-      <article className="card stack compact review-scope">
+      <article className="card stack compact">
         <div className="review-scope-header">
           <div>
             <span className="eyebrow">{reviewHero.eyebrow}</span>
@@ -1433,7 +1299,6 @@ export function ReviewQueueClient({
         ) : null}
       </article>
 
-      <div className="review-board">
       <article className="card review-toolbar" aria-label="Review filters">
         <div className="review-view-tabs" role="group" aria-label="Review view">
           {([
@@ -1535,31 +1400,47 @@ export function ReviewQueueClient({
         </div>
       </article>
 
-      {error || message ? (
-        <div className="review-board-status stack compact">
-          {error ? <p className="status error" role="alert">{error}</p> : null}
-          {message ? (
-            <div className="status review-status-message" aria-live="polite">
-              <span>{message}</span>
-              {lastUndo ? <button className="link-button" type="button" disabled={isUndoing} onClick={() => void undoLastClassification()}>{isUndoing ? "Undoing…" : "Undo"}</button> : null}
-            </div>
-          ) : null}
+      {error ? <p className="status error" role="alert">{error}</p> : null}
+      {message ? (
+        <div className="status review-status-message" aria-live="polite">
+          <span>{message}</span>
+          {lastUndo ? <button className="link-button" type="button" disabled={isUndoing} onClick={() => void undoLastClassification()}>{isUndoing ? "Undoing…" : "Undo"}</button> : null}
         </div>
       ) : null}
 
       <section className="review-layout">
-        <article className={`card review-list${selectedIds.length > 0 ? " has-batch-dock" : ""}`}>
-          <h2 className="sr-only">Review queue</h2>
-          {selectedIds.length === 0 ? (
-            <div className="page-actions review-list-actions">
+        <article className="card review-list">
+          <div className="page-actions">
+            <div>
+              <h2>Review queue</h2>
+              <p className="muted-text">
+                The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.
+              </p>
+            </div>
+          </div>
+
+          <div className="page-actions review-list-actions">
+            {selectedIds.length > 0 ? (
+              <div className="review-batch-bar" role="status">
+                <strong>{selectedIds.length} marked for batch</strong>
+                <div className="action-row">
+                  <button className="button" type="button" onClick={() => openBulkClassification()}>
+                    Classify selected
+                  </button>
+                  <button className="link-button" type="button" onClick={() => setSelectedIds([])}>
+                    Clear marks
+                  </button>
+                </div>
+              </div>
+            ) : (
               <div className="review-selection-prompt">
-                <p className="helper-text">Click a row to classify it. Check several to do them together.</p>
+                <p className="helper-text">Mark rows to classify several transactions together.</p>
                 <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
                   Mark all {visibleQueue.length} on this page
                 </button>
               </div>
-            </div>
-          ) : null}
+            )}
+          </div>
 
           <Modal
             open={isBulkModalOpen}
@@ -1569,18 +1450,31 @@ export function ReviewQueueClient({
             allowContentOverflow
           >
             <div className="stack">
-              {isBulkModalOpen ? (
-                <BulkClassificationFields
-                  form={bulkForm}
-                  onChange={setBulkForm}
+              <ClassificationTypePicker
+                value={bulkForm.classificationType}
+                onChange={(classificationType) =>
+                  setBulkForm((current) => ({
+                    ...current,
+                    classificationType,
+                    ...memberAttributionForClassificationType(
+                      classificationType,
+                      current,
+                      bulkAccountOwnerMemberId ?? "",
+                    ),
+                    splitForSettlement:
+                      classificationType === "shared" ? current.splitForSettlement : false,
+                  }))
+                }
+                legend="Apply which treatment?"
+              />
+              {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(bulkForm.classificationType) ? (
+                <CategoryCombobox
+                  key={isBulkModalOpen ? "bulk-open" : "bulk-closed"}
                   categories={categories}
                   recentCategories={recentCategories}
-                  members={members}
-                  accountOwnerMemberId={bulkAccountOwnerMemberId}
-                  lockPayerToAccount={bulkLockPayerToAccount}
-                  hasDefinedCategories={hasDefinedCategories}
-                  categoryIdForName={categoryIdForName}
-                  comboboxKey="bulk-modal"
+                  value={bulkForm.category}
+                  onChange={(category) => setBulkForm((current) => ({ ...current, category, categoryId: categoryIdForName(category) }))}
+                  blankLabel="Keep uncategorized"
                   onCreateCategory={async (name) => {
                     const created = await createCategory(name);
                     setBulkForm((current) => ({ ...current, category: created.name, categoryId: created.id }));
@@ -1588,6 +1482,25 @@ export function ReviewQueueClient({
                   }}
                 />
               ) : null}
+              {bulkForm.classificationType ? (
+                <MemberAttributionFields
+                  classificationType={bulkForm.classificationType}
+                  value={bulkForm}
+                  members={members}
+                  accountOwnerMemberId={bulkAccountOwnerMemberId}
+                  lockPayerToAccount={bulkLockPayerToAccount}
+                  onChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
+                />
+              ) : null}
+              <SplitForSettlementField
+                classificationType={bulkForm.classificationType}
+                value={bulkForm.splitForSettlement}
+                canSplit={members.length >= 2}
+                onChange={(splitForSettlement) =>
+                  setBulkForm((current) => ({ ...current, splitForSettlement }))
+                }
+              />
+              {!hasDefinedCategories ? <p className="helper-text">Add categories in <Link href="/settings">settings</Link> before assigning one here.</p> : null}
               <div className="action-row">
                 <button className="button" type="button" disabled={isSavingBulk || isSubmittingBulk} onClick={() => startSavingBulk(() => void runBulkClassification())}>
                   {isSavingBulk || isSubmittingBulk ? "Applying..." : "Apply to selected"}
@@ -1776,105 +1689,20 @@ export function ReviewQueueClient({
               </button>
             </nav>
           ) : null}
-          {selectedIds.length > 0 ? (
-            <div className="review-batch-dock" role="status">
-              <strong>{selectedIds.length} marked</strong>
-              <div className="action-row">
-                <button className="button review-batch-dock-classify" type="button" onClick={() => openBulkClassification()}>
-                  Classify selected
-                </button>
-                <button className="link-button" type="button" onClick={clearMarks}>
-                  Clear marks
-                </button>
-              </div>
-            </div>
-          ) : null}
         </article>
 
-        <article
-          className={`card review-detail${isBatching ? " is-batching" : ""}`}
-          ref={reviewDetailRef}
-        >
+        <article className="card review-detail">
           <div className="page-actions">
             <div>
-              {isBatching ? (
-                <>
-                  <span className="eyebrow">Together</span>
-                  <h2>{selectedIds.length} transactions</h2>
-                  <p className="muted-text">
-                    One classification applies to every marked row.
-                  </p>
-                </>
-              ) : (
-                <>
-                  <span className="eyebrow">Reviewing</span>
-                  <h2>This transaction</h2>
-                  <p className="muted-text">
-                    Classify this row here. Check several rows to do them together.
-                  </p>
-                </>
-              )}
+              <span className="eyebrow">Reviewing</span>
+              <h2>This transaction</h2>
+              <p className="muted-text">
+                Classify this row here. Checkboxes only mark other rows for a batch.
+              </p>
             </div>
           </div>
 
-          <div className="review-detail-body">
-          {isBatching && isBulkModalOpen ? (
-            <p className="helper-text">
-              Classify these marked rows in the dialog. Saving there applies to every checked row.
-            </p>
-          ) : isBatching ? (
-            <div className="stack">
-              <ul className="review-batch-preview">
-                {selectedQueueTransactions.slice(0, 4).map((transaction) => (
-                  <li key={transaction.id}>
-                    <strong>{getTransactionMerchant(transaction)}</strong>
-                    {" · "}
-                    {formatMoneyDisplay(
-                      transaction.normalizedAmount,
-                      transaction.workspaceCurrency,
-                      transaction.direction,
-                    )}
-                  </li>
-                ))}
-                {selectedQueueTransactions.length > 4 ? (
-                  <li>{selectedQueueTransactions.length - 4} more</li>
-                ) : null}
-              </ul>
-              <BulkClassificationFields
-                form={bulkForm}
-                onChange={setBulkForm}
-                categories={categories}
-                recentCategories={recentCategories}
-                members={members}
-                accountOwnerMemberId={bulkAccountOwnerMemberId}
-                lockPayerToAccount={bulkLockPayerToAccount}
-                hasDefinedCategories={hasDefinedCategories}
-                categoryIdForName={categoryIdForName}
-                comboboxKey="bulk-panel"
-                onCreateCategory={async (name) => {
-                  const created = await createCategory(name);
-                  setBulkForm((current) => ({ ...current, category: created.name, categoryId: created.id }));
-                  return created.name;
-                }}
-              />
-              <div className="action-row review-decision-actions">
-                <button
-                  className="button"
-                  type="button"
-                  disabled={isSavingBulk || isSubmittingBulk}
-                  aria-busy={isSavingBulk || isSubmittingBulk}
-                  onClick={() => startSavingBulk(() => void runBulkClassification())}
-                >
-                  {isSavingBulk || isSubmittingBulk
-                    ? "Applying…"
-                    : `Apply to ${selectedIds.length} transactions  ⌘↵`}
-                </button>
-                <button className="link-button" type="button" onClick={clearMarks}>
-                  Just this row
-                </button>
-              </div>
-            </div>
-          ) : !selectedTransaction ? (
+          {!selectedTransaction ? (
             <p className="empty-state">
               Choose a queue row to review it. If you came from History, the chosen
               transaction will appear here automatically.
@@ -1888,9 +1716,11 @@ export function ReviewQueueClient({
                 </p>
               ) : null}
 
-              {selectedIds.length === 1 ? (
+              {selectedIds.length > 0 ? (
                 <p className="helper-text">
-                  Check more rows to classify them together in this panel.
+                  {selectedIds.includes(selectedTransaction.id)
+                    ? `This is 1 of ${selectedIds.length} marked row${selectedIds.length === 1 ? "" : "s"}. Saving here classifies this row only.`
+                    : `You're reviewing this row. Classify selected applies to the ${selectedIds.length} marked row${selectedIds.length === 1 ? "" : "s"}.`}
                 </p>
               ) : null}
 
@@ -1913,30 +1743,6 @@ export function ReviewQueueClient({
                     )}
                   </p>
                 </div>
-              </div>
-
-              <div className="stack compact">
-                <ClassificationTypePicker
-                  value={singleForm.classificationType}
-                  onChange={changeSingleClassificationType}
-                />
-
-                {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(singleForm.classificationType) ? (
-                  <CategoryCombobox
-                    key={selectedTransaction.id}
-                    categories={categories}
-                    recentCategories={recentCategories}
-                    suggestedCategory={selectedTransaction.suggestion?.category ?? null}
-                    value={singleForm.category}
-                    onChange={(category) => setSingleForm((current) => ({ ...current, category, categoryId: categoryIdForName(category) }))}
-                    blankLabel="Uncategorized"
-                    onCreateCategory={async (name) => {
-                      const created = await createCategory(name);
-                      setSingleForm((current) => ({ ...current, category: created.name, categoryId: created.id }));
-                      return created.name;
-                    }}
-                  />
-                ) : null}
               </div>
 
               <details className="disclosure">
@@ -2034,6 +1840,28 @@ export function ReviewQueueClient({
               ) : null}
 
               <div className="stack compact">
+                <ClassificationTypePicker
+                  value={singleForm.classificationType}
+                  onChange={changeSingleClassificationType}
+                />
+
+                {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(singleForm.classificationType) ? (
+                  <CategoryCombobox
+                    key={selectedTransaction.id}
+                    categories={categories}
+                    recentCategories={recentCategories}
+                    suggestedCategory={selectedTransaction.suggestion?.category ?? null}
+                    value={singleForm.category}
+                    onChange={(category) => setSingleForm((current) => ({ ...current, category, categoryId: categoryIdForName(category) }))}
+                    blankLabel="Uncategorized"
+                    onCreateCategory={async (name) => {
+                      const created = await createCategory(name);
+                      setSingleForm((current) => ({ ...current, category: created.name, categoryId: created.id }));
+                      return created.name;
+                    }}
+                  />
+                ) : null}
+
                 {singleForm.classificationType ? (
                   <MemberAttributionFields
                     classificationType={singleForm.classificationType}
@@ -2182,10 +2010,8 @@ export function ReviewQueueClient({
               </details>
             </div>
           )}
-          </div>
         </article>
       </section>
-      </div>
 
       <Modal
         open={isShortcutHelpOpen}
@@ -2199,7 +2025,7 @@ export function ReviewQueueClient({
           <div><dt><kbd>C</kbd></dt><dd>Open category search</dd></div>
           <div><dt><kbd>R</kbd></dt><dd>Toggle exact merchant rule</dd></div>
           <div><dt><kbd>S</kbd></dt><dd>Skip for now</dd></div>
-          <div><dt><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd></dt><dd>Save this row, or apply to marked rows</dd></div>
+          <div><dt><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd></dt><dd>Save and next</dd></div>
           <div><dt><kbd>?</kbd></dt><dd>Open this help</dd></div>
         </dl>
       </Modal>
