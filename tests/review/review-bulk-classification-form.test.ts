@@ -16,7 +16,6 @@ test("bulk Classify selected starts from an empty form instead of the last class
   assert.match(reviewQueue, /onClick=\{\(\) => openBulkClassification\(\)\}/);
   assert.match(reviewQueue, /function closeBulkClassification\(\) \{[\s\S]*setBulkForm\(emptyBulkForm\)/);
   assert.match(reviewQueue, /closeBulkClassification\(\);\s*removeReviewedTransactions/);
-  assert.match(reviewQueue, /if \(current\.length === 0\) setBulkForm\(emptyBulkForm\)/);
 });
 
 test("checking a review row also focuses it in the detail panel", async () => {
@@ -24,25 +23,11 @@ test("checking a review row also focuses it in the detail panel", async () => {
 
   assert.match(
     reviewQueue,
-    /function toggleSelectedTransaction\(transactionId: string\) \{[\s\S]*setSelectedTransactionId\(transactionId\);\s*\}/,
+    /function toggleSelectedTransaction\(transactionId: string\) \{\s*setSelectedIds\([\s\S]*?\);\s*setSelectedTransactionId\(transactionId\);\s*\}/,
   );
   assert.match(reviewQueue, /<h2>This transaction<\/h2>/);
   assert.match(reviewQueue, /table-row-checked/);
-  assert.match(reviewQueue, /const isBatching = selectedIds\.length >= 2/);
   assert.doesNotMatch(reviewQueue, /Selected transaction/);
-});
-
-test("marked rows classify in the detail panel instead of a competing form", async () => {
-  const [reviewQueue, styles] = await Promise.all([
-    source("src/components/expenses/review-queue-client.tsx"),
-    source("src/app/globals.css"),
-  ]);
-
-  assert.match(reviewQueue, /Apply to \$\{selectedIds\.length\} transactions/);
-  assert.match(reviewQueue, /Just this row/);
-  assert.match(reviewQueue, /className="review-board"/);
-  assert.match(styles, /\.review-board \{/);
-  assert.match(styles, /\.app-main-scroll \{[^}]*overflow-x: clip/);
 });
 
 test("category combobox follows the controlled value when the selected row changes", async () => {

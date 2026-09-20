@@ -102,7 +102,7 @@ test.describe("transaction review workflow", () => {
       has: page.getByRole("heading", { name: "This transaction" }),
     });
     await expect(panel.getByText(merchant, { exact: true }).first()).toBeVisible();
-    await expect(panel.getByText(/Check more rows to classify them together/)).toBeVisible();
+    await expect(panel.getByText(/This is 1 of 1 marked row/)).toBeVisible();
   });
 
   test("review form infers payer from the account and only asks whose personal expense", async ({ page }) => {
@@ -597,21 +597,20 @@ test.describe("transaction review workflow", () => {
         await row.getByRole("checkbox").check();
       }
 
-      const panel = page.getByRole("article").filter({
-        has: page.getByRole("heading", { name: "2 transactions" }),
-      });
-      await expect(panel).toBeVisible();
-      await panel.getByRole("radio", { name: /Shared/ }).check();
-      const categoryInput = panel.getByRole("combobox", { name: "Category", exact: true });
+      await page.getByRole("button", { name: "Classify selected", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Classify selected" });
+      await expect(dialog).toBeVisible();
+      await dialog.getByRole("radio", { name: /Shared/ }).check();
+      const categoryInput = dialog.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
-      await panel.getByRole("option", { name: category.name, exact: true }).click();
+      await dialog.getByRole("option", { name: category.name, exact: true }).click();
 
       const bulkResponsePromise = page.waitForResponse(
         (response) =>
           response.url().endsWith("/api/transaction-classifications/bulk")
           && response.request().method() === "POST",
       );
-      await panel.getByRole("button", { name: /Apply to 2 transactions/ }).click();
+      await dialog.getByRole("button", { name: "Apply to selected", exact: true }).click();
       const bulkResponse = await bulkResponsePromise;
       expect(bulkResponse.ok()).toBeTruthy();
       const bulkPayload = (await bulkResponse.json()) as { undoBatchId?: string };
@@ -625,12 +624,12 @@ test.describe("transaction review workflow", () => {
         const row = page.locator(`[data-review-transaction-id="${transaction.id}"]`);
         await row.getByRole("checkbox").check();
       }
-      const nextPanel = page.getByRole("article").filter({
-        has: page.getByRole("heading", { name: "2 transactions" }),
-      });
-      await expect(nextPanel).toBeVisible();
-      await expect(nextPanel.getByRole("radio", { name: /Shared/ })).not.toBeChecked();
-      await expect(nextPanel.getByRole("combobox", { name: "Category", exact: true })).toHaveValue("");
+      await page.getByRole("button", { name: "Classify selected", exact: true }).click();
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByRole("radio", { name: /Shared/ })).not.toBeChecked();
+      await expect(dialog.getByRole("combobox", { name: "Category", exact: true })).toHaveValue("");
+      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+      await expect(dialog).toBeHidden();
 
       const classified = await loadReviewData(page);
       expect(classified.summary.queueCount).toBe(before.summary.queueCount - 2);
