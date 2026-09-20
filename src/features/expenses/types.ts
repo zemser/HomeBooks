@@ -129,9 +129,9 @@ export type HistoryPagination = {
 
 export type HistoryScope = {
   month: string;
-  importId: string;
   pendingCount: number;
   totalCount: number;
+  hasImportedTransactions: boolean;
   defaultMonth: string;
 };
 
@@ -144,12 +144,12 @@ export type ExpensesPageData = {
   pagination: HistoryPagination;
   filterOptions: {
     months: string[];
-    imports: Array<{ id: string; label: string }>;
+    accounts: Array<{ id: string; label: string }>;
   };
   scope: HistoryScope;
   query: {
     month: string;
-    importId: string;
+    accountId: string;
     searchQuery: string;
     reviewStatus: "all" | "needs_review" | "reviewed" | "automatic";
     page: number;

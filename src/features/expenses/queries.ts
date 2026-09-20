@@ -34,9 +34,10 @@ import {
   type ReviewQuery,
 } from "@/features/expenses/review-query";
 import {
-  historyImportIsUnscoped,
   historyMonthIsUnscoped,
+  isHistoryAccountAll,
   isHistoryMonthUnresolved,
+  resolveHistoryAccountId,
   type HistoryQuery,
   type ParsedHistoryQuery,
 } from "@/features/expenses/history-query";
@@ -238,6 +239,7 @@ function buildTransactionListFilters(input: {
   onlyUnclassified?: boolean;
   transactionId?: string;
   importId?: string;
+  accountId?: string;
   month?: string;
   reviewStatus?: HistoryQuery["reviewStatus"];
   searchQuery?: string;
@@ -256,8 +258,12 @@ function buildTransactionListFilters(input: {
     filters.push(eq(transactions.id, input.transactionId));
   }
 
-  if (input.importId && !reviewImportIsUnscoped(input.importId) && !historyImportIsUnscoped(input.importId)) {
+  if (input.importId && !reviewImportIsUnscoped(input.importId)) {
     filters.push(eq(transactions.importId, input.importId));
+  }
+
+  if (input.accountId && !isHistoryAccountAll(input.accountId)) {
+    filters.push(eq(transactions.accountId, input.accountId));
   }
 
   if (input.month && input.month !== "all" && !historyMonthIsUnscoped(input.month)) {
@@ -279,6 +285,7 @@ async function listTransactionsByWorkspace(input: {
   onlyUnclassified?: boolean;
   transactionId?: string;
   importId?: string;
+  accountId?: string;
   month?: string;
   reviewStatus?: HistoryQuery["reviewStatus"];
   searchQuery?: string;
@@ -342,6 +349,7 @@ async function countTransactionsByWorkspace(input: {
   workspaceId: string;
   onlyUnclassified?: boolean;
   importId?: string;
+  accountId?: string;
   month?: string;
   reviewStatus?: HistoryQuery["reviewStatus"];
   searchQuery?: string;
@@ -872,7 +880,7 @@ async function listHistoryFilterOptions(
   context: CurrentWorkspaceContext,
   db: DbExecutor,
 ) {
-  const [monthRows, manualMonthRows, savedImports] = await Promise.all([
+  const [monthRows, manualMonthRows, accountRows] = await Promise.all([
     db
       .select({
         month: sql<string>`to_char(${transactions.transactionDate}, 'YYYY-MM')`,
@@ -886,16 +894,21 @@ async function listHistoryFilterOptions(
       .from(manualEntries)
       .where(eq(manualEntries.workspaceId, context.workspaceId))
       .groupBy(sql`to_char(${manualEntries.eventDate}, 'YYYY-MM')`),
-    listSavedImports(context, { type: "bank" }, db),
+    db
+      .selectDistinct({
+        id: financialAccounts.id,
+        label: financialAccounts.displayName,
+      })
+      .from(financialAccounts)
+      .innerJoin(transactions, eq(transactions.accountId, financialAccounts.id))
+      .where(eq(financialAccounts.workspaceId, context.workspaceId))
+      .orderBy(financialAccounts.displayName),
   ]);
 
   return {
     months: Array.from(new Set([...monthRows, ...manualMonthRows].map((row) => row.month)))
       .sort((left, right) => right.localeCompare(left)),
-    imports: savedImports.map((item) => ({
-      id: item.id,
-      label: item.originalFilename,
-    })),
+    accounts: accountRows,
   };
 }
 
@@ -915,7 +928,7 @@ async function findHistoryFocusTransaction(
 
 async function findHistoryPageForTransaction(input: {
   workspaceId: string;
-  importId?: string;
+  accountId?: string;
   month?: string;
   reviewStatus?: HistoryQuery["reviewStatus"];
   searchQuery?: string;
@@ -940,7 +953,7 @@ async function findHistoryPageForTransaction(input: {
 
   const filters = buildTransactionListFilters({
     workspaceId: input.workspaceId,
-    importId: input.importId,
+    accountId: input.accountId,
     month: input.month,
     reviewStatus: input.reviewStatus,
     searchQuery: input.searchQuery,
@@ -991,7 +1004,7 @@ export async function resolveHistoryQuery(
     if (focusMonth) month = focusMonth;
   }
 
-  if (isHistoryMonthUnresolved(month) && historyImportIsUnscoped(parsed.importId)) {
+  if (isHistoryMonthUnresolved(month)) {
     month =
       defaultMonth ??
       (await getLatestFinancialActivityMonth(context, db)).slice(0, 7);
@@ -1000,7 +1013,7 @@ export async function resolveHistoryQuery(
   if (parsed.transactionId && !parsed.pageSpecified) {
     page = await findHistoryPageForTransaction({
       workspaceId: context.workspaceId,
-      importId: parsed.importId,
+      accountId: parsed.accountId,
       month,
       reviewStatus: parsed.reviewStatus,
       searchQuery: parsed.searchQuery,
@@ -1012,7 +1025,7 @@ export async function resolveHistoryQuery(
 
   return {
     month,
-    importId: parsed.importId,
+    accountId: parsed.accountId,
     searchQuery: parsed.searchQuery,
     reviewStatus: parsed.reviewStatus,
     page,
@@ -1026,32 +1039,41 @@ export async function listHistoryPageData(
   parsed: ParsedHistoryQuery,
   db: DbExecutor = getDb(),
 ): Promise<Omit<ExpensesPageData, "oneTimeManualEntries"> & { defaultMonth: string }> {
-  const defaultMonth = (await getLatestFinancialActivityMonth(context, db)).slice(0, 7);
-  const query = await resolveHistoryQuery(context, parsed, db, defaultMonth);
+  const [defaultMonthRaw, filterOptions] = await Promise.all([
+    getLatestFinancialActivityMonth(context, db),
+    listHistoryFilterOptions(context, db),
+  ]);
+  const defaultMonth = defaultMonthRaw.slice(0, 7);
+  const query = await resolveHistoryQuery(
+    context,
+    {
+      ...parsed,
+      accountId: resolveHistoryAccountId(parsed.accountId, filterOptions.accounts),
+    },
+    db,
+    defaultMonth,
+  );
   const listInput = {
     workspaceId: context.workspaceId,
-    importId: query.importId,
+    accountId: query.accountId,
     month: query.month,
     reviewStatus: query.reviewStatus,
     searchQuery: query.searchQuery,
   };
-  const [filteredCount, scopeTotalCount, scopePendingCount, filterOptions, members, categoryCatalog] =
+  const [filteredCount, scopeTotalCount, scopePendingCount, members, categoryCatalog] =
     await Promise.all([
       countTransactionsByWorkspace({ ...listInput, db }),
       countTransactionsByWorkspace({
         workspaceId: context.workspaceId,
-        importId: query.importId,
         month: query.month,
         db,
       }),
       countTransactionsByWorkspace({
         workspaceId: context.workspaceId,
-        importId: query.importId,
         month: query.month,
         reviewStatus: "needs_review",
         db,
       }),
-      listHistoryFilterOptions(context, db),
       listWorkspaceMembers(context, db),
       listWorkspaceCategories(context, db),
     ]);
@@ -1079,9 +1101,9 @@ export async function listHistoryPageData(
     filterOptions,
     scope: {
       month: query.month,
-      importId: query.importId,
       pendingCount: scopePendingCount,
       totalCount: scopeTotalCount,
+      hasImportedTransactions: filterOptions.accounts.length > 0,
       defaultMonth,
     },
     query: {

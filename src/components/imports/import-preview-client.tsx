@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, useTransition } from "react";
 
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
+import { buildHistoryMonthHref } from "@/features/expenses/history-query";
 import { formatMoneyDisplay } from "@/features/expenses/presentation";
 import { ImportSourceCell } from "@/components/shared/import-source-cell";
 
@@ -112,6 +113,16 @@ function formatImportActivityRange(item: SavedImportSummary) {
   }
 
   return `${earliest} to ${latest}`;
+}
+
+function historyRowsHref(input: {
+  latestTransactionDate?: string | null;
+  reviewStatus?: "automatic";
+}) {
+  return buildHistoryMonthHref({
+    month: input.latestTransactionDate,
+    reviewStatus: input.reviewStatus,
+  });
 }
 
 function formatTemplateName(value: string | null | undefined) {
@@ -522,11 +533,21 @@ export function ImportPreviewClient({
                     </button>
                     <Link
                       className="link-button"
-                      href={`/transactions/all?month=all&reviewStatus=automatic&import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
+                      href={historyRowsHref({
+                        latestTransactionDate: highlightedImport?.latestTransactionDate,
+                        reviewStatus: "automatic",
+                      })}
                     >
                       View automatic classifications
                     </Link>
-                    <Link className="link-button" href={`/transactions/all?month=all&import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}>Open this statement in History</Link>
+                    <Link
+                      className="link-button"
+                      href={historyRowsHref({
+                        latestTransactionDate: highlightedImport?.latestTransactionDate,
+                      })}
+                    >
+                      Open this statement in History
+                    </Link>
                   </div>
                 </div>
               ) : (
@@ -668,7 +689,7 @@ export function ImportPreviewClient({
                     <td>
                       <strong>{savedImport.reviewPendingCount === 0 ? "Complete" : `${savedImport.reviewPendingCount} need review`}</strong>
                       <div className="table-note">
-                        {savedImport.ruleAppliedCount > 0 ? <Link href={`/transactions/all?month=all&reviewStatus=automatic&import=${encodeURIComponent(savedImport.id)}`}>View automatic classifications</Link> : null}
+                        {savedImport.ruleAppliedCount > 0 ? <Link href={historyRowsHref({ latestTransactionDate: savedImport.latestTransactionDate, reviewStatus: "automatic" })}>View automatic classifications</Link> : null}
                         {" "}{savedImport.manuallyReviewedCount} reviewed · {savedImport.ruleAppliedCount} by rules · {savedImport.transactionCount} total
                       </div>
                     </td>
@@ -684,7 +705,7 @@ export function ImportPreviewClient({
                         </Link>
                         <Link
                           className="link-button"
-                          href={`/transactions/all?import=${encodeURIComponent(savedImport.id)}`}
+                          href={historyRowsHref({ latestTransactionDate: savedImport.latestTransactionDate })}
                         >
                           History
                         </Link>

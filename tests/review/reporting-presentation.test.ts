@@ -30,7 +30,7 @@ test("an incomplete month with no review queue leftover sends people confirmatio
   assert.deepEqual(
     getMonthCompletenessNextAction(classifiedWithoutPayer, "2026-09-01"),
     {
-      href: "/transactions/all?month=2026-09&import=all",
+      href: "/transactions/all?month=2026-09",
       label: "Confirm people on 2 transactions",
     },
   );

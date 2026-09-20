@@ -2,14 +2,13 @@ export const DEFAULT_HISTORY_PAGE_SIZE = 50;
 export const MAX_HISTORY_PAGE_SIZE = 100;
 export const HISTORY_MONTH_ALL = "all";
 export const HISTORY_MONTH_UNRESOLVED = "default";
-export const HISTORY_IMPORT_ALL = "all";
-export const HISTORY_IMPORT_UNRESOLVED = "default";
+export const HISTORY_ACCOUNT_ALL = "all";
 
 export type HistoryReviewStatus = "all" | "needs_review" | "reviewed" | "automatic";
 
 export type HistoryQuery = {
   month: string;
-  importId: string;
+  accountId: string;
   searchQuery: string;
   reviewStatus: HistoryReviewStatus;
   page: number;
@@ -19,7 +18,6 @@ export type HistoryQuery = {
 
 export type ParsedHistoryQuery = HistoryQuery & {
   monthSpecified: boolean;
-  importSpecified: boolean;
   pageSpecified: boolean;
 };
 
@@ -42,6 +40,11 @@ function parseMonthParam(value: string | null) {
   return MONTH_PATTERN.test(value) ? value : HISTORY_MONTH_UNRESOLVED;
 }
 
+function parseAccountParam(value: string | null) {
+  const trimmed = value?.trim();
+  return trimmed || HISTORY_ACCOUNT_ALL;
+}
+
 export function isHistoryMonthUnresolved(month: string) {
   return month === HISTORY_MONTH_UNRESOLVED;
 }
@@ -54,32 +57,42 @@ export function historyMonthIsUnscoped(month: string) {
   return isHistoryMonthAll(month) || isHistoryMonthUnresolved(month);
 }
 
-export function shouldShowHistoryManuals(query: { month: string; importId?: string }) {
+export function isHistoryAccountAll(accountId: string) {
+  return !accountId || accountId === HISTORY_ACCOUNT_ALL;
+}
+
+export function resolveHistoryAccountId(
+  accountId: string,
+  accounts: Array<{ id: string }>,
+) {
+  if (isHistoryAccountAll(accountId)) return HISTORY_ACCOUNT_ALL;
+  return accounts.some((item) => item.id === accountId) ? accountId : HISTORY_ACCOUNT_ALL;
+}
+
+export function buildHistoryMonthHref(input: {
+  month?: string | null;
+  reviewStatus?: HistoryReviewStatus;
+}) {
+  const monthKey = input.month?.slice(0, 7) ?? "";
+  const month = MONTH_PATTERN.test(monthKey) ? monthKey : HISTORY_MONTH_ALL;
+  const params = new URLSearchParams({ month });
+  if (input.reviewStatus && input.reviewStatus !== "all") {
+    params.set("reviewStatus", input.reviewStatus);
+  }
+  return `/transactions/all?${params.toString()}`;
+}
+
+export function shouldShowHistoryManuals(query: { month: string }) {
   return !historyMonthIsUnscoped(query.month);
-}
-
-export function isHistoryImportUnresolved(importId: string) {
-  return importId === HISTORY_IMPORT_UNRESOLVED;
-}
-
-export function isHistoryImportAll(importId: string) {
-  return importId === HISTORY_IMPORT_ALL;
-}
-
-export function historyImportIsUnscoped(importId: string) {
-  return isHistoryImportAll(importId) || isHistoryImportUnresolved(importId);
 }
 
 export function parseHistoryQuery(params: URLSearchParams): ParsedHistoryQuery {
   const monthParam = params.get("month");
-  const importParam = params.get("import");
   const requestedStatus = params.get("reviewStatus") as HistoryReviewStatus | null;
 
   return {
     month: params.has("month") ? parseMonthParam(monthParam) : HISTORY_MONTH_UNRESOLVED,
-    importId: params.has("import")
-      ? importParam?.trim() || HISTORY_IMPORT_ALL
-      : HISTORY_IMPORT_UNRESOLVED,
+    accountId: parseAccountParam(params.get("account")),
     searchQuery: params.get("q") ?? "",
     reviewStatus:
       requestedStatus && historyReviewStatuses.has(requestedStatus) ? requestedStatus : "all",
@@ -90,7 +103,6 @@ export function parseHistoryQuery(params: URLSearchParams): ParsedHistoryQuery {
     ),
     transactionId: params.get("transactionId")?.trim() || undefined,
     monthSpecified: params.has("month"),
-    importSpecified: params.has("import"),
     pageSpecified: params.has("page"),
   };
 }
@@ -110,13 +122,8 @@ export function serializeHistoryQuery(existingSearch: string, state: HistoryQuer
   } else {
     params.set("month", state.month);
   }
-  if (isHistoryImportAll(state.importId)) {
-    params.set("import", HISTORY_IMPORT_ALL);
-  } else if (isHistoryImportUnresolved(state.importId) || !state.importId) {
-    params.delete("import");
-  } else {
-    params.set("import", state.importId);
-  }
+  params.delete("import");
+  setOrDelete("account", state.accountId, HISTORY_ACCOUNT_ALL);
   setOrDelete("reviewStatus", state.reviewStatus, "all");
   // An omitted page asks the server to locate transactionId on its page.
   // Serialized state already has a resolved page, including page 1.
@@ -134,7 +141,7 @@ export function serializeHistoryQuery(existingSearch: string, state: HistoryQuer
 export function defaultHistoryQuery(): HistoryQuery {
   return {
     month: HISTORY_MONTH_UNRESOLVED,
-    importId: HISTORY_IMPORT_UNRESOLVED,
+    accountId: HISTORY_ACCOUNT_ALL,
     searchQuery: "",
     reviewStatus: "all",
     page: 1,
