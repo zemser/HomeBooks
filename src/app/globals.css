@@ -1938,15 +1938,94 @@ select.input:focus {
   max-width: 8rem;
 }
 
-.page-shell.stack:has(.review-workspace) {
+.app-shell:has(.review-workspace) {
   height: 100dvh;
-  max-height: 100dvh;
-  padding-bottom: 1rem;
-  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
 }
 
+.app-shell:has(.review-workspace) .app-sidebar {
+  height: 100%;
+}
+
+.app-shell:has(.review-workspace) .app-main {
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.app-shell:has(.review-workspace) .app-mobile-header,
+.app-shell:has(.review-workspace) .app-mobile-nav {
+  flex: none;
+}
+
+.app-shell:has(.review-workspace) .app-main-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+.app-shell:has(.review-workspace) main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.page-shell.stack:has(.review-workspace) {
+  flex: 1 1 auto;
+  width: min(1400px, 100%);
+  height: 100%;
+  max-height: 100%;
+  min-height: 0;
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
+  gap: 0.75rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.page-shell.stack:has(.review-workspace) .page-header {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+  gap: 0;
+}
+
+.page-shell.stack:has(.review-workspace) .page-header .eyebrow {
+  display: none;
+}
+
+.page-shell.stack:has(.review-workspace) .page-header h1 {
+  margin: 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.04em;
+  line-height: 1.1;
+}
+
+.page-shell.stack:has(.review-workspace) .page-header p {
+  display: none;
+}
+
+.page-shell.stack:has(.review-workspace) .transactions-workflow-nav {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  padding: 0.25rem;
+}
+
+.page-shell.stack:has(.review-workspace) .transactions-workflow-link {
+  min-height: 2.35rem;
+  padding: 0.4rem 0.85rem;
+}
+
 .page-shell.stack:has(.review-workspace) > [data-testid="transactions-review-content"] {
+  grid-column: 1 / -1;
+  grid-row: 2;
   min-height: 0;
   display: grid;
   overflow: hidden;
@@ -1957,11 +2036,12 @@ select.input:focus {
   min-height: 0;
   height: 100%;
   overflow: hidden;
+  gap: 0.75rem;
   grid-template-rows: auto minmax(0, 1fr);
 }
 
 .review-scope {
-  padding: 0.85rem 1rem;
+  padding: 0.55rem 0.9rem;
 }
 
 .review-scope h2 {
@@ -1980,14 +2060,14 @@ select.input:focus {
 
 .review-board {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(22rem, 0.9fr);
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.35fr) minmax(24rem, 0.95fr);
+  grid-template-rows: auto auto minmax(26rem, 1fr);
   grid-template-areas:
-    "toolbar detail"
-    "status detail"
+    "toolbar toolbar"
+    "status status"
     "list detail";
   align-items: stretch;
-  gap: 1rem;
+  gap: 0.75rem;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -2012,6 +2092,7 @@ select.input:focus {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  padding: 0.85rem 1rem;
 }
 
 .review-list {
@@ -2034,11 +2115,11 @@ select.input:focus {
 }
 
 .review-scope-header {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .review-scope-header h2 {
-  margin: 0.3rem 0;
+  margin: 0.1rem 0;
 }
 
 .review-scope-stats {
@@ -2052,12 +2133,35 @@ select.input:focus {
 }
 
 .review-import-switcher {
-  padding-top: 0.7rem;
+  padding-top: 0.45rem;
 }
 
 .review-toolbar {
   display: grid;
-  gap: 1rem;
+  gap: 0.55rem;
+  padding: 0.7rem 0.9rem;
+}
+
+@media (min-width: 961px) {
+  .review-toolbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .review-view-tabs {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .review-toolbar-primary {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .review-active-filters,
+  .review-toolbar-footer {
+    grid-column: 1 / -1;
+  }
 }
 
 .review-toolbar-primary {
@@ -2369,13 +2473,18 @@ kbd {
   flex: none;
 }
 
+.review-list > .page-actions {
+  gap: 0.4rem;
+  padding-bottom: 0.15rem;
+}
+
 .review-list {
   overflow: hidden;
 }
 
 .review-table-wrap {
   flex: 1 1 auto;
-  min-height: 8rem;
+  min-height: 26rem;
   overflow: auto;
 }
 
@@ -2425,6 +2534,12 @@ kbd {
 .review-table {
   min-width: 52rem;
   font-variant-numeric: tabular-nums;
+}
+
+.review-table th,
+.review-table td {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
 }
 
 .review-table th:first-child,
@@ -3228,11 +3343,48 @@ kbd {
 }
 
 @media (max-width: 960px) {
+  .app-shell:has(.review-workspace) {
+    height: auto;
+    overflow: visible;
+  }
+
+  .app-shell:has(.review-workspace) .app-main,
+  .app-shell:has(.review-workspace) .app-main-scroll,
+  .app-shell:has(.review-workspace) main {
+    display: block;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .app-shell:has(.review-workspace) .app-main-scroll {
+    min-height: 0;
+    padding-bottom: 8rem;
+  }
+
   .page-shell.stack:has(.review-workspace) {
     height: auto;
     max-height: none;
     overflow: visible;
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: none;
+  }
+
+  .page-shell.stack:has(.review-workspace) .page-header,
+  .page-shell.stack:has(.review-workspace) .transactions-workflow-nav,
+  .page-shell.stack:has(.review-workspace) > [data-testid="transactions-review-content"] {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .page-shell.stack:has(.review-workspace) .page-header .eyebrow,
+  .page-shell.stack:has(.review-workspace) .page-header p {
+    display: block;
+  }
+
+  .page-shell.stack:has(.review-workspace) .page-header h1 {
+    margin-top: 0.55rem;
+    font-size: clamp(1.8rem, 4vw, 2.7rem);
   }
 
   .review-workspace {
@@ -3243,6 +3395,7 @@ kbd {
   .review-board {
     display: grid;
     grid-template-columns: 1fr;
+    grid-template-rows: none;
     grid-template-areas:
       "toolbar"
       "status"
@@ -3267,6 +3420,7 @@ kbd {
   .review-detail-body {
     overflow: visible;
     flex: none;
+    min-height: 0;
   }
 
   .review-batch-dock {
@@ -3465,8 +3619,7 @@ kbd {
 
 @media (max-width: 1024px) and (min-width: 961px) {
   .page-shell.stack:has(.review-workspace) {
-    height: calc(100dvh - 8.75rem);
-    max-height: calc(100dvh - 8.75rem);
+    padding-bottom: 5.75rem;
   }
 }
 
