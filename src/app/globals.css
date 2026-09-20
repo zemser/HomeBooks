@@ -1057,7 +1057,9 @@ select.input:focus {
   .app-account-menu a,
   .app-account-menu button,
   .app-nav-link,
-  .button {
+  .button,
+  .history-month-step,
+  .history-month-jump-label {
     transition: none;
   }
 
@@ -1065,8 +1067,16 @@ select.input:focus {
   .app-account:active,
   .app-account-menu a:active,
   .app-account-menu button:active,
-  .button:active:not(:disabled) {
+  .button:active:not(:disabled),
+  .history-month-step:active:not(:disabled),
+  .history-month-jump-label:active {
     transform: none;
+    scale: none;
+  }
+
+  .history-results > :not(.history-month-nav) {
+    opacity: 1;
+    transition: none;
   }
 
   .app-account-menu,
@@ -1834,17 +1844,24 @@ select.input:focus {
   transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.history-month-step:hover:not(:disabled) {
-  border-color: rgba(39, 93, 76, 0.42);
-}
-
 .history-month-step:active:not(:disabled) {
   scale: 0.96;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .history-month-step:hover:not(:disabled) {
+    border-color: rgba(39, 93, 76, 0.42);
+  }
 }
 
 .history-month-step:disabled {
   cursor: not-allowed;
   opacity: 0.4;
+}
+
+.history-month-step.is-inert {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .history-month-chevron.is-prev {
@@ -1876,12 +1893,14 @@ select.input:focus {
   transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
-.history-month-jump-label:hover {
-  border-color: rgba(39, 93, 76, 0.42);
-}
-
 .history-month-jump-label:active {
   scale: 0.96;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .history-month-jump-label:hover {
+    border-color: rgba(39, 93, 76, 0.42);
+  }
 }
 
 .history-filter-row {
@@ -1893,6 +1912,14 @@ select.input:focus {
 
 .history-filter-row .history-search-field {
   min-width: 0;
+}
+
+.history-results > :not(.history-month-nav) {
+  transition: opacity 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+.history-results[aria-busy="true"] > :not(.history-month-nav) {
+  opacity: 0.72;
 }
 
 .currency-form {

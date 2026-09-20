@@ -61,6 +61,27 @@ export function isHistoryAccountAll(accountId: string) {
   return !accountId || accountId === HISTORY_ACCOUNT_ALL;
 }
 
+export function resolveHistoryAccountId(
+  accountId: string,
+  accounts: Array<{ id: string }>,
+) {
+  if (isHistoryAccountAll(accountId)) return HISTORY_ACCOUNT_ALL;
+  return accounts.some((item) => item.id === accountId) ? accountId : HISTORY_ACCOUNT_ALL;
+}
+
+export function buildHistoryMonthHref(input: {
+  month?: string | null;
+  reviewStatus?: HistoryReviewStatus;
+}) {
+  const monthKey = input.month?.slice(0, 7) ?? "";
+  const month = MONTH_PATTERN.test(monthKey) ? monthKey : HISTORY_MONTH_ALL;
+  const params = new URLSearchParams({ month });
+  if (input.reviewStatus && input.reviewStatus !== "all") {
+    params.set("reviewStatus", input.reviewStatus);
+  }
+  return `/transactions/all?${params.toString()}`;
+}
+
 export function shouldShowHistoryManuals(query: { month: string }) {
   return !historyMonthIsUnscoped(query.month);
 }

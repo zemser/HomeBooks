@@ -41,6 +41,7 @@ import {
   isHistoryAccountAll,
   isHistoryMonthUnresolved,
   parseHistoryQuery,
+  resolveHistoryAccountId,
   serializeHistoryQuery,
   shouldShowHistoryManuals,
 } from "@/features/expenses/history-query";
@@ -55,6 +56,7 @@ import {
   type OneTimeManualEntryEventKind,
 } from "@/features/manual-entries/constants";
 import type { OneTimeManualEntryItem } from "@/features/manual-entries/types";
+import { formatYearMonthLabel } from "@/lib/dates/months";
 
 type ExpensesPageClientProps = {
   initialData: ExpensesPageData;
@@ -184,21 +186,13 @@ function allocationSuccessMessage(form: AllocationFormState) {
     : "Allocation reset to payment month.";
 }
 
-function formatLedgerMonthLabel(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}-01T00:00:00.000Z`));
-}
-
 function manualEntrySavedMessage(input: {
   title: string;
   eventKind: OneTimeManualEntryEventKind;
   eventDate: string;
   isUpdate: boolean;
 }) {
-  const month = formatLedgerMonthLabel(input.eventDate.slice(0, 7));
+  const month = formatYearMonthLabel(input.eventDate.slice(0, 7));
   const quotedTitle = input.title.trim() ? `“${input.title.trim()}”` : "That entry";
 
   if (input.isUpdate) {
@@ -263,7 +257,12 @@ export function ExpensesPageClient({
   const [justSavedManualEntryId, setJustSavedManualEntryId] = useState<string | null>(null);
   const [savedEntryMonth, setSavedEntryMonth] = useState<string | null>(null);
   const pendingManualEntryIdRef = useRef<string | null>(null);
+  const loadGenerationRef = useRef(0);
+  const lastWrittenMonthRef = useRef<string | null>(null);
+  const restoringFromPopRef = useRef(false);
+  const accountsRef = useRef(initialData.filterOptions.accounts);
   const deferredSearchQuery = useDeferredValue(searchQuery);
+  accountsRef.current = filterOptions.accounts;
 
   function applyExpensesData(
     data: ExpensesPageData,
@@ -284,6 +283,7 @@ export function ExpensesPageClient({
     setFilterOptions(data.filterOptions);
     setScope(data.scope);
     setPage(data.query.page);
+    setAccountFilter(data.query.accountId);
     setSelectedManualEntryId((current) => {
       if (options?.manualEntryId !== undefined) {
         return options.manualEntryId &&
@@ -329,6 +329,7 @@ export function ExpensesPageClient({
   }
 
   async function loadExpenses(options?: LoadExpensesOptions) {
+    const generation = ++loadGenerationRef.current;
     setError(null);
 
     try {
@@ -337,6 +338,8 @@ export function ExpensesPageClient({
       });
       const response = await fetch(`/api/expenses?${params}`);
       const data = (await response.json()) as ExpensesResponse;
+
+      if (generation !== loadGenerationRef.current) return;
 
       if (!response.ok) {
         throw new Error(data.error ?? "Could not load transactions.");
@@ -368,16 +371,10 @@ export function ExpensesPageClient({
         pendingManualEntryIdRef.current = null;
       }
     } catch (loadError) {
+      if (generation !== loadGenerationRef.current) return;
       setError(loadError instanceof Error ? loadError.message : "Could not load transactions.");
-      setTransactions([]);
-      setOneTimeManualEntries([]);
-      setMembers([]);
-      setCategories([]);
-      setCategoryCatalog([]);
-      setSelectedManualEntryId(null);
-      setSelectedTransactionId(null);
     } finally {
-      setIsLoading(false);
+      if (generation === loadGenerationRef.current) setIsLoading(false);
     }
   }
 
@@ -407,15 +404,19 @@ export function ExpensesPageClient({
       setSearchQuery(state.searchQuery);
       setReviewStatusFilter(state.reviewStatus);
       if (!isHistoryMonthUnresolved(state.month)) setMonthFilter(state.month);
-      setAccountFilter(state.accountId);
+      setAccountFilter(resolveHistoryAccountId(state.accountId, accountsRef.current));
       // On initial deep links the server may have located the focused row
       // beyond page 1 even though the URL did not explicitly specify a page.
       if (state.pageSpecified) setPage(state.page);
     }
+    function onPopState() {
+      restoringFromPopRef.current = true;
+      restoreUrlState();
+    }
     restoreUrlState();
     setIsUrlStateReady(true);
-    window.addEventListener("popstate", restoreUrlState);
-    return () => window.removeEventListener("popstate", restoreUrlState);
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
   }, []);
 
   const previousServerQueryRef = useRef<string | null>(null);
@@ -432,7 +433,24 @@ export function ExpensesPageClient({
       pageSize: pagination.pageSize || DEFAULT_HISTORY_PAGE_SIZE,
       transactionId: selectedTransactionId ?? undefined,
     });
-    window.history.replaceState(null, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+    const currentQuery = window.location.search.startsWith("?")
+      ? window.location.search.slice(1)
+      : window.location.search;
+    if (nextQuery === currentQuery) {
+      lastWrittenMonthRef.current = monthFilter;
+      restoringFromPopRef.current = false;
+      return;
+    }
+    const monthChanged =
+      lastWrittenMonthRef.current !== null && lastWrittenMonthRef.current !== monthFilter;
+    if (monthChanged && !restoringFromPopRef.current) {
+      window.history.pushState(null, "", nextUrl);
+    } else {
+      window.history.replaceState(null, "", nextUrl);
+    }
+    lastWrittenMonthRef.current = monthFilter;
+    restoringFromPopRef.current = false;
   }, [
     accountFilter,
     isUrlStateReady,
@@ -484,7 +502,7 @@ export function ExpensesPageClient({
   const selectedTransaction =
     transactions.find((transaction) => transaction.id === selectedTransactionId) ?? null;
   const reviewCount = scope.pendingCount;
-  const showManualsTable = shouldShowHistoryManuals({ month: monthFilter });
+  const showManualsTable = shouldShowHistoryManuals({ month: scope.month });
   const isEditingManualEntry = Boolean(selectedManualEntry);
   const manualEntryClassificationOptions = listClassificationOptions(manualEntryForm.eventKind);
   const hasDefinedCategories = categories.length > 0;
@@ -514,9 +532,9 @@ export function ExpensesPageClient({
     const query = params.toString();
     return query ? `/transactions/review?${query}` : "/transactions/review";
   })();
-  const scopeLabel = !historyMonthIsUnscoped(monthFilter)
-    ? formatLedgerMonthLabel(monthFilter)
-    : "this view";
+  const scopeLabel = !historyMonthIsUnscoped(scope.month)
+    ? formatYearMonthLabel(scope.month)
+    : "all months";
   useEffect(() => {
     setManualEntryForm(
       selectedManualEntry
@@ -640,6 +658,11 @@ export function ExpensesPageClient({
       ),
       splitForSettlement: classificationType === "shared" ? current.splitForSettlement : false,
     }));
+  }
+
+  function changeHistoryMonth(next: string) {
+    setMonthFilter(next);
+    setPage(1);
   }
 
   function clearHistoryFilters() {
@@ -881,12 +904,12 @@ export function ExpensesPageClient({
   }
 
   return (
-    <section className="stack">
+    <section className="stack history-results" aria-busy={isLoading}>
       <article className="card">
         <div className="summary-strip">
           <div>
             <strong>{scope.totalCount}</strong>
-            <span>In this scope</span>
+            <span>In {scopeLabel}</span>
           </div>
           <div>
             <strong>{pagination.filteredCount}</strong>
@@ -906,7 +929,8 @@ export function ExpensesPageClient({
       <HistoryMonthNav
         defaultMonth={scope.defaultMonth}
         month={monthFilter}
-        onChange={setMonthFilter}
+        months={filterOptions.months}
+        onChange={changeHistoryMonth}
       />
 
       {reviewCount > 0 ? (
@@ -935,7 +959,7 @@ export function ExpensesPageClient({
             <>
               {" "}
               <Link href={`/reports?month=${savedEntryMonth}&mode=payment_date`}>
-                Open {formatLedgerMonthLabel(savedEntryMonth)} report
+                Open {formatYearMonthLabel(savedEntryMonth)} report
               </Link>
             </>
           ) : null}
@@ -1225,23 +1249,21 @@ export function ExpensesPageClient({
             </button>
           </div>
 
-          {isLoading ? <p className="status">Loading one-off entries...</p> : null}
-
           {!showManualsTable ? (
             <p className="empty-state">
               Pick a month to see cash and one-off entries for that month, or add one now.
             </p>
           ) : null}
 
-          {showManualsTable && !isLoading && oneTimeManualEntries.length === 0 ? (
+          {showManualsTable && oneTimeManualEntries.length === 0 ? (
             <p className="empty-state">
-              Nothing added for {formatLedgerMonthLabel(monthFilter)} yet. Cash, reimbursements,
+              Nothing added for {formatYearMonthLabel(scope.month)} yet. Cash, reimbursements,
               bonuses, and other items that never hit the bank go here — not in the imported
               table below.
             </p>
           ) : null}
 
-          {!isLoading && showManualsTable && oneTimeManualEntries.length > 0 ? (
+          {showManualsTable && oneTimeManualEntries.length > 0 ? (
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
@@ -1392,7 +1414,7 @@ export function ExpensesPageClient({
           <div className="page-actions">
             <p className="helper-text">
               Showing {visibleTransactions.length} of {pagination.filteredCount} imported
-              transaction{pagination.filteredCount === 1 ? "" : "s"} in this scope.
+              transaction{pagination.filteredCount === 1 ? "" : "s"} in {scopeLabel}.
             </p>
             {filtersActive ? (
               <button className="link-button" type="button" onClick={clearHistoryFilters}>
@@ -1402,21 +1424,19 @@ export function ExpensesPageClient({
           </div>
         </div>
 
-        {isLoading ? <p className="status">Loading transactions...</p> : null}
-
-        {!isLoading && transactions.length === 0 ? (
+        {transactions.length === 0 ? (
           <p className="empty-state">
-            {scope.workspaceImportedCount === 0
+            {!scope.hasImportedTransactions
               ? "No imported transactions yet. Save an import first and they will show up here."
               : scope.totalCount === 0
-                ? historyMonthIsUnscoped(monthFilter)
-                  ? "No imported transactions in this view yet."
-                  : `No imported transactions in ${formatLedgerMonthLabel(monthFilter)} yet.`
+                ? historyMonthIsUnscoped(scope.month)
+                  ? "No imported transactions in all months yet."
+                  : `No imported transactions in ${formatYearMonthLabel(scope.month)} yet.`
                 : "No imported rows match the current search or filters."}
           </p>
         ) : null}
 
-        {!isLoading && visibleTransactions.length > 0 ? (
+        {visibleTransactions.length > 0 ? (
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -1558,7 +1578,7 @@ export function ExpensesPageClient({
           </div>
         ) : null}
 
-        {!isLoading && pagination.filteredCount > 0 ? (
+        {pagination.filteredCount > 0 ? (
           <nav className="review-pagination" aria-label="History pages">
             <button
               className="button button-secondary"

@@ -286,6 +286,24 @@ test("History account filter scopes imported rows", async ({ page }) => {
   await expect(page.getByRole("combobox", { name: "Account", exact: true })).toHaveValue(accountId);
 });
 
+test("History drops unknown account ids from the URL", async ({ page }) => {
+  await page.goto("/transactions/all?month=all&account=not-an-account");
+  await expect.poll(() => new URL(page.url()).searchParams.get("account")).toBeNull();
+  await expect(page.getByRole("combobox", { name: "Account", exact: true })).toHaveValue("all");
+});
+
+test("History month steps are undoable with the browser back button", async ({ page }) => {
+  await page.goto("/transactions/all");
+  await expect.poll(() => new URL(page.url()).searchParams.get("month")).toMatch(/^\d{4}-\d{2}$/);
+  const startMonth = new URL(page.url()).searchParams.get("month");
+  const previousMonth = page.getByRole("button", { name: "Previous month" });
+  test.skip(!(await previousMonth.isEnabled()), "Needs an earlier activity month to step back.");
+  await previousMonth.click();
+  await expect.poll(() => new URL(page.url()).searchParams.get("month")).not.toBe(startMonth);
+  await page.goBack();
+  await expect.poll(() => new URL(page.url()).searchParams.get("month")).toBe(startMonth);
+});
+
 
 test("History focus deep links preserve the resolved page and can return to page 1", async ({ page }) => {
   const response = await page.request.get("/api/expenses?month=all&page=2&pageSize=1");
@@ -342,8 +360,12 @@ test("History month picker includes a manual-only month", async ({ page, request
   try {
     await page.goto("/transactions/all?month=all");
     await expect.poll(() => new URL(page.url()).searchParams.get("page")).toBe("1");
+    await expect(page.getByRole("button", { name: "Previous month" })).toBeHidden();
+    await expect(page.getByRole("button", { name: "Next month" })).toBeHidden();
+    await page.getByRole("button", { name: /Jump to month/ }).click();
     await page.getByTestId("history-month-input").fill(month);
     await expect(page.getByText(title, { exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Previous month" })).toBeVisible();
   } finally {
     expect((await request.delete(`/api/manual-entries/${manualEntryId}`)).status()).toBe(200);
   }

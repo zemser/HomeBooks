@@ -131,7 +131,7 @@ export type HistoryScope = {
   month: string;
   pendingCount: number;
   totalCount: number;
-  workspaceImportedCount: number;
+  hasImportedTransactions: boolean;
   defaultMonth: string;
 };
 

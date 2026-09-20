@@ -22,9 +22,36 @@ export function yearMonth(input: Date): string {
   return monthKey(startOfMonth(input)).slice(0, 7);
 }
 
+export function localYearMonth(input: Date = new Date()): string {
+  const year = input.getFullYear();
+  const month = String(input.getMonth() + 1).padStart(2, "0");
+  return `${year}-${month}`;
+}
+
 export function shiftYearMonth(value: string, amount: number): string {
   const normalized = /^\d{4}-\d{2}$/.test(value.trim()) ? `${value.trim()}-01` : value.trim();
   return yearMonth(addMonths(new Date(`${normalized}T00:00:00.000Z`), amount));
+}
+
+export function formatYearMonthLabel(value: string): string {
+  const key = value.slice(0, 7);
+  return new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${key}-01T00:00:00.000Z`));
+}
+
+export function earliestYearMonth(months: string[]): string | null {
+  if (months.length === 0) return null;
+  return months.reduce((earliest, month) =>
+    month.localeCompare(earliest) < 0 ? month : earliest,
+  );
+}
+
+export function latestNavigableYearMonth(defaultMonth: string, now: Date = new Date()): string {
+  const current = localYearMonth(now);
+  return defaultMonth.localeCompare(current) >= 0 ? defaultMonth : current;
 }
 
 export function listMonthsBetween(start: Date, end: Date): Date[] {

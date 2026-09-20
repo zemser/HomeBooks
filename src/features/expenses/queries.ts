@@ -37,6 +37,7 @@ import {
   historyMonthIsUnscoped,
   isHistoryAccountAll,
   isHistoryMonthUnresolved,
+  resolveHistoryAccountId,
   type HistoryQuery,
   type ParsedHistoryQuery,
 } from "@/features/expenses/history-query";
@@ -1038,8 +1039,20 @@ export async function listHistoryPageData(
   parsed: ParsedHistoryQuery,
   db: DbExecutor = getDb(),
 ): Promise<Omit<ExpensesPageData, "oneTimeManualEntries"> & { defaultMonth: string }> {
-  const defaultMonth = (await getLatestFinancialActivityMonth(context, db)).slice(0, 7);
-  const query = await resolveHistoryQuery(context, parsed, db, defaultMonth);
+  const [defaultMonthRaw, filterOptions] = await Promise.all([
+    getLatestFinancialActivityMonth(context, db),
+    listHistoryFilterOptions(context, db),
+  ]);
+  const defaultMonth = defaultMonthRaw.slice(0, 7);
+  const query = await resolveHistoryQuery(
+    context,
+    {
+      ...parsed,
+      accountId: resolveHistoryAccountId(parsed.accountId, filterOptions.accounts),
+    },
+    db,
+    defaultMonth,
+  );
   const listInput = {
     workspaceId: context.workspaceId,
     accountId: query.accountId,
@@ -1047,7 +1060,7 @@ export async function listHistoryPageData(
     reviewStatus: query.reviewStatus,
     searchQuery: query.searchQuery,
   };
-  const [filteredCount, scopeTotalCount, scopePendingCount, workspaceImportedCount, filterOptions, members, categoryCatalog] =
+  const [filteredCount, scopeTotalCount, scopePendingCount, members, categoryCatalog] =
     await Promise.all([
       countTransactionsByWorkspace({ ...listInput, db }),
       countTransactionsByWorkspace({
@@ -1061,11 +1074,6 @@ export async function listHistoryPageData(
         reviewStatus: "needs_review",
         db,
       }),
-      countTransactionsByWorkspace({
-        workspaceId: context.workspaceId,
-        db,
-      }),
-      listHistoryFilterOptions(context, db),
       listWorkspaceMembers(context, db),
       listWorkspaceCategories(context, db),
     ]);
@@ -1095,7 +1103,7 @@ export async function listHistoryPageData(
       month: query.month,
       pendingCount: scopePendingCount,
       totalCount: scopeTotalCount,
-      workspaceImportedCount,
+      hasImportedTransactions: filterOptions.accounts.length > 0,
       defaultMonth,
     },
     query: {

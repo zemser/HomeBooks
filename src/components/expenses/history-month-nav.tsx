@@ -6,20 +6,12 @@ import {
   HISTORY_MONTH_ALL,
   historyMonthIsUnscoped,
 } from "@/features/expenses/history-query";
-import { shiftYearMonth, yearMonth } from "@/lib/dates/months";
-
-function formatHistoryMonthLabel(value: string) {
-  return new Intl.DateTimeFormat("en", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${value}-01T00:00:00.000Z`));
-}
-
-function latestNavigableMonth(defaultMonth: string) {
-  const current = yearMonth(new Date());
-  return defaultMonth.localeCompare(current) >= 0 ? defaultMonth : current;
-}
+import {
+  earliestYearMonth,
+  formatYearMonthLabel,
+  latestNavigableYearMonth,
+  shiftYearMonth,
+} from "@/lib/dates/months";
 
 function ChevronIcon({ direction }: { direction: "prev" | "next" }) {
   const isPrev = direction === "prev";
@@ -46,18 +38,22 @@ function ChevronIcon({ direction }: { direction: "prev" | "next" }) {
 export function HistoryMonthNav({
   month,
   defaultMonth,
+  months,
   onChange,
 }: {
   month: string;
   defaultMonth: string;
+  months: string[];
   onChange: (month: string) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const allMonths = historyMonthIsUnscoped(month);
-  const latest = latestNavigableMonth(defaultMonth);
-  const canPrev = !allMonths;
+  const earliest = earliestYearMonth(months);
+  const latest = latestNavigableYearMonth(defaultMonth);
+  const canPrev = earliest != null && !allMonths && month.localeCompare(earliest) > 0;
   const canNext = !allMonths && month.localeCompare(latest) < 0;
-  const label = allMonths ? "All months" : formatHistoryMonthLabel(month);
+  const label = allMonths ? "All months" : formatYearMonthLabel(month);
+  const pickerValue = allMonths ? latest : month;
 
   function openMonthPicker() {
     const input = inputRef.current;
@@ -77,10 +73,12 @@ export function HistoryMonthNav({
   return (
     <div className="history-month-nav" role="group" aria-label="Month">
       <button
+        aria-hidden={allMonths || undefined}
         aria-label="Previous month"
-        className="history-month-step"
+        className={allMonths ? "history-month-step is-inert" : "history-month-step"}
         disabled={!canPrev}
         onClick={() => onChange(shiftYearMonth(month, -1))}
+        tabIndex={allMonths ? -1 : undefined}
         type="button"
       >
         <ChevronIcon direction="prev" />
@@ -98,20 +96,24 @@ export function HistoryMonthNav({
           aria-hidden="true"
           className="sr-only"
           data-testid="history-month-input"
+          max={latest}
+          min={earliest ?? undefined}
           onChange={(event) => {
             if (event.target.value) onChange(event.target.value);
           }}
           ref={inputRef}
           tabIndex={-1}
           type="month"
-          value={allMonths ? "" : month}
+          value={pickerValue}
         />
       </div>
       <button
+        aria-hidden={allMonths || undefined}
         aria-label="Next month"
-        className="history-month-step"
+        className={allMonths ? "history-month-step is-inert" : "history-month-step"}
         disabled={!canNext}
         onClick={() => onChange(shiftYearMonth(month, 1))}
+        tabIndex={allMonths ? -1 : undefined}
         type="button"
       >
         <ChevronIcon direction="next" />
