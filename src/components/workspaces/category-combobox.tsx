@@ -42,9 +42,11 @@ export function CategoryCombobox({
   const [activeIndex, setActiveIndex] = useState(0);
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [pendingCreateName, setPendingCreateName] = useState<string | null>(null);
 
   useEffect(() => {
     setQuery(value);
+    setPendingCreateName(null);
   }, [value]);
 
   const options = useMemo(() => {
@@ -76,6 +78,7 @@ export function CategoryCombobox({
   function selectValue(nextValue: string) {
     onChange(nextValue);
     setQuery(nextValue);
+    setPendingCreateName(null);
     setIsOpen(false);
     inputRef.current?.focus();
   }
@@ -99,9 +102,25 @@ export function CategoryCombobox({
     Boolean(onCreateCategory) &&
     query.trim().length > 0 &&
     !categories.some((category) => canonical(category) === canonical(query));
-  const activeOptionId = options[activeIndex]
-    ? `${listboxId}-option-${activeIndex}`
-    : undefined;
+  const isCreatePending =
+    pendingCreateName !== null && canonical(pendingCreateName) === canonical(query);
+  const createOptionId = `${listboxId}-create`;
+  const activeOptionId = isCreatePending
+    ? createOptionId
+    : options[activeIndex]
+      ? `${listboxId}-option-${activeIndex}`
+      : undefined;
+
+  function handleCreateIntent() {
+    const name = query.trim();
+    if (!name || !canCreate || isCreating) return;
+    if (isCreatePending) {
+      void createCategory();
+      return;
+    }
+    setCreateError(null);
+    setPendingCreateName(name);
+  }
 
   return (
     <div className="category-combobox">
@@ -125,8 +144,10 @@ export function CategoryCombobox({
             setQuery(event.target.value);
             setActiveIndex(0);
             setIsOpen(true);
+            setPendingCreateName(null);
           }}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
             if (event.key === "ArrowDown") {
               event.preventDefault();
               setIsOpen(true);
@@ -138,9 +159,13 @@ export function CategoryCombobox({
             } else if (event.key === "Enter" && isOpen) {
               event.preventDefault();
               if (options[activeIndex]) selectValue(options[activeIndex].value);
-              else if (canCreate) void createCategory();
+              else if (canCreate) handleCreateIntent();
             } else if (event.key === "Escape") {
               event.preventDefault();
+              if (pendingCreateName) {
+                setPendingCreateName(null);
+                return;
+              }
               setQuery(value);
               setIsOpen(false);
             }
@@ -149,6 +174,7 @@ export function CategoryCombobox({
             const nextTarget = event.relatedTarget;
             if (!(nextTarget instanceof Node) || !event.currentTarget.parentElement?.parentElement?.contains(nextTarget)) {
               setQuery(value);
+              setPendingCreateName(null);
               setIsOpen(false);
             }
           }}
@@ -203,14 +229,38 @@ export function CategoryCombobox({
           ) : null}
           {canCreate ? (
             <button
-              className="category-combobox-create"
+              id={createOptionId}
+              className={`category-combobox-create ${isCreatePending ? "is-pending" : ""}`}
               type="button"
               disabled={isCreating}
+              aria-label={
+                isCreating
+                  ? `Creating ${query.trim()}`
+                  : isCreatePending
+                    ? `Confirm create category ${query.trim()}`
+                    : `Create category ${query.trim()}`
+              }
               onMouseDown={(event) => event.preventDefault()}
-              onClick={() => void createCategory()}
+              onClick={() => handleCreateIntent()}
             >
-              {isCreating ? "Creating…" : `Create “${query.trim()}”`}
+              {isCreating ? (
+                "Creating…"
+              ) : (
+                <span className="category-combobox-create-copy">
+                  <span>{isCreatePending ? `Create “${query.trim()}”?` : `Create “${query.trim()}”`}</span>
+                  {isCreatePending ? (
+                    <span className="category-combobox-create-hint">
+                      Adds this category to the workspace.
+                    </span>
+                  ) : null}
+                </span>
+              )}
             </button>
+          ) : null}
+          {isCreatePending && !isCreating ? (
+            <p className="sr-only" aria-live="polite">
+              Press Enter or click again to create “{query.trim()}”. Adds this category to the workspace.
+            </p>
           ) : null}
           {createError ? <p className="category-combobox-error" role="alert">{createError}</p> : null}
         </div>
