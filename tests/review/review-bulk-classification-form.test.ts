@@ -36,7 +36,18 @@ test("category combobox follows the controlled value when the selected row chang
     source("src/components/expenses/review-queue-client.tsx"),
   ]);
 
-  assert.match(combobox, /useEffect\(\(\) => \{\s*setQuery\(value\);\s*\}, \[value\]\)/);
+  assert.match(combobox, /useEffect\(\(\) => \{\s*setQuery\(value\);\s*setPendingCreateName\(null\);\s*\}, \[value\]\)/);
   assert.doesNotMatch(combobox, /if \(!isOpen\) setQuery\(value\)/);
   assert.match(reviewQueue, /key=\{selectedTransaction\.id\}/);
+});
+
+test("category combobox requires a second enter or click before creating a category", async () => {
+  const combobox = await source("src/components/workspaces/category-combobox.tsx");
+
+  assert.match(combobox, /pendingCreateName/);
+  assert.match(combobox, /handleCreateIntent/);
+  assert.match(combobox, /else if \(canCreate\) handleCreateIntent\(\)/);
+  assert.doesNotMatch(combobox, /else if \(canCreate\) void createCategory\(\)/);
+  assert.match(combobox, /Adds this category to the workspace/);
+  assert.match(combobox, /Press Enter or click again to create/);
 });
