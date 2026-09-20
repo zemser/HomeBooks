@@ -18,6 +18,7 @@ import {
 } from "@/components/expenses/member-attribution-fields";
 import { Modal } from "@/components/shared/modal";
 import { ImportSourceCell } from "@/components/shared/import-source-cell";
+import { HistoryMonthNav } from "@/components/expenses/history-month-nav";
 import { CategorySelect } from "@/components/workspaces/category-select";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { type ClassificationType } from "@/features/expenses/constants";
@@ -35,12 +36,9 @@ import {
 } from "@/features/expenses/presentation";
 import {
   DEFAULT_HISTORY_PAGE_SIZE,
-  HISTORY_IMPORT_ALL,
-  HISTORY_IMPORT_UNRESOLVED,
-  HISTORY_MONTH_ALL,
-  historyImportIsUnscoped,
+  HISTORY_ACCOUNT_ALL,
   historyMonthIsUnscoped,
-  isHistoryImportUnresolved,
+  isHistoryAccountAll,
   isHistoryMonthUnresolved,
   parseHistoryQuery,
   serializeHistoryQuery,
@@ -246,7 +244,7 @@ export function ExpensesPageClient({
     initialData.query.reviewStatus,
   );
   const [monthFilter, setMonthFilter] = useState(initialData.query.month);
-  const [importFilter, setImportFilter] = useState(initialData.query.importId);
+  const [accountFilter, setAccountFilter] = useState(initialData.query.accountId);
   const [isUrlStateReady, setIsUrlStateReady] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isManualEntryModalOpen, setIsManualEntryModalOpen] = useState(false);
@@ -319,7 +317,7 @@ export function ExpensesPageClient({
   }) {
     return serializeHistoryQuery("", {
       month: monthFilter,
-      importId: importFilter,
+      accountId: accountFilter,
       searchQuery: overrides?.searchQuery ?? searchQuery,
       reviewStatus: reviewStatusFilter,
       page: overrides?.page ?? page,
@@ -356,7 +354,7 @@ export function ExpensesPageClient({
           scope: data.scope ?? scope,
           query: data.query ?? {
             month: monthFilter,
-            importId: importFilter,
+            accountId: accountFilter,
             searchQuery,
             reviewStatus: reviewStatusFilter,
             page,
@@ -396,7 +394,7 @@ export function ExpensesPageClient({
     setSearchQuery(initialData.query.searchQuery);
     setReviewStatusFilter(initialData.query.reviewStatus);
     setMonthFilter(initialData.query.month);
-    setImportFilter(initialData.query.importId);
+    setAccountFilter(initialData.query.accountId);
     setSelectedManualEntryId(null);
     setSelectedTransactionId(initialData.query.transactionId ?? null);
     setError(null);
@@ -409,7 +407,7 @@ export function ExpensesPageClient({
       setSearchQuery(state.searchQuery);
       setReviewStatusFilter(state.reviewStatus);
       if (!isHistoryMonthUnresolved(state.month)) setMonthFilter(state.month);
-      if (!isHistoryImportUnresolved(state.importId)) setImportFilter(state.importId);
+      setAccountFilter(state.accountId);
       // On initial deep links the server may have located the focused row
       // beyond page 1 even though the URL did not explicitly specify a page.
       if (state.pageSpecified) setPage(state.page);
@@ -427,7 +425,7 @@ export function ExpensesPageClient({
     if (!isUrlStateReady) return;
     const nextQuery = serializeHistoryQuery("", {
       month: monthFilter,
-      importId: importFilter,
+      accountId: accountFilter,
       searchQuery,
       reviewStatus: reviewStatusFilter,
       page,
@@ -436,7 +434,7 @@ export function ExpensesPageClient({
     });
     window.history.replaceState(null, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
   }, [
-    importFilter,
+    accountFilter,
     isUrlStateReady,
     monthFilter,
     page,
@@ -451,7 +449,7 @@ export function ExpensesPageClient({
     const filterSignature = JSON.stringify({
       searchQuery: deferredSearchQuery,
       monthFilter,
-      importFilter,
+      accountFilter,
       reviewStatusFilter,
     });
     const querySignature = `${filterSignature}:${page}`;
@@ -477,7 +475,7 @@ export function ExpensesPageClient({
     });
     // Filter changes refetch the scoped page; selected row changes only update the URL.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deferredSearchQuery, importFilter, isUrlStateReady, monthFilter, page, reviewStatusFilter]);
+  }, [accountFilter, deferredSearchQuery, isUrlStateReady, monthFilter, page, reviewStatusFilter]);
 
   const selectedManualEntry =
     oneTimeManualEntries.find((entry) => entry.id === selectedManualEntryId) ?? null;
@@ -486,7 +484,7 @@ export function ExpensesPageClient({
   const selectedTransaction =
     transactions.find((transaction) => transaction.id === selectedTransactionId) ?? null;
   const reviewCount = scope.pendingCount;
-  const showManualsTable = shouldShowHistoryManuals({ month: monthFilter, importId: importFilter });
+  const showManualsTable = shouldShowHistoryManuals({ month: monthFilter });
   const isEditingManualEntry = Boolean(selectedManualEntry);
   const manualEntryClassificationOptions = listClassificationOptions(manualEntryForm.eventKind);
   const hasDefinedCategories = categories.length > 0;
@@ -501,29 +499,24 @@ export function ExpensesPageClient({
         manualEntryForm.eventDate !== selectedManualEntry.eventDate),
   );
   const visibleTransactions = transactions;
-  const availableMonths = filterOptions.months;
-  const availableImports = filterOptions.imports;
+  const availableAccounts = filterOptions.accounts;
   const filtersActive =
     searchQuery.trim().length > 0 ||
     reviewStatusFilter !== "all" ||
-    monthFilter === HISTORY_MONTH_ALL ||
-    (!historyMonthIsUnscoped(monthFilter) && monthFilter !== scope.defaultMonth) ||
-    !historyImportIsUnscoped(importFilter);
-  const monthSelectValue = historyMonthIsUnscoped(monthFilter) ? HISTORY_MONTH_ALL : monthFilter;
-  const importSelectValue = historyImportIsUnscoped(importFilter) ? HISTORY_IMPORT_ALL : importFilter;
+    !isHistoryAccountAll(accountFilter);
   const reportsHref = !historyMonthIsUnscoped(monthFilter)
     ? `/reports?month=${monthFilter}&mode=payment_date`
     : "/reports";
-  const reviewHref = !historyImportIsUnscoped(importFilter)
-    ? `/transactions/review?import=${encodeURIComponent(importFilter)}`
-    : !historyMonthIsUnscoped(monthFilter)
-      ? `/transactions/review?month=${encodeURIComponent(monthFilter)}`
-      : "/transactions/review";
+  const reviewHref = (() => {
+    const params = new URLSearchParams();
+    if (!historyMonthIsUnscoped(monthFilter)) params.set("month", monthFilter);
+    if (!isHistoryAccountAll(accountFilter)) params.set("account", accountFilter);
+    const query = params.toString();
+    return query ? `/transactions/review?${query}` : "/transactions/review";
+  })();
   const scopeLabel = !historyMonthIsUnscoped(monthFilter)
     ? formatLedgerMonthLabel(monthFilter)
-    : !historyImportIsUnscoped(importFilter)
-      ? (availableImports.find((item) => item.id === importFilter)?.label ?? "this statement")
-      : "this view";
+    : "this view";
   useEffect(() => {
     setManualEntryForm(
       selectedManualEntry
@@ -652,8 +645,7 @@ export function ExpensesPageClient({
   function clearHistoryFilters() {
     setSearchQuery("");
     setReviewStatusFilter("all");
-    setMonthFilter(scope.defaultMonth);
-    setImportFilter(HISTORY_IMPORT_UNRESOLVED);
+    setAccountFilter(HISTORY_ACCOUNT_ALL);
     setPage(1);
   }
 
@@ -910,6 +902,12 @@ export function ExpensesPageClient({
           </div>
         </div>
       </article>
+
+      <HistoryMonthNav
+        defaultMonth={scope.defaultMonth}
+        month={monthFilter}
+        onChange={setMonthFilter}
+      />
 
       {reviewCount > 0 ? (
         <p className="status warning">
@@ -1349,15 +1347,30 @@ export function ExpensesPageClient({
         </div>
 
         <div className="stack compact">
-          <div className="inline-form">
-            <label className="field">
+          <div className="history-filter-row">
+            <label className="field history-search-field">
               <span>Search</span>
               <input
                 className="input"
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
-                placeholder="Merchant, description, account, or import file"
+                placeholder="Merchant, description, account, or file"
               />
+            </label>
+            <label className="field">
+              <span>Account</span>
+              <select
+                className="input"
+                value={accountFilter}
+                onChange={(event) => setAccountFilter(event.target.value)}
+              >
+                <option value={HISTORY_ACCOUNT_ALL}>All accounts</option>
+                {availableAccounts.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
             </label>
             <label className="field">
               <span>Review status</span>
@@ -1372,36 +1385,6 @@ export function ExpensesPageClient({
                 <option value="needs_review">Needs review</option>
                 <option value="reviewed">Reviewed</option>
                 <option value="automatic">Automatically classified</option>
-              </select>
-            </label>
-            <label className="field">
-                <span>Transaction month</span>
-              <select
-                className="input"
-                value={monthSelectValue}
-                onChange={(event) => setMonthFilter(event.target.value)}
-              >
-                <option value="all">All months</option>
-                {availableMonths.map((month) => (
-                  <option key={month} value={month}>
-                    {formatLedgerMonthLabel(month)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="field">
-              <span>Import</span>
-              <select
-                className="input"
-                value={importSelectValue}
-                onChange={(event) => setImportFilter(event.target.value)}
-              >
-                <option value="all">All imports</option>
-                {availableImports.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.label}
-                  </option>
-                ))}
               </select>
             </label>
           </div>
@@ -1423,9 +1406,13 @@ export function ExpensesPageClient({
 
         {!isLoading && transactions.length === 0 ? (
           <p className="empty-state">
-            {scope.totalCount === 0
-              ? "No imported transactions in this scope yet. Save an import first and they will show up here."
-              : "No imported rows match the current search or filters."}
+            {scope.workspaceImportedCount === 0
+              ? "No imported transactions yet. Save an import first and they will show up here."
+              : scope.totalCount === 0
+                ? historyMonthIsUnscoped(monthFilter)
+                  ? "No imported transactions in this view yet."
+                  : `No imported transactions in ${formatLedgerMonthLabel(monthFilter)} yet.`
+                : "No imported rows match the current search or filters."}
           </p>
         ) : null}
 

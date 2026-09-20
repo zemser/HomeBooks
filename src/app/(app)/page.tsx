@@ -201,7 +201,7 @@ async function HomeRecentActivity({ searchParams }: HomePageProps) {
                 href={
                   item.reviewPendingCount > 0
                     ? `/transactions/review?import=${encodeURIComponent(item.id)}`
-                    : `/transactions/all?import=${encodeURIComponent(item.id)}`
+                    : `/transactions/all?month=${formatMonthInputValue(month)}`
                 }
               >
                 <strong>{item.originalFilename}</strong>

@@ -18,6 +18,15 @@ export function monthKey(input: Date): MonthKey {
   return `${year}-${month}-01`;
 }
 
+export function yearMonth(input: Date): string {
+  return monthKey(startOfMonth(input)).slice(0, 7);
+}
+
+export function shiftYearMonth(value: string, amount: number): string {
+  const normalized = /^\d{4}-\d{2}$/.test(value.trim()) ? `${value.trim()}-01` : value.trim();
+  return yearMonth(addMonths(new Date(`${normalized}T00:00:00.000Z`), amount));
+}
+
 export function listMonthsBetween(start: Date, end: Date): Date[] {
   const safeStart = startOfMonth(start);
   const safeEnd = startOfMonth(end);

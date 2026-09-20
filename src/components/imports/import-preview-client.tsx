@@ -114,6 +114,13 @@ function formatImportActivityRange(item: SavedImportSummary) {
   return `${earliest} to ${latest}`;
 }
 
+function historyRowsHref(input: { filename?: string | null; reviewStatus?: string }) {
+  const params = new URLSearchParams({ month: "all" });
+  if (input.filename?.trim()) params.set("q", input.filename.trim());
+  if (input.reviewStatus) params.set("reviewStatus", input.reviewStatus);
+  return `/transactions/all?${params.toString()}`;
+}
+
 function formatTemplateName(value: string | null | undefined) {
   switch (value) {
     case "max_credit_statement":
@@ -522,11 +529,19 @@ export function ImportPreviewClient({
                     </button>
                     <Link
                       className="link-button"
-                      href={`/transactions/all?month=all&reviewStatus=automatic&import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
+                      href={historyRowsHref({
+                        filename: highlightedImport?.originalFilename,
+                        reviewStatus: "automatic",
+                      })}
                     >
                       View automatic classifications
                     </Link>
-                    <Link className="link-button" href={`/transactions/all?month=all&import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}>Open this statement in History</Link>
+                    <Link
+                      className="link-button"
+                      href={historyRowsHref({ filename: highlightedImport?.originalFilename })}
+                    >
+                      Open this statement in History
+                    </Link>
                   </div>
                 </div>
               ) : (
@@ -668,7 +683,7 @@ export function ImportPreviewClient({
                     <td>
                       <strong>{savedImport.reviewPendingCount === 0 ? "Complete" : `${savedImport.reviewPendingCount} need review`}</strong>
                       <div className="table-note">
-                        {savedImport.ruleAppliedCount > 0 ? <Link href={`/transactions/all?month=all&reviewStatus=automatic&import=${encodeURIComponent(savedImport.id)}`}>View automatic classifications</Link> : null}
+                        {savedImport.ruleAppliedCount > 0 ? <Link href={historyRowsHref({ filename: savedImport.originalFilename, reviewStatus: "automatic" })}>View automatic classifications</Link> : null}
                         {" "}{savedImport.manuallyReviewedCount} reviewed · {savedImport.ruleAppliedCount} by rules · {savedImport.transactionCount} total
                       </div>
                     </td>
@@ -684,7 +699,7 @@ export function ImportPreviewClient({
                         </Link>
                         <Link
                           className="link-button"
-                          href={`/transactions/all?import=${encodeURIComponent(savedImport.id)}`}
+                          href={historyRowsHref({ filename: savedImport.originalFilename })}
                         >
                           History
                         </Link>

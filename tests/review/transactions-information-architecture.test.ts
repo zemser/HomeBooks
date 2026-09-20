@@ -33,7 +33,8 @@ test("transaction workflow links and import completion use canonical destination
   assert.match(workflow, /href: "\/transactions\/all"/);
   assert.match(workflow, /label: "History"/);
   assert.match(importPreview, /`\/transactions\/review\?import=/);
-  assert.match(importPreview, /`\/transactions\/all\?import=/);
+  assert.match(importPreview, /historyRowsHref/);
+  assert.match(importPreview, /\/transactions\/all/);
   assert.match(reviewQueue, /`\/transactions\/all\?transactionId=/);
   assert.match(reviewQueue, /&month=/);
   assert.match(allTransactions, /parseHistoryQuery/);

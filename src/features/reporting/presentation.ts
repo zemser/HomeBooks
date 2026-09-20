@@ -45,7 +45,7 @@ export function getMonthCompletenessNextAction(completeness: CompletenessNextSte
   }
   const unresolved = completeness.unresolvedAttributionCount ?? 0;
   return {
-    href: `/transactions/all?month=${monthKey}&import=all`,
+    href: `/transactions/all?month=${monthKey}`,
     label: unresolved === 1 ? "Confirm people on 1 transaction" : `Confirm people on ${unresolved} transactions`,
   };
 }

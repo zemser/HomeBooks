@@ -271,14 +271,19 @@ test("explicit History month=all stays paginated and is not the landing default"
   }
 });
 
-test("History import scope keeps the statement across its activity months", async ({ page }) => {
-  const snapshot = await reviewSnapshot(page);
-  const importId = snapshot.queue[0]?.importId ?? snapshot.summary.remainingByImport[0]?.importId;
-  test.skip(!importId, "The statement History assertion needs a saved import.");
+test("History account filter scopes imported rows", async ({ page }) => {
+  const response = await page.request.get("/api/expenses?month=all&pageSize=1");
+  expect(response.ok()).toBeTruthy();
+  const data = await response.json() as {
+    transactions: Array<{ accountId: string }>;
+    filterOptions: { accounts: Array<{ id: string }> };
+  };
+  const accountId = data.transactions[0]?.accountId ?? data.filterOptions.accounts[0]?.id;
+  test.skip(!accountId, "The account History assertion needs a saved transaction.");
 
-  await page.goto(`/transactions/all?import=${importId}`);
-  await expect.poll(() => new URL(page.url()).searchParams.get("import")).toBe(importId);
-  expect(new URL(page.url()).searchParams.get("month")).toBeNull();
+  await page.goto(`/transactions/all?month=all&account=${accountId}`);
+  await expect.poll(() => new URL(page.url()).searchParams.get("account")).toBe(accountId);
+  await expect(page.getByRole("combobox", { name: "Account", exact: true })).toHaveValue(accountId);
 });
 
 
@@ -337,7 +342,7 @@ test("History month picker includes a manual-only month", async ({ page, request
   try {
     await page.goto("/transactions/all?month=all");
     await expect.poll(() => new URL(page.url()).searchParams.get("page")).toBe("1");
-    await page.getByRole("combobox", { name: "Transaction month", exact: true }).selectOption(month);
+    await page.getByTestId("history-month-input").fill(month);
     await expect(page.getByText(title, { exact: true })).toBeVisible();
   } finally {
     expect((await request.delete(`/api/manual-entries/${manualEntryId}`)).status()).toBe(200);
