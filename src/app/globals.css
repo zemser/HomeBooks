@@ -2276,9 +2276,9 @@ kbd {
   border-top: 1px solid var(--border);
 }
 
-.review-detail-header,
-.review-detail-body,
-.review-detail > .review-decision-actions {
+.review-detail.is-swapping .review-detail-header,
+.review-detail.is-swapping .review-detail-body,
+.review-detail.is-swapping > .review-decision-actions {
   animation: review-panel-fade 150ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
