@@ -2173,7 +2173,7 @@ export function ReviewQueueClient({
               ) : null}
 
               {selectedIds.length === 1 ? (
-                <p className="helper-text">Check another row to classify them together.</p>
+                <p className="helper-text">Check more rows to classify them together in this panel.</p>
               ) : null}
               {isStacked && isBatching ? (
                 <p className="helper-text">Saving here classifies this row only.</p>
