@@ -279,6 +279,193 @@ function useReviewStacked() {
   );
 }
 
+const reviewBoardLockOnRem = 18;
+const reviewBoardLockOffRem = 16;
+const reviewTableRoomOnRem = 6;
+const reviewTableRoomOffRem = 4;
+const reviewDetailRoomOnRem = 2;
+const reviewDetailRoomOffRem = 0;
+
+function reviewChromeHeight(container: Element, skipClass: string) {
+  if (!(container instanceof HTMLElement)) return 0;
+  const style = getComputedStyle(container);
+  let height =
+    (Number.parseFloat(style.paddingTop) || 0) +
+    (Number.parseFloat(style.paddingBottom) || 0) +
+    (Number.parseFloat(style.borderTopWidth) || 0) +
+    (Number.parseFloat(style.borderBottomWidth) || 0);
+  for (const child of container.children) {
+    if (!(child instanceof HTMLElement)) continue;
+    if (child.classList.contains(skipClass)) continue;
+    if (getComputedStyle(child).display === "none") continue;
+    height += child.getBoundingClientRect().height;
+  }
+  return height;
+}
+
+function useReviewBoardLock(isStacked: boolean) {
+  const boardRef = useRef<HTMLDivElement>(null);
+  const scopeRef = useRef<HTMLElement>(null);
+  const lockedRef = useRef(false);
+  const rejectedAvailableRef = useRef<number | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [height, setHeight] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (isStacked) {
+      lockedRef.current = false;
+      setLocked(false);
+      setHeight(null);
+      return;
+    }
+
+    let correctionFrame = 0;
+    let fitFrame = 0;
+
+    function lockedLayoutFits(board: HTMLElement) {
+      const fontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const wrap = board.querySelector(".review-table-wrap");
+      const body = board.querySelector(".review-detail-body");
+      const actions = board.querySelector(".review-detail > .review-decision-actions");
+      const detail = board.querySelector(".review-detail");
+      if (!(wrap instanceof HTMLElement) || !(detail instanceof HTMLElement)) return true;
+      const actionsInside = !(actions instanceof HTMLElement)
+        || actions.getBoundingClientRect().bottom <= detail.getBoundingClientRect().bottom + 1;
+      const bodyHeight = body instanceof HTMLElement ? body.getBoundingClientRect().height : 0;
+      return wrap.getBoundingClientRect().height >= reviewTableRoomOffRem * fontSize
+        && bodyHeight >= reviewDetailRoomOnRem * fontSize
+        && actionsInside;
+    }
+
+    function readAvailable() {
+      const board = boardRef.current;
+      if (!board) return null;
+      const scrollport = board.closest(".app-main-scroll");
+      if (!(scrollport instanceof HTMLElement)) return null;
+
+      const pageShell = board.closest(".page-shell");
+      const boardRect = board.getBoundingClientRect();
+      const scrollportRect = scrollport.getBoundingClientRect();
+      const top = boardRect.top - scrollportRect.top + scrollport.scrollTop;
+      const scrollportStyle = getComputedStyle(scrollport);
+      const shellStyle = pageShell instanceof HTMLElement ? getComputedStyle(pageShell) : null;
+      const trailing =
+        (Number.parseFloat(scrollportStyle.paddingBottom) || 0) +
+        (shellStyle ? Number.parseFloat(shellStyle.paddingBottom) || 0 : 0);
+      // The scrollport's height grows with its content, so clientHeight is the
+      // whole page until the board is locked. Fit the board to the part of the
+      // scrollport that is actually on screen. A bounded scrollport already
+      // reports that height as clientHeight.
+      const visibleBottom = Math.min(scrollportRect.bottom, window.innerHeight);
+      const visibleTop = Math.max(scrollportRect.top, 0);
+      const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+      const clientHeight =
+        scrollport.scrollHeight > scrollport.clientHeight + 1
+          ? scrollport.clientHeight
+          : Math.min(scrollport.clientHeight, visibleHeight);
+      let available = clientHeight - top - trailing;
+
+      const nav = document.querySelector(".app-mobile-nav");
+      if (nav instanceof HTMLElement && getComputedStyle(nav).display !== "none") {
+        const overlap = boardRect.top + available - nav.getBoundingClientRect().top;
+        if (overlap > 1) available -= overlap;
+      }
+
+      return { available, scrollport };
+    }
+
+    function measure() {
+      cancelAnimationFrame(correctionFrame);
+      cancelAnimationFrame(fitFrame);
+      const reading = readAvailable();
+      const board = boardRef.current;
+      if (!reading || !board) return;
+      const fontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const toolbar = board.querySelector(".review-toolbar");
+      const list = board.querySelector(".review-list");
+      const detail = board.querySelector(".review-detail");
+      const rowGap = Number.parseFloat(getComputedStyle(board).rowGap) || 0;
+      const status = board.querySelector(".review-board-status");
+      const statusBlock = status ? status.getBoundingClientRect().height + rowGap : 0;
+      const toolbarBlock = (toolbar?.getBoundingClientRect().height ?? 0) + rowGap;
+      const rowHeight = reading.available - toolbarBlock - statusBlock;
+      const tableRoom = list ? rowHeight - reviewChromeHeight(list, "review-table-wrap") : 0;
+      const detailRoom = detail ? rowHeight - reviewChromeHeight(detail, "review-detail-body") : 0;
+      const heightOk = lockedRef.current
+        ? reading.available >= reviewBoardLockOffRem * fontSize
+        : reading.available >= reviewBoardLockOnRem * fontSize;
+      const fits = lockedRef.current
+        ? tableRoom >= reviewTableRoomOffRem * fontSize && detailRoom >= reviewDetailRoomOffRem * fontSize
+        : tableRoom >= reviewTableRoomOnRem * fontSize && detailRoom >= reviewDetailRoomOnRem * fontSize;
+      const blocked = !lockedRef.current
+        && rejectedAvailableRef.current != null
+        && reading.available <= rejectedAvailableRef.current + 1;
+      const nextLocked = heightOk && fits && !blocked;
+
+      if (!nextLocked) {
+        lockedRef.current = false;
+        setLocked(false);
+        setHeight(null);
+        return;
+      }
+
+      const nextHeight = Math.round(reading.available);
+      lockedRef.current = true;
+      setLocked(true);
+      setHeight((current) => (current === nextHeight ? current : nextHeight));
+      cancelAnimationFrame(correctionFrame);
+      cancelAnimationFrame(fitFrame);
+      const correctOverflow = (attempt: number) => {
+        if (!lockedRef.current) return;
+        const currentBoard = boardRef.current;
+        const scrollport = currentBoard?.closest(".app-main-scroll");
+        if (!(scrollport instanceof HTMLElement) || !currentBoard) return;
+        const applied = currentBoard.getBoundingClientRect().height;
+        if (Math.abs(applied - nextHeight) > 2 && attempt < 2) {
+          correctionFrame = window.requestAnimationFrame(() => correctOverflow(attempt + 1));
+          return;
+        }
+        const overflow = scrollport.scrollHeight - scrollport.clientHeight;
+        if (overflow > 1 && overflow < nextHeight) {
+          const corrected = Math.max(0, Math.round(nextHeight - overflow));
+          setHeight((current) => (current === corrected ? current : corrected));
+        }
+        fitFrame = window.requestAnimationFrame(() => {
+          const fitted = boardRef.current;
+          if (!lockedRef.current || !fitted) return;
+          if (lockedLayoutFits(fitted)) {
+            rejectedAvailableRef.current = null;
+            return;
+          }
+          rejectedAvailableRef.current = nextHeight;
+          lockedRef.current = false;
+          setLocked(false);
+          setHeight(null);
+        });
+      };
+      correctionFrame = window.requestAnimationFrame(() => correctOverflow(0));
+    }
+
+    measure();
+    const observer = new ResizeObserver(() => measure());
+    if (scopeRef.current) observer.observe(scopeRef.current);
+    const shell = document.querySelector("[data-testid='transactions-shell']");
+    const workflowNav = document.querySelector(".transactions-workflow-nav");
+    if (shell) observer.observe(shell);
+    if (workflowNav) observer.observe(workflowNav);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      cancelAnimationFrame(correctionFrame);
+      cancelAnimationFrame(fitFrame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [isStacked]);
+
+  return { boardRef, scopeRef, locked, height };
+}
+
 function BulkClassificationFields({
   form,
   formGeneration,
@@ -406,6 +593,12 @@ export function ReviewQueueClient({
   const [batchDockBottom, setBatchDockBottom] = useState(0);
   const [batchDockHeight, setBatchDockHeight] = useState(0);
   const isStacked = useReviewStacked();
+  const {
+    boardRef,
+    scopeRef,
+    locked: boardLocked,
+    height: boardHeight,
+  } = useReviewBoardLock(isStacked);
   const selectedIdsRef = useRef(selectedIds);
   const preserveBulkFormOnCloseRef = useRef(false);
   const batchDockRef = useRef<HTMLDivElement>(null);
@@ -420,9 +613,22 @@ export function ReviewQueueClient({
 
   function focusReviewRow(transactionId: string) {
     window.requestAnimationFrame(() => {
-      reviewWorkspaceRef.current
-        ?.querySelector<HTMLElement>(`[data-review-transaction-id="${transactionId}"]`)
-        ?.focus();
+      const row = reviewWorkspaceRef.current?.querySelector<HTMLElement>(
+        `[data-review-transaction-id="${transactionId}"]`,
+      );
+      if (!row) return;
+      row.focus({ preventScroll: true });
+      const wrap = row.closest(".review-table-wrap");
+      if (!(wrap instanceof HTMLElement)) return;
+      const rowRect = row.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      const header = wrap.querySelector("thead");
+      const headerHeight = header instanceof HTMLElement ? header.getBoundingClientRect().height : 0;
+      if (rowRect.top < wrapRect.top + headerHeight) {
+        wrap.scrollTop += rowRect.top - wrapRect.top - headerHeight;
+      } else if (rowRect.bottom > wrapRect.bottom) {
+        wrap.scrollTop += rowRect.bottom - wrapRect.bottom;
+      }
     });
   }
 
@@ -576,7 +782,11 @@ export function ReviewQueueClient({
     if (page > 1) params.set("page", String(page));
     else params.delete("page");
     const nextQuery = params.toString();
-    window.history.replaceState(null, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+    if (`${window.location.pathname}${window.location.search}` === nextUrl) return;
+    // Keep Next's history state. Passing null makes the router treat this as a
+    // new visit and refetch the page.
+    window.history.replaceState(window.history.state, "", nextUrl);
   }, [accountFilter, importFilter, isUrlStateReady, maximumAmount, minimumAmount, monthFilter, page, searchQuery, sort, view]);
 
   useEffect(() => {
@@ -1272,24 +1482,20 @@ export function ReviewQueueClient({
     summary.statementLibrary.length > 0 ? summary.statementLibrary : summary.remainingByImport;
   const reviewHero = activeImportSummary
     ? {
-        eyebrow: "Statement review",
         title: activeImportSummary.originalFilename,
         helper: `${activeImportSummary.sourceName ?? "Imported statement"} · ${formatReviewImportRange(activeImportSummary)}`,
       }
     : monthScoped
       ? {
-          eyebrow: "Month review",
           title: formatReviewReportMonth(monthFilter),
           helper: `${activeReviewRemaining} remaining in this month`,
         }
       : explicitAllRemaining
         ? {
-            eyebrow: "Remaining work",
             title: `${summary.queueCount} remaining across ${statementCount} statement${statementCount === 1 ? "" : "s"}`,
             helper: `${summary.reviewedCount} handled of ${summary.totalTransactionCount} imported overall`,
           }
         : {
-            eyebrow: "Review queue",
             title: "Imported statements",
             helper: `${statementCount} statement${statementCount === 1 ? "" : "s"} still in progress`,
           };
@@ -1479,42 +1685,37 @@ export function ReviewQueueClient({
 
   return (
     <section
-      className="stack review-workspace"
+      className={`stack review-workspace${boardLocked ? " review-workspace-locked" : ""}`}
       ref={reviewWorkspaceRef}
       style={{ "--review-batch-dock-height": `${batchDockHeight}px` } as CSSProperties}
     >
-      <article className="card stack compact">
-        <div className="review-scope-header">
-          <div>
-            <span className="eyebrow">{reviewHero.eyebrow}</span>
-            <h2>{reviewHero.title}</h2>
-            <p className="helper-text">{reviewHero.helper}</p>
-          </div>
-          <div className="review-scope-stats" aria-label="Review progress">
-            <span><strong>{activeReviewRemaining}</strong> remaining</span>
-            {showLifetimeMeter ? <span><strong>{activeReviewHandled}</strong> handled</span> : null}
-            {showLifetimeMeter ? <span><strong>{activeReviewPercentage}%</strong> complete</span> : null}
-          </div>
+      <article className="review-scope" ref={scopeRef}>
+        <div className="review-scope-identity">
+          <h2>{reviewHero.title}</h2>
+          <p>{reviewHero.helper}</p>
         </div>
-
-        {showLifetimeMeter ? (
-        <div
-          className="progress-meter"
-          role="progressbar"
-          aria-label={monthScoped ? "Month review progress" : "Statement review progress"}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={activeReviewPercentage}
-        >
-          <span
-            className="progress-meter-fill"
-            style={{ width: `${activeReviewPercentage}%` }}
-          />
+        <div className="review-scope-progress" aria-label="Review progress">
+          {showLifetimeMeter ? (
+            <div
+              className="progress-meter"
+              role="progressbar"
+              aria-label={monthScoped ? "Month review progress" : "Statement review progress"}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={activeReviewPercentage}
+              aria-valuetext={`${activeReviewHandled} handled, ${activeReviewPercentage}% complete`}
+            >
+              <span
+                className="progress-meter-fill"
+                style={{ width: `${activeReviewPercentage}%` }}
+              />
+            </div>
+          ) : null}
+          <span><strong>{activeReviewRemaining}</strong> remaining</span>
         </div>
-        ) : null}
 
         {statementLibrary.length > 0 ? (
-          <details className="review-import-switcher disclosure">
+          <details className="review-import-switcher">
             <summary>Switch statement</summary>
             <div className="stack compact">
             <button
@@ -1568,7 +1769,13 @@ export function ReviewQueueClient({
         ) : null}
       </article>
 
+      <div
+        className="review-board"
+        ref={boardRef}
+        style={boardLocked && boardHeight != null ? { height: boardHeight } : undefined}
+      >
       <article className="card review-toolbar" aria-label="Review filters">
+        <div className="review-toolbar-row">
         <div className="review-view-tabs" role="group" aria-label="Review view">
           {([
             ["all", "All"],
@@ -1643,6 +1850,7 @@ export function ReviewQueueClient({
             ?
           </button>
         </div>
+        </div>
         {activeFilterChips.length > 0 ? (
           <div className="review-active-filters" aria-label="Active filters">
             {activeFilterChips.map((chip) => (
@@ -1659,45 +1867,36 @@ export function ReviewQueueClient({
             ))}
           </div>
         ) : null}
-        <div className="review-toolbar-footer">
-          <p className="helper-text" aria-live="polite">
-            Showing {visibleQueue.length} of {pagination.filteredCount} matching transactions · {summary.queueCount} total left.
-          </p>
-          <div className="action-row">
-            {filtersActive ? <button className="link-button" type="button" onClick={clearFilters}>Clear all filters</button> : null}
-          </div>
-        </div>
       </article>
 
-      {error ? <p className="status error" role="alert">{error}</p> : null}
-      {message ? (
-        <div className="status review-status-message" aria-live="polite">
-          <span>{message}</span>
-          {lastUndo ? <button className="link-button" type="button" disabled={isUndoing} onClick={() => void undoLastClassification()}>{isUndoing ? "Undoing…" : "Undo"}</button> : null}
+      {error || message ? (
+        <div className="review-board-status">
+          {error ? <p className="status error" role="alert">{error}</p> : null}
+          {message ? (
+            <div className="status review-status-message" aria-live="polite">
+              <span>{message}</span>
+              {lastUndo ? <button className="link-button" type="button" disabled={isUndoing} onClick={() => void undoLastClassification()}>{isUndoing ? "Undoing…" : "Undo"}</button> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      <section className="review-layout">
         <article className="card review-list">
-          <div className="page-actions">
-            <div>
-              <h2 className="sr-only">Review queue</h2>
-              <p className="muted-text">
-                The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.
-              </p>
+          <div className="review-list-meta">
+            <h2 className="sr-only">Review queue</h2>
+            <p className="helper-text" aria-live="polite">
+              {visibleQueue.length} of {pagination.filteredCount} on this page · {summary.queueCount} remaining
+              <span className="sr-only"> The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.</span>
+            </p>
+            <div className="review-list-meta-actions">
+              {filtersActive ? <button className="link-button" type="button" onClick={clearFilters}>Clear filters</button> : null}
+              {selectedIds.length === 0 ? (
+                <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
+                  Mark all {visibleQueue.length}
+                </button>
+              ) : null}
             </div>
           </div>
-
-          {selectedIds.length === 0 ? (
-            <div className="page-actions review-list-actions">
-              <div className="review-selection-prompt">
-                <p className="helper-text">Mark rows to classify several transactions together.</p>
-                <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
-                  Mark all {visibleQueue.length} on this page
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           <Modal
             open={isBulkModalOpen}
@@ -1902,20 +2101,37 @@ export function ReviewQueueClient({
           className={`card review-detail${panelMotion.swapped ? " is-swapping" : ""}`}
           data-panel-mode={panelMode}
         >
-          <div className="page-actions review-detail-header" key={panelMode}>
+          <div className={`review-detail-header${showWideBatch ? " is-batch" : ""}`} key={panelMode}>
             {showWideBatch ? (
-              <div>
-                <span className="eyebrow">Together</span>
-                <h2>{selectedIds.length} transactions</h2>
-                <p className="muted-text">One classification applies to every marked row.</p>
+              <div className="review-detail-title">
+                <div>
+                  <h2>{selectedIds.length} transactions</h2>
+                  <p className="muted-text">One classification applies to every marked row.</p>
+                </div>
               </div>
             ) : (
-              <div>
-                <span className="eyebrow">Reviewing</span>
-                <h2>This transaction</h2>
-                <p className="muted-text">
-                  Classify this row here. Checkboxes only mark other rows for a batch.
-                </p>
+              <div className="review-detail-title">
+                <div>
+                  <h2>This transaction</h2>
+                  {selectedTransaction ? (
+                    <p className="review-detail-merchant">{getTransactionMerchant(selectedTransaction)}</p>
+                  ) : (
+                    <p className="muted-text">Choose a row to classify it.</p>
+                  )}
+                  <p className="sr-only">Classify this row here. Checkboxes only mark other rows for a batch.</p>
+                </div>
+                {selectedTransaction ? (
+                  <div className="review-detail-facts">
+                    <strong>
+                      {formatMoneyDisplay(
+                        selectedTransaction.normalizedAmount,
+                        selectedTransaction.workspaceCurrency,
+                        selectedTransaction.direction,
+                      )}
+                    </strong>
+                    <span>{selectedTransaction.transactionDate}</span>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -1948,7 +2164,7 @@ export function ReviewQueueClient({
               transaction will appear here automatically.
             </p>
           ) : (
-            <div className="stack">
+            <div className="stack review-detail-form">
               {!selectedTransactionInQueue && focusTransaction ? (
                 <p className="status warning">
                   This transaction is already classified, so it is shown here as a focused
@@ -1957,107 +2173,17 @@ export function ReviewQueueClient({
               ) : null}
 
               {selectedIds.length === 1 ? (
-                <p className="helper-text">Check more rows to classify them together in this panel.</p>
+                <p className="helper-text">Check another row to classify them together.</p>
               ) : null}
               {isStacked && isBatching ? (
                 <p className="helper-text">Saving here classifies this row only.</p>
               ) : null}
 
-              <div className="meta-grid review-primary-meta">
-                <div>
-                  <strong>Date</strong>
-                  <p>{selectedTransaction.transactionDate}</p>
-                </div>
-                <div>
-                  <strong>Merchant</strong>
-                  <p>{getTransactionMerchant(selectedTransaction)}</p>
-                </div>
-                <div>
-                  <strong>Amount</strong>
-                  <p>
-                    {formatMoneyDisplay(
-                      selectedTransaction.normalizedAmount,
-                      selectedTransaction.workspaceCurrency,
-                      selectedTransaction.direction,
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <details className="disclosure">
-                <summary>Transaction details</summary>
-                <div className="meta-grid">
-                <div>
-                  <strong>Original</strong>
-                  <p>
-                    {formatMoneyDisplay(
-                      selectedTransaction.originalAmount,
-                      selectedTransaction.originalCurrency,
-                      selectedTransaction.direction,
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <strong>Normalized</strong>
-                  <p>
-                    {formatMoneyDisplay(
-                      selectedTransaction.normalizedAmount,
-                      selectedTransaction.workspaceCurrency,
-                      selectedTransaction.direction,
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <strong>Account</strong>
-                  <p>{selectedTransaction.accountDisplayName}</p>
-                </div>
-                <div>
-                  <strong>Import source</strong>
-                  <p>{selectedTransaction.importSourceName ?? "Unknown source"}</p>
-                </div>
-                <div>
-                  <strong>Import file</strong>
-                  <p>{selectedTransaction.importOriginalFilename}</p>
-                </div>
-                </div>
-              </details>
-
-              <div className="stack compact">
-                <span
-                  className={`badge ${selectedTransaction.classification ? "badge-neutral" : "badge-warning"}`}
-                >
-                  {formatClassificationSummary(selectedTransaction.classification)}
-                </span>
-                {selectedTransaction.classification ? (
-                  <p className="table-note">
-                    {formatDecisionSourceLabel(selectedTransaction.classification.decidedBy)}
-                  </p>
-                ) : null}
-                {selectedQueuePosition ? (
-                  <p className="table-note">
-                    Item {selectedFilteredPosition} of {pagination.filteredCount} matching · {summary.queueCount} total left.
-                  </p>
-                ) : null}
-                <p className="table-note">
-                  Reporting: {formatAllocationSummary(selectedTransaction.allocation)}
-                </p>
-              </div>
-
-              {selectedTransactionCurrencyState?.label ? (
+              {selectedTransactionCurrencyState?.tone === "warning" && selectedTransactionCurrencyState.label ? (
                 <div className="stack compact">
-                  <span
-                    className={`badge ${
-                      selectedTransactionCurrencyState.tone === "warning"
-                        ? "badge-warning"
-                        : "badge-neutral"
-                    }`}
-                  >
-                    {selectedTransactionCurrencyState.label}
-                  </span>
+                  <span className="badge badge-warning">{selectedTransactionCurrencyState.label}</span>
                   {selectedTransactionCurrencyState.fullDescription ? (
-                    <p className="helper-text">
-                      {selectedTransactionCurrencyState.fullDescription}
-                    </p>
+                    <p className="helper-text">{selectedTransactionCurrencyState.fullDescription}</p>
                   ) : null}
                 </div>
               ) : null}
@@ -2187,22 +2313,82 @@ export function ReviewQueueClient({
                 ) : null}
               </div>
 
-              {selectedReportTargets.length > 0 ? (
+              <details className="disclosure">
+                <summary>Transaction details</summary>
                 <div className="stack compact">
-                  <p className="helper-text">
-                    {selectedReportTargets.length === 1
-                      ? "This row is ready for the matching report."
-                      : "This adjusted row lands in multiple report months."}
+                  <span
+                    className={`badge ${selectedTransaction.classification ? "badge-neutral" : "badge-warning"}`}
+                  >
+                    {formatClassificationSummary(selectedTransaction.classification)}
+                  </span>
+                  {selectedTransaction.classification ? (
+                    <p className="table-note">
+                      {formatDecisionSourceLabel(selectedTransaction.classification.decidedBy)}
+                    </p>
+                  ) : null}
+                  {selectedQueuePosition ? (
+                    <p className="table-note">
+                      Item {selectedFilteredPosition} of {pagination.filteredCount} matching · {summary.queueCount} total left.
+                    </p>
+                  ) : null}
+                  <p className="table-note">
+                    Reporting: {formatAllocationSummary(selectedTransaction.allocation)}
                   </p>
-                  <div className="action-row">
-                    {selectedReportTargets.map((target) => (
-                      <Link className="link-button" href={target.href} key={target.href}>
-                        {target.label}
-                      </Link>
-                    ))}
+                  {selectedTransactionCurrencyState?.label && selectedTransactionCurrencyState.tone !== "warning" ? (
+                    <span className="badge badge-neutral">{selectedTransactionCurrencyState.label}</span>
+                  ) : null}
+                </div>
+                <div className="meta-grid">
+                  <div>
+                    <strong>Original</strong>
+                    <p>
+                      {formatMoneyDisplay(
+                        selectedTransaction.originalAmount,
+                        selectedTransaction.originalCurrency,
+                        selectedTransaction.direction,
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Normalized</strong>
+                    <p>
+                      {formatMoneyDisplay(
+                        selectedTransaction.normalizedAmount,
+                        selectedTransaction.workspaceCurrency,
+                        selectedTransaction.direction,
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Account</strong>
+                    <p>{selectedTransaction.accountDisplayName}</p>
+                  </div>
+                  <div>
+                    <strong>Import source</strong>
+                    <p>{selectedTransaction.importSourceName ?? "Unknown source"}</p>
+                  </div>
+                  <div>
+                    <strong>Import file</strong>
+                    <p>{selectedTransaction.importOriginalFilename}</p>
                   </div>
                 </div>
-              ) : null}
+                {selectedReportTargets.length > 0 ? (
+                  <div className="stack compact">
+                    <p className="helper-text">
+                      {selectedReportTargets.length === 1
+                        ? "This row is ready for the matching report."
+                        : "This adjusted row lands in multiple report months."}
+                    </p>
+                    <div className="action-row">
+                      {selectedReportTargets.map((target) => (
+                        <Link className="link-button" href={target.href} key={target.href}>
+                          {target.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </details>
 
               <details className="disclosure">
                 <summary>Report month allocation</summary>
@@ -2268,7 +2454,7 @@ export function ReviewQueueClient({
             </div>
           ) : null}
         </article>
-      </section>
+      </div>
 
       {isStacked && isBatching
         ? createPortal(

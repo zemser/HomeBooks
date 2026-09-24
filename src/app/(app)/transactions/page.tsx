@@ -38,13 +38,13 @@ async function SavedImportHistory() {
 
 export default function TransactionsImportPage() {
   return (
-    <>
-      <Suspense fallback={<RouteDataFallback label="Bank statement upload" />}>
+    <div className="stack">
+      <Suspense fallback={<RouteDataFallback label="Bank statement upload" presentation="spinner" />}>
         <ImportUpload />
       </Suspense>
-      <Suspense fallback={<RouteDataFallback label="Saved bank statements" />}>
+      <Suspense fallback={<RouteDataFallback label="Saved bank statements" presentation="spinner" />}>
         <SavedImportHistory />
       </Suspense>
-    </>
+    </div>
   );
 }

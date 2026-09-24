@@ -22,7 +22,7 @@ Import, History, Reports, and every other page keep document scroll and their cu
 ## Current code
 
 - Page: `src/app/(app)/transactions/review/page.tsx`
-- Shared chrome: `src/app/(app)/transactions/layout.tsx` and `src/components/transactions/transactions-workflow-nav.tsx`. Slice 3 is the only slice that may branch this header, and only on `/transactions/review`.
+- Shared chrome: `src/app/(app)/transactions/layout.tsx` and `src/components/transactions/transactions-workflow-nav.tsx`. Slice 3 owns this header; it is the same on every Transactions tab.
 - Client: `src/components/expenses/review-queue-client.tsx`
 - Styles: review rules in `src/app/globals.css` (`.review-layout`, `.review-detail`, `.review-batch-bar`, `.review-toolbar`)
 - Scrollport: `.app-main-scroll`. `overflow-x: hidden` makes the used `overflow-y` `auto`. Measure the board inside this element. Do not treat `100dvh` as the available height.
@@ -302,11 +302,13 @@ Do not edit `.app-shell`, `.app-main`, `.app-main-scroll`, `.page-shell`, or sha
 
 Do this after slice 2. It is part of the workspace, not a shared chrome restyle.
 
-On `/transactions/review` only, put the Transactions title and the Import / Review / History nav on one row. Keep the page description visible.
+On every Transactions tab (Import, Review, History), put the Transactions title and the Import / Review / History nav on one row. The header is the same size and position on all three tabs, so switching tabs never moves the nav. The eyebrow and the page description are removed.
 
-Implement that in a client header used by `src/app/(app)/transactions/layout.tsx`, branching on `usePathname() === "/transactions/review"`. Import (`/transactions`) and History (`/transactions/all`) keep the current stacked header, including the description.
+A Review-only header made the nav jump about 190px every time someone entered or left Review, so the compact header is shared chrome for the Transactions layout.
 
-Do not do this with `.page-shell:has(.review-workspace)` or any other rule that restyles `.page-header` for every transactions route. Do not change `.page-shell` width, height, overflow, or padding. Do not hide the description. #143 hid it from shared CSS and that shipped with the reverted layout.
+Implement that in a client frame used by `src/app/(app)/transactions/layout.tsx`. It always sets `transactions-shell`, and adds `transactions-review-shell` only when `usePathname() === "/transactions/review"`. The Review class carries only Review workspace rules (bottom padding for the board lock), never header styling.
+
+Do not do this with `.page-shell:has(.review-workspace)`. Do not change `.page-shell` width or overflow.
 
 After the one-row header, slice 2's measurement already includes the Transactions header. No second height formula.
 
@@ -318,8 +320,8 @@ After the one-row header, slice 2's measurement already includes the Transaction
 
 ### Slice 3 acceptance
 
-- On Review, the title and Import / Review / History sit on one row, and the description is still readable.
-- Import and History keep today's header: eyebrow, title, description, nav below.
+- On Import, Review, and History, the title and Import / Review / History sit on one row.
+- Switching between the three tabs does not move or resize the title or the nav.
 - Slice 2's lock still clears the header. A short window still falls back to page scroll.
 - History and Reports still scroll as a document.
 
@@ -328,7 +330,7 @@ After the one-row header, slice 2's measurement already includes the Transaction
 - Changing page size, filters, suggestions, merchant rules, or classification rules.
 - A new batch API.
 - Sticky or inner-scroll behavior on History or any other table.
-- Restyling the app sidebar, mobile tab bar, or the transactions header on Import and History.
+- Restyling the app sidebar or mobile tab bar.
 - Widening `.page-shell` past `1120px`.
 
 ## Done when

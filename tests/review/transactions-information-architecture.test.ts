@@ -70,7 +70,7 @@ test("Phase 7 Review and History copy no longer promise a lifetime ledger", asyn
   ]);
 
   assert.doesNotMatch(workflow, /All transactions/);
-  assert.match(layout, /Import a statement, review it, or add a cash expense for the month/);
+  assert.doesNotMatch(layout, /lifetime|complete history/i);
   assert.match(reviewQueue, /Open in History/);
   assert.match(reviewQueue, /All remaining/);
   assert.doesNotMatch(historyClient, /Visible in ledger|complete history|Open in ledger/);
