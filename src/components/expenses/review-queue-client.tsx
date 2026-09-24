@@ -31,6 +31,8 @@ import {
   SplitForSettlementField,
   type MemberAttributionFormValue,
 } from "@/components/expenses/member-attribution-fields";
+import { StatementSwitcher } from "@/components/expenses/statement-switcher";
+import { statementPeriodLabel } from "@/components/expenses/statement-switcher-model";
 import { CategoryCombobox } from "@/components/workspaces/category-combobox";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expenses/constants";
@@ -59,7 +61,6 @@ import {
 import { DEFAULT_REVIEW_PAGE_SIZE, parseReviewQuery, type ReviewQuery } from "@/features/expenses/review-query";
 import type {
   ExpenseTransactionItem,
-  ReviewQueueImportSummary,
   ReviewQueueResponse,
   ReviewQueueSummary,
   WorkspaceMemberOption,
@@ -103,82 +104,6 @@ type ActiveFilterKey =
   | "sort"
   | "view";
 
-type ReviewImportOption = {
-  id: string;
-  label: string;
-};
-
-function ImportScopePicker({
-  imports,
-  value,
-  onChange,
-}: {
-  imports: ReviewImportOption[];
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const detailsRef = useRef<HTMLDetailsElement>(null);
-  const [query, setQuery] = useState("");
-  const selectedLabel = imports.find((item) => item.id === value)?.label;
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const filteredImports = imports.filter((item) =>
-    item.label.toLocaleLowerCase().includes(normalizedQuery),
-  );
-
-  function selectImport(importId: string) {
-    onChange(importId);
-    setQuery("");
-    if (detailsRef.current) detailsRef.current.open = false;
-  }
-
-  return (
-    <div className="field import-scope-field">
-      <span id="review-import-scope-label">Import</span>
-      <details className="import-scope-picker" ref={detailsRef}>
-        <summary aria-labelledby="review-import-scope-label">
-          {value === "all" ? "All remaining" : selectedLabel ?? "Selected import"}
-        </summary>
-        <div className="import-scope-menu">
-          <input
-            className="input"
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search imports"
-            aria-label="Search imports"
-          />
-          <div className="import-scope-options" role="listbox" aria-label="Import options">
-            <button
-              className={value === "all" ? "is-selected" : ""}
-              type="button"
-              role="option"
-              aria-selected={value === "all"}
-              onClick={() => selectImport("all")}
-            >
-              All remaining
-            </button>
-            {filteredImports.map((item) => (
-              <button
-                className={value === item.id ? "is-selected" : ""}
-                type="button"
-                role="option"
-                aria-selected={value === item.id}
-                onClick={() => selectImport(item.id)}
-                key={item.id}
-              >
-                {item.label}
-              </button>
-            ))}
-            {filteredImports.length === 0 ? (
-              <p className="helper-text">No imports match this search.</p>
-            ) : null}
-          </div>
-        </div>
-      </details>
-    </div>
-  );
-}
-
 const emptySingleForm: SingleFormState = {
   classificationType: "",
   category: "",
@@ -209,6 +134,15 @@ const emptyReviewSummary: ReviewQueueSummary = {
   selectedMonth: null,
 };
 
+function reviewHistoryUrl(value: string | URL | null | undefined) {
+  if (!value) return null;
+  try {
+    return new URL(String(value), window.location.origin);
+  } catch {
+    return null;
+  }
+}
+
 function getSelectedTransaction(input: {
   queue: ExpenseTransactionItem[];
   focusTransaction: ExpenseTransactionItem | null;
@@ -222,29 +156,6 @@ function getSelectedTransaction(input: {
     input.queue.find((transaction) => transaction.id === input.selectedTransactionId) ??
     (input.focusTransaction?.id === input.selectedTransactionId ? input.focusTransaction : null)
   );
-}
-
-function formatReviewImportRange(item: ReviewQueueImportSummary) {
-  if (!item.earliestTransactionDate || !item.latestTransactionDate) {
-    return "Unknown period";
-  }
-
-  const earliest = item.earliestTransactionDate.slice(0, 7);
-  const latest = item.latestTransactionDate.slice(0, 7);
-
-  const formatter = new Intl.DateTimeFormat("en", {
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-
-  if (earliest === latest) {
-    return formatter.format(new Date(`${earliest}-01T00:00:00.000Z`));
-  }
-
-  return `${formatter.format(new Date(`${earliest}-01T00:00:00.000Z`))} to ${formatter.format(
-    new Date(`${latest}-01T00:00:00.000Z`),
-  )}`;
 }
 
 function formatReviewReportMonth(value: string) {
@@ -584,6 +495,29 @@ export function ReviewQueueClient({
   const memberSelectRef = useRef<HTMLSelectElement>(null);
   const previousServerQueryRef = useRef<string | null>(null);
   const previousServerFilterRef = useRef<string | null>(null);
+  const desiredReviewUrlRef = useRef("");
+  const clientReviewQueryRef = useRef({
+    searchQuery: initialQuery.searchQuery,
+    month: initialQuery.month,
+    importId: initialQuery.importId,
+    accountId: initialQuery.accountId,
+    minimumAmount: initialQuery.minimumAmount,
+    maximumAmount: initialQuery.maximumAmount,
+    sort: initialQuery.sort,
+    view: initialQuery.view,
+    page: initialData.pagination.page,
+  });
+  clientReviewQueryRef.current = {
+    searchQuery,
+    month: monthFilter,
+    importId: importFilter,
+    accountId: accountFilter,
+    minimumAmount,
+    maximumAmount,
+    sort,
+    view,
+    page,
+  };
   const [isSavingSingle, startSavingSingle] = useTransition();
   const [isSavingBulk, startSavingBulk] = useTransition();
   const [isSavingAllocation, startSavingAllocation] = useTransition();
@@ -716,6 +650,21 @@ export function ReviewQueueClient({
   }, [accountFilter, applyQueueData, importFilter, maximumAmount, minimumAmount, monthFilter, pagination.pageSize, sort, view]);
 
   useEffect(() => {
+    const client = clientReviewQueryRef.current;
+    const serverMatchesClient =
+      initialQuery.searchQuery === client.searchQuery &&
+      initialQuery.month === client.month &&
+      initialQuery.importId === client.importId &&
+      initialQuery.accountId === client.accountId &&
+      initialQuery.minimumAmount === client.minimumAmount &&
+      initialQuery.maximumAmount === client.maximumAmount &&
+      initialQuery.sort === client.sort &&
+      initialQuery.view === client.view &&
+      initialQuery.page === client.page;
+    // A background refresh can redeliver the page the server first rendered.
+    // Once the reviewer has moved to another statement, keep that choice.
+    if (!serverMatchesClient) return;
+
     setQueue(initialData.queue);
     setFocusTransaction(initialData.focusTransaction ?? null);
     setMembers(initialData.members);
@@ -783,11 +732,45 @@ export function ReviewQueueClient({
     else params.delete("page");
     const nextQuery = params.toString();
     const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+    desiredReviewUrlRef.current = nextUrl;
     if (`${window.location.pathname}${window.location.search}` === nextUrl) return;
     // Keep Next's history state. Passing null makes the router treat this as a
     // new visit and refetch the page.
     window.history.replaceState(window.history.state, "", nextUrl);
   }, [accountFilter, importFilter, isUrlStateReady, maximumAmount, minimumAmount, monthFilter, page, searchQuery, sort, view]);
+
+  useEffect(() => {
+    let restoreHistory: History["replaceState"] | null = null;
+    const timer = window.setTimeout(() => {
+      restoreHistory = window.history.replaceState.bind(window.history);
+      window.history.replaceState = (data, unused, url) => {
+        const desired = desiredReviewUrlRef.current;
+        const next = reviewHistoryUrl(url);
+        const wanted = desired ? reviewHistoryUrl(desired) : null;
+        const fromNext = Boolean(
+          data &&
+            typeof data === "object" &&
+            "__NA" in data &&
+            (data as { __NA?: unknown }).__NA,
+        );
+        if (
+          fromNext &&
+          next &&
+          wanted &&
+          next.pathname === wanted.pathname &&
+          next.search !== wanted.search
+        ) {
+          restoreHistory?.(data, unused, desired);
+          return;
+        }
+        restoreHistory?.(data, unused, url);
+      };
+    }, 0);
+    return () => {
+      window.clearTimeout(timer);
+      if (restoreHistory) window.history.replaceState = restoreHistory;
+    };
+  }, []);
 
   useEffect(() => {
     if (!isUrlStateReady) return;
@@ -856,9 +839,13 @@ export function ReviewQueueClient({
       !isReviewImportUnresolved(importFilter) &&
       importFilter !== defaultImportId
     ) {
+      const libraryName = (summary.statementLibrary.length > 0
+        ? summary.statementLibrary
+        : summary.remainingByImport
+      ).find((item) => item.importId === importFilter)?.originalFilename;
       chips.push({
         key: "import",
-        label: `Import: ${availableImports.find((item) => item.id === importFilter)?.label ?? importFilter}`,
+        label: `Import: ${availableImports.find((item) => item.id === importFilter)?.label ?? libraryName ?? importFilter}`,
       });
     }
     if (accountFilter !== "all") {
@@ -890,7 +877,7 @@ export function ReviewQueueClient({
       chips.push({ key: "view", label: `View: ${viewLabels[view]}` });
     }
     return chips;
-  }, [accountFilter, availableAccounts, availableImports, defaultImportId, importFilter, maximumAmount, minimumAmount, monthFilter, searchQuery, sort, view]);
+  }, [accountFilter, availableAccounts, availableImports, defaultImportId, importFilter, maximumAmount, minimumAmount, monthFilter, searchQuery, sort, summary, view]);
 
   useEffect(() => {
     if (visibleQueue.length === 0) return;
@@ -1460,7 +1447,13 @@ export function ReviewQueueClient({
   const queueClearReportLabel = summary.latestTransactionMonth
     ? `Open ${formatReviewReportMonth(summary.latestTransactionMonth)} report`
     : "Open reports";
-  const activeImportSummary = reviewImportIsUnscoped(importFilter) ? null : summary.selectedImport;
+  const statementLibrary =
+    summary.statementLibrary.length > 0 ? summary.statementLibrary : summary.remainingByImport;
+  const selectedStatement = reviewImportIsUnscoped(importFilter)
+    ? null
+    : statementLibrary.find((item) => item.importId === importFilter) ?? null;
+  const activeImportSummary =
+    summary.selectedImport?.importId === importFilter ? summary.selectedImport : selectedStatement;
   const monthSummary = summary.selectedMonth;
   const explicitAllRemaining = isReviewImportAll(importFilter);
   const monthScoped = monthFilter !== "all" && reviewImportIsUnscoped(importFilter);
@@ -1478,12 +1471,10 @@ export function ReviewQueueClient({
     ? 100
     : Math.round((activeReviewHandled / activeReviewTotal) * 100);
   const showLifetimeMeter = Boolean(activeImportSummary) || monthScoped;
-  const statementLibrary =
-    summary.statementLibrary.length > 0 ? summary.statementLibrary : summary.remainingByImport;
   const reviewHero = activeImportSummary
     ? {
         title: activeImportSummary.originalFilename,
-        helper: `${activeImportSummary.sourceName ?? "Imported statement"} · ${formatReviewImportRange(activeImportSummary)}`,
+        helper: `${activeImportSummary.sourceName ?? "Imported statement"} · ${statementPeriodLabel(activeImportSummary)}`,
       }
     : monthScoped
       ? {
@@ -1501,8 +1492,6 @@ export function ReviewQueueClient({
           };
   const advancedFilterCount = [
     monthFilter !== "all",
-    explicitAllRemaining ||
-      (!reviewImportIsUnscoped(importFilter) && importFilter !== defaultImportId),
     accountFilter !== "all",
     Boolean(minimumAmount),
     Boolean(maximumAmount),
@@ -1575,6 +1564,7 @@ export function ReviewQueueClient({
         return;
       }
       if (isTyping) return;
+      if (target instanceof Element && target.closest(".statement-switcher, .statement-switcher-panel")) return;
 
       if (event.key === "ArrowDown" && nextTransactionId) {
         event.preventDefault();
@@ -1714,59 +1704,12 @@ export function ReviewQueueClient({
           <span><strong>{activeReviewRemaining}</strong> remaining</span>
         </div>
 
-        {statementLibrary.length > 0 ? (
-          <details className="review-import-switcher">
-            <summary>Switch statement</summary>
-            <div className="stack compact">
-            <button
-              className={`activity-row review-import-row ${explicitAllRemaining ? "is-active" : ""}`}
-              type="button"
-              aria-pressed={explicitAllRemaining}
-              onClick={() => selectImportForReview(REVIEW_IMPORT_ALL)}
-            >
-              <div><strong>All remaining</strong><p>{summary.queueCount} transactions remaining</p></div>
-            </button>
-            {statementLibrary.map((item) => (
-              <button
-                className={`activity-row review-import-row ${
-                  importFilter === item.importId ? "is-active" : ""
-                }`}
-                type="button"
-                aria-pressed={importFilter === item.importId}
-                aria-label={
-                  item.remainingCount > 0
-                    ? `Review ${item.originalFilename}, ${item.remainingCount} transactions left`
-                    : `Open ${item.originalFilename}, statement complete`
-                }
-                onClick={() => selectImportForReview(item.importId)}
-                key={item.importId}
-              >
-                <div>
-                  <strong>{item.originalFilename}</strong>
-                  <p>
-                    {item.sourceName ?? "Unknown source"} · {item.remainingCount} left ·{" "}
-                    {item.reviewedCount} handled
-                  </p>
-                </div>
-                <div className="activity-meta">
-                  <span
-                    className={`badge ${
-                      item.remainingCount === 0
-                        ? "badge-success"
-                        : item.reviewedCount > 0
-                          ? "badge-warning"
-                          : "badge-neutral"
-                    }`}
-                  >
-                    {item.remainingCount === 0 ? "Complete" : item.reviewedCount > 0 ? "In progress" : "Unstarted"}
-                  </span>
-                  <span>{formatReviewImportRange(item)}</span>
-                </div>
-              </button>
-            ))}
-            </div>
-          </details>
-        ) : null}
+        <StatementSwitcher
+          statements={statementLibrary}
+          selectedImportId={importFilter}
+          remainingCount={summary.queueCount}
+          onSelect={selectImportForReview}
+        />
       </article>
 
       <div
@@ -1809,11 +1752,6 @@ export function ReviewQueueClient({
           <details className="review-filter-disclosure disclosure" ref={filterDisclosureRef}>
             <summary>Filters{advancedFilterCount > 0 ? ` (${advancedFilterCount})` : ""}</summary>
             <div className="review-filter-grid">
-              <ImportScopePicker
-                imports={availableImports}
-                value={importFilter}
-                onChange={setImportFilter}
-              />
               <label className="field">
                 <span>Month</span>
                 <select className="input" value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>

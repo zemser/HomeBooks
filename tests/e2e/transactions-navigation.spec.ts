@@ -217,20 +217,21 @@ test("Review month scope does not auto-pick a statement", async ({ page }) => {
 test("Review statement switcher includes complete files without a five-item cap", async ({ page }) => {
   const snapshot = await reviewSnapshot(page);
   const library = snapshot.summary.statementLibrary ?? [];
-  test.skip(library.length === 0, "The switcher assertion needs saved statements.");
+  test.skip(library.length < 2, "The switcher assertion needs at least two saved statements.");
 
   await page.goto("/transactions/review?import=all");
-  await page.getByText("Switch statement").click();
-  await expect(page.getByRole("button", { name: "All remaining" })).toBeVisible();
+  await page.getByRole("button", { name: /^Statements,/ }).click();
+  const panel = page.getByRole("dialog", { name: "Choose a statement" });
+  await expect(panel.getByRole("button", { name: "All remaining" })).toBeVisible();
   const complete = library.filter((item) => item.remainingCount === 0);
+  if (library.length >= 7 && complete.length > 0) {
+    await panel.getByRole("button", { name: /^\d+ complete$/ }).click();
+  }
   if (complete[0]) {
-    await expect(page.getByRole("button", { name: new RegExp(complete[0].originalFilename) }).first())
-      .toBeVisible();
-    await expect(page.getByText("Complete", { exact: true }).first()).toBeVisible();
+    const filename = complete[0].originalFilename.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    await expect(panel.getByRole("button", { name: new RegExp(filename) }).first()).toBeVisible();
   }
-  if (library.length > 5) {
-    await expect(page.getByRole("button", { name: /left|statement complete/i })).toHaveCount(library.length);
-  }
+  await expect(panel.getByRole("button", { name: /left ·|Complete ·/ })).toHaveCount(library.length);
 });
 
 test("Clear all filters restores the latest incomplete statement", async ({ page }) => {
