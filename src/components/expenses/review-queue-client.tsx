@@ -602,6 +602,14 @@ export function ReviewQueueClient({
   const selectedIdsRef = useRef(selectedIds);
   const preserveBulkFormOnCloseRef = useRef(false);
   const batchDockRef = useRef<HTMLDivElement>(null);
+  const [panelMotion, setPanelMotion] = useState<{ mode: "batch" | "single"; swapped: boolean }>({
+    mode: "single",
+    swapped: false,
+  });
+  const setMarkedIds = useCallback((next: string[]) => {
+    selectedIdsRef.current = next;
+    setSelectedIds(next);
+  }, []);
 
   function focusReviewRow(transactionId: string) {
     window.requestAnimationFrame(() => {
@@ -642,8 +650,7 @@ export function ReviewQueueClient({
       setBulkForm(emptyBulkForm);
       setBulkFormGeneration((generation) => generation + 1);
     }
-    selectedIdsRef.current = nextSelectedIds;
-    setSelectedIds(nextSelectedIds);
+    setMarkedIds(nextSelectedIds);
     setSelectedTransactionId((current) => {
       if (
         current &&
@@ -659,7 +666,7 @@ export function ReviewQueueClient({
 
       return data.focusTransaction?.id ?? data.queue[0]?.id ?? null;
     });
-  }, []);
+  }, [setMarkedIds]);
 
   const loadQueue = useCallback(async (
     focusId: string | null,
@@ -727,7 +734,7 @@ export function ReviewQueueClient({
     setMaximumAmount(initialQuery.maximumAmount);
     setSort(initialQuery.sort);
     setView(initialQuery.view);
-    setSelectedIds([]);
+    setMarkedIds([]);
     setSelectedTransactionId(
       initialTransactionId ??
         initialData.focusTransaction?.id ??
@@ -736,7 +743,7 @@ export function ReviewQueueClient({
     );
     setError(null);
     setIsLoading(false);
-  }, [initialData, initialQuery, initialTransactionId]);
+  }, [initialData, initialQuery, initialTransactionId, setMarkedIds]);
 
   useEffect(() => {
     function restoreUrlState() {
@@ -933,8 +940,7 @@ export function ReviewQueueClient({
     const next = isMarked
       ? current.filter((value) => value !== transactionId)
       : [...current, transactionId];
-    selectedIdsRef.current = next;
-    setSelectedIds(next);
+    setMarkedIds(next);
     setSelectedTransactionId(transactionId);
     if ((!isMarked && current.length === 0) || next.length === 0) {
       replaceBulkForm(emptyBulkForm);
@@ -943,14 +949,12 @@ export function ReviewQueueClient({
 
   function toggleAllVisible() {
     if (allVisibleSelected) {
-      selectedIdsRef.current = [];
-      setSelectedIds([]);
+      setMarkedIds([]);
       replaceBulkForm(emptyBulkForm);
       return;
     }
     const startingEmpty = selectedIdsRef.current.length === 0;
-    selectedIdsRef.current = allQueueIds;
-    setSelectedIds(allQueueIds);
+    setMarkedIds(allQueueIds);
     if (startingEmpty) replaceBulkForm(emptyBulkForm);
   }
 
@@ -968,8 +972,7 @@ export function ReviewQueueClient({
   function selectImportForReview(importId: string) {
     setImportFilter(importId);
     setPage(1);
-    selectedIdsRef.current = [];
-    setSelectedIds([]);
+    setMarkedIds([]);
     replaceBulkForm(emptyBulkForm);
     setIsBulkModalOpen(false);
   }
@@ -979,7 +982,7 @@ export function ReviewQueueClient({
     const nextTransactionId = queue.find((transaction) => !reviewedIds.has(transaction.id))?.id ?? null;
 
     setQueue((current) => current.filter((transaction) => !reviewedIds.has(transaction.id)));
-    setSelectedIds((current) => current.filter((transactionId) => !reviewedIds.has(transactionId)));
+    setMarkedIds(selectedIdsRef.current.filter((transactionId) => !reviewedIds.has(transactionId)));
     setSelectedTransactionId((current) =>
       reviewedIds.has(current ?? "") ? nextTransactionId : current,
     );
@@ -1131,8 +1134,7 @@ export function ReviewQueueClient({
   }
 
   function clearMarks() {
-    selectedIdsRef.current = [];
-    setSelectedIds([]);
+    setMarkedIds([]);
     closeBulkClassification();
   }
 
@@ -1143,8 +1145,7 @@ export function ReviewQueueClient({
     const matchingIds = visibleQueue
       .filter((transaction) => transaction.merchantRaw?.trim().toLocaleLowerCase() === normalized)
       .map((transaction) => transaction.id);
-    selectedIdsRef.current = matchingIds;
-    setSelectedIds(matchingIds);
+    setMarkedIds(matchingIds);
     replaceBulkForm({
       classificationType: singleForm.classificationType,
       category: singleForm.category,
@@ -1286,8 +1287,7 @@ export function ReviewQueueClient({
     }
 
     const reviewedTransactionIds = [...selectedIds];
-    selectedIdsRef.current = [];
-    setSelectedIds([]);
+    setMarkedIds([]);
     closeBulkClassification();
     removeReviewedTransactions(reviewedTransactionIds);
     setMessage(`Classification applied to ${reviewedTransactionIds.length} transactions.`);
@@ -1592,7 +1592,7 @@ export function ReviewQueueClient({
         else changeSingleClassificationType(type);
       } else if (event.key.toLocaleLowerCase() === "c") {
         event.preventDefault();
-        const categorySelector = isBatching
+        const categorySelector = showWideBatch
           ? ".review-detail .review-batch-fields .category-combobox input"
           : ".review-detail .category-combobox input";
         reviewWorkspaceRef.current?.querySelector<HTMLInputElement>(categorySelector)?.focus();
@@ -1611,10 +1611,6 @@ export function ReviewQueueClient({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   });
-
-  useEffect(() => {
-    selectedIdsRef.current = selectedIds;
-  }, [selectedIds]);
 
   useLayoutEffect(() => {
     if (isStacked || !isBulkModalOpen) return;
@@ -1637,25 +1633,55 @@ export function ReviewQueueClient({
     const nav = document.querySelector(".app-mobile-nav");
     if (!(bar instanceof HTMLElement) || !(nav instanceof HTMLElement)) return;
 
-    function measure() {
-      const navTop = nav!.getBoundingClientRect().top;
+    function measure(dock: HTMLElement, mobileNav: HTMLElement) {
+      const navTop = mobileNav.getBoundingClientRect().top;
       const fontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
       const bottom = Math.round(window.innerHeight - navTop + 0.5 * fontSize);
-      const height = Math.round(bar!.getBoundingClientRect().height);
+      const height = Math.round(dock.getBoundingClientRect().height);
       setBatchDockBottom((current) => (current === bottom ? current : bottom));
       setBatchDockHeight((current) => (current === height ? current : height));
     }
 
-    measure();
-    const observer = new ResizeObserver(measure);
+    const updateDock = () => measure(bar, nav);
+    updateDock();
+    const observer = new ResizeObserver(updateDock);
     observer.observe(bar);
     observer.observe(nav);
-    window.addEventListener("resize", measure);
+    window.addEventListener("resize", updateDock);
     return () => {
       observer.disconnect();
-      window.removeEventListener("resize", measure);
+      window.removeEventListener("resize", updateDock);
     };
   }, [isStacked, isBatching, selectedIds.length]);
+
+  const panelMode = showWideBatch ? "batch" : "single";
+  if (panelMotion.mode !== panelMode) {
+    setPanelMotion({ mode: panelMode, swapped: true });
+  }
+
+  function bulkClassificationFields() {
+    return (
+      <BulkClassificationFields
+        form={bulkForm}
+        formGeneration={bulkFormGeneration}
+        categories={categories}
+        recentCategories={recentCategories}
+        members={members}
+        accountOwnerMemberId={bulkAccountOwnerMemberId}
+        lockPayerToAccount={bulkLockPayerToAccount}
+        hasDefinedCategories={hasDefinedCategories}
+        onTypeChange={changeBulkClassificationType}
+        onCategoryChange={(category) =>
+          setBulkForm((current) => ({ ...current, category, categoryId: categoryIdForName(category) }))
+        }
+        onCreateCategory={createBulkCategory}
+        onAttributionChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
+        onSplitChange={(splitForSettlement) =>
+          setBulkForm((current) => ({ ...current, splitForSettlement }))
+        }
+      />
+    );
+  }
 
   return (
     <section
@@ -1880,25 +1906,7 @@ export function ReviewQueueClient({
             allowContentOverflow
           >
             <div className="stack">
-              <BulkClassificationFields
-                form={bulkForm}
-                formGeneration={bulkFormGeneration}
-                categories={categories}
-                recentCategories={recentCategories}
-                members={members}
-                accountOwnerMemberId={bulkAccountOwnerMemberId}
-                lockPayerToAccount={bulkLockPayerToAccount}
-                hasDefinedCategories={hasDefinedCategories}
-                onTypeChange={changeBulkClassificationType}
-                onCategoryChange={(category) =>
-                  setBulkForm((current) => ({ ...current, category, categoryId: categoryIdForName(category) }))
-                }
-                onCreateCategory={createBulkCategory}
-                onAttributionChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
-                onSplitChange={(splitForSettlement) =>
-                  setBulkForm((current) => ({ ...current, splitForSettlement }))
-                }
-              />
+              {bulkClassificationFields()}
               <div className="action-row">
                 <button className="button" type="button" disabled={isSavingBulk || isSubmittingBulk} onClick={() => startSavingBulk(() => void runBulkClassification())}>
                   {isSavingBulk || isSubmittingBulk ? "Applying..." : "Apply to selected"}
@@ -2089,8 +2097,11 @@ export function ReviewQueueClient({
           ) : null}
         </article>
 
-        <article className="card review-detail" data-panel-mode={showWideBatch ? "batch" : "single"}>
-          <div className={`review-detail-header${showWideBatch ? " is-batch" : ""}`} key={showWideBatch ? "batch" : "single"}>
+        <article
+          className={`card review-detail${panelMotion.swapped ? " is-swapping" : ""}`}
+          data-panel-mode={panelMode}
+        >
+          <div className={`review-detail-header${showWideBatch ? " is-batch" : ""}`} key={panelMode}>
             {showWideBatch ? (
               <div className="review-detail-title">
                 <div>
@@ -2125,7 +2136,7 @@ export function ReviewQueueClient({
             )}
           </div>
 
-          <div className="review-detail-body" key={showWideBatch ? "batch-body" : "single-body"}>
+          <div className="review-detail-body" key={`${panelMode}-body`}>
           {showWideBatch ? (
             <div className="stack">
               {markedPreview.length > 0 ? (
@@ -2145,25 +2156,7 @@ export function ReviewQueueClient({
                 </ul>
               ) : null}
               {markedRemainder > 0 ? <p className="helper-text">{markedRemainder} more</p> : null}
-              <BulkClassificationFields
-                form={bulkForm}
-                formGeneration={bulkFormGeneration}
-                categories={categories}
-                recentCategories={recentCategories}
-                members={members}
-                accountOwnerMemberId={bulkAccountOwnerMemberId}
-                lockPayerToAccount={bulkLockPayerToAccount}
-                hasDefinedCategories={hasDefinedCategories}
-                onTypeChange={changeBulkClassificationType}
-                onCategoryChange={(category) =>
-                  setBulkForm((current) => ({ ...current, category, categoryId: categoryIdForName(category) }))
-                }
-                onCreateCategory={createBulkCategory}
-                onAttributionChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
-                onSplitChange={(splitForSettlement) =>
-                  setBulkForm((current) => ({ ...current, splitForSettlement }))
-                }
-              />
+              {bulkClassificationFields()}
             </div>
           ) : !selectedTransaction ? (
             <p className="empty-state">
@@ -2463,7 +2456,7 @@ export function ReviewQueueClient({
         </article>
       </div>
 
-      {isStacked && isBatching && typeof document !== "undefined"
+      {isStacked && isBatching
         ? createPortal(
             <div
               className="review-batch-dock"
