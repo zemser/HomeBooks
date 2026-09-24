@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 
 import { ReviewQueueBadge } from "@/components/app-shell/review-queue-badge";
+import { TransactionsPageFrame } from "@/components/transactions/transactions-page-frame";
 import { TransactionsWorkflowNav } from "@/components/transactions/transactions-workflow-nav";
 
 export default function TransactionsLayout({
@@ -10,7 +11,7 @@ export default function TransactionsLayout({
 }>) {
   return (
     <main>
-      <div className="page-shell stack">
+      <TransactionsPageFrame>
         <section className="page-header" data-testid="transactions-shell">
           <div>
             <span className="eyebrow">Transactions</span>
@@ -28,7 +29,7 @@ export default function TransactionsLayout({
         />
 
         {children}
-      </div>
+      </TransactionsPageFrame>
     </main>
   );
 }

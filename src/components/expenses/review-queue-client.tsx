@@ -775,7 +775,11 @@ export function ReviewQueueClient({
     if (page > 1) params.set("page", String(page));
     else params.delete("page");
     const nextQuery = params.toString();
-    window.history.replaceState(null, "", `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`);
+    const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}`;
+    if (`${window.location.pathname}${window.location.search}` === nextUrl) return;
+    // Keep Next's history state. Passing null makes the router treat this as a
+    // new visit and refetch the page.
+    window.history.replaceState(window.history.state, "", nextUrl);
   }, [accountFilter, importFilter, isUrlStateReady, maximumAmount, minimumAmount, monthFilter, page, searchQuery, sort, view]);
 
   useEffect(() => {
@@ -1478,24 +1482,20 @@ export function ReviewQueueClient({
     summary.statementLibrary.length > 0 ? summary.statementLibrary : summary.remainingByImport;
   const reviewHero = activeImportSummary
     ? {
-        eyebrow: "Statement review",
         title: activeImportSummary.originalFilename,
         helper: `${activeImportSummary.sourceName ?? "Imported statement"} · ${formatReviewImportRange(activeImportSummary)}`,
       }
     : monthScoped
       ? {
-          eyebrow: "Month review",
           title: formatReviewReportMonth(monthFilter),
           helper: `${activeReviewRemaining} remaining in this month`,
         }
       : explicitAllRemaining
         ? {
-            eyebrow: "Remaining work",
             title: `${summary.queueCount} remaining across ${statementCount} statement${statementCount === 1 ? "" : "s"}`,
             helper: `${summary.reviewedCount} handled of ${summary.totalTransactionCount} imported overall`,
           }
         : {
-            eyebrow: "Review queue",
             title: "Imported statements",
             helper: `${statementCount} statement${statementCount === 1 ? "" : "s"} still in progress`,
           };
@@ -1663,38 +1663,33 @@ export function ReviewQueueClient({
       ref={reviewWorkspaceRef}
       style={{ "--review-batch-dock-height": `${batchDockHeight}px` } as CSSProperties}
     >
-      <article className="card stack compact" ref={scopeRef}>
-        <div className="review-scope-header">
-          <div>
-            <span className="eyebrow">{reviewHero.eyebrow}</span>
-            <h2>{reviewHero.title}</h2>
-            <p className="helper-text">{reviewHero.helper}</p>
-          </div>
-          <div className="review-scope-stats" aria-label="Review progress">
-            <span><strong>{activeReviewRemaining}</strong> remaining</span>
-            {showLifetimeMeter ? <span><strong>{activeReviewHandled}</strong> handled</span> : null}
-            {showLifetimeMeter ? <span><strong>{activeReviewPercentage}%</strong> complete</span> : null}
-          </div>
+      <article className="review-scope" ref={scopeRef}>
+        <div className="review-scope-identity">
+          <h2>{reviewHero.title}</h2>
+          <p>{reviewHero.helper}</p>
         </div>
-
-        {showLifetimeMeter ? (
-        <div
-          className="progress-meter"
-          role="progressbar"
-          aria-label={monthScoped ? "Month review progress" : "Statement review progress"}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={activeReviewPercentage}
-        >
-          <span
-            className="progress-meter-fill"
-            style={{ width: `${activeReviewPercentage}%` }}
-          />
+        <div className="review-scope-progress" aria-label="Review progress">
+          {showLifetimeMeter ? (
+            <div
+              className="progress-meter"
+              role="progressbar"
+              aria-label={monthScoped ? "Month review progress" : "Statement review progress"}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={activeReviewPercentage}
+              aria-valuetext={`${activeReviewHandled} handled, ${activeReviewPercentage}% complete`}
+            >
+              <span
+                className="progress-meter-fill"
+                style={{ width: `${activeReviewPercentage}%` }}
+              />
+            </div>
+          ) : null}
+          <span><strong>{activeReviewRemaining}</strong> remaining</span>
         </div>
-        ) : null}
 
         {statementLibrary.length > 0 ? (
-          <details className="review-import-switcher disclosure">
+          <details className="review-import-switcher">
             <summary>Switch statement</summary>
             <div className="stack compact">
             <button
@@ -1754,6 +1749,7 @@ export function ReviewQueueClient({
         style={boardLocked && boardHeight != null ? { height: boardHeight } : undefined}
       >
       <article className="card review-toolbar" aria-label="Review filters">
+        <div className="review-toolbar-row">
         <div className="review-view-tabs" role="group" aria-label="Review view">
           {([
             ["all", "All"],
@@ -1828,6 +1824,7 @@ export function ReviewQueueClient({
             ?
           </button>
         </div>
+        </div>
         {activeFilterChips.length > 0 ? (
           <div className="review-active-filters" aria-label="Active filters">
             {activeFilterChips.map((chip) => (
@@ -1844,14 +1841,6 @@ export function ReviewQueueClient({
             ))}
           </div>
         ) : null}
-        <div className="review-toolbar-footer">
-          <p className="helper-text" aria-live="polite">
-            Showing {visibleQueue.length} of {pagination.filteredCount} matching transactions · {summary.queueCount} total left.
-          </p>
-          <div className="action-row">
-            {filtersActive ? <button className="link-button" type="button" onClick={clearFilters}>Clear all filters</button> : null}
-          </div>
-        </div>
       </article>
 
       {error || message ? (
@@ -1867,25 +1856,21 @@ export function ReviewQueueClient({
       ) : null}
 
         <article className="card review-list">
-          <div className="page-actions">
-            <div>
-              <h2 className="sr-only">Review queue</h2>
-              <p className="muted-text">
-                The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.
-              </p>
+          <div className="review-list-meta">
+            <h2 className="sr-only">Review queue</h2>
+            <p className="helper-text" aria-live="polite">
+              {visibleQueue.length} of {pagination.filteredCount} on this page · {summary.queueCount} remaining
+              <span className="sr-only"> The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.</span>
+            </p>
+            <div className="review-list-meta-actions">
+              {filtersActive ? <button className="link-button" type="button" onClick={clearFilters}>Clear filters</button> : null}
+              {selectedIds.length === 0 ? (
+                <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
+                  Mark all {visibleQueue.length}
+                </button>
+              ) : null}
             </div>
           </div>
-
-          {selectedIds.length === 0 ? (
-            <div className="page-actions review-list-actions">
-              <div className="review-selection-prompt">
-                <p className="helper-text">Mark rows to classify several transactions together.</p>
-                <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
-                  Mark all {visibleQueue.length} on this page
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           <Modal
             open={isBulkModalOpen}
@@ -2105,20 +2090,37 @@ export function ReviewQueueClient({
         </article>
 
         <article className="card review-detail" data-panel-mode={showWideBatch ? "batch" : "single"}>
-          <div className="page-actions review-detail-header" key={showWideBatch ? "batch" : "single"}>
+          <div className={`review-detail-header${showWideBatch ? " is-batch" : ""}`} key={showWideBatch ? "batch" : "single"}>
             {showWideBatch ? (
-              <div>
-                <span className="eyebrow">Together</span>
-                <h2>{selectedIds.length} transactions</h2>
-                <p className="muted-text">One classification applies to every marked row.</p>
+              <div className="review-detail-title">
+                <div>
+                  <h2>{selectedIds.length} transactions</h2>
+                  <p className="muted-text">One classification applies to every marked row.</p>
+                </div>
               </div>
             ) : (
-              <div>
-                <span className="eyebrow">Reviewing</span>
-                <h2>This transaction</h2>
-                <p className="muted-text">
-                  Classify this row here. Checkboxes only mark other rows for a batch.
-                </p>
+              <div className="review-detail-title">
+                <div>
+                  <h2>This transaction</h2>
+                  {selectedTransaction ? (
+                    <p className="review-detail-merchant">{getTransactionMerchant(selectedTransaction)}</p>
+                  ) : (
+                    <p className="muted-text">Choose a row to classify it.</p>
+                  )}
+                  <p className="sr-only">Classify this row here. Checkboxes only mark other rows for a batch.</p>
+                </div>
+                {selectedTransaction ? (
+                  <div className="review-detail-facts">
+                    <strong>
+                      {formatMoneyDisplay(
+                        selectedTransaction.normalizedAmount,
+                        selectedTransaction.workspaceCurrency,
+                        selectedTransaction.direction,
+                      )}
+                    </strong>
+                    <span>{selectedTransaction.transactionDate}</span>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -2169,7 +2171,7 @@ export function ReviewQueueClient({
               transaction will appear here automatically.
             </p>
           ) : (
-            <div className="stack">
+            <div className="stack review-detail-form">
               {!selectedTransactionInQueue && focusTransaction ? (
                 <p className="status warning">
                   This transaction is already classified, so it is shown here as a focused
@@ -2178,107 +2180,17 @@ export function ReviewQueueClient({
               ) : null}
 
               {selectedIds.length === 1 ? (
-                <p className="helper-text">Check more rows to classify them together in this panel.</p>
+                <p className="helper-text">Check another row to classify them together.</p>
               ) : null}
               {isStacked && isBatching ? (
                 <p className="helper-text">Saving here classifies this row only.</p>
               ) : null}
 
-              <div className="meta-grid review-primary-meta">
-                <div>
-                  <strong>Date</strong>
-                  <p>{selectedTransaction.transactionDate}</p>
-                </div>
-                <div>
-                  <strong>Merchant</strong>
-                  <p>{getTransactionMerchant(selectedTransaction)}</p>
-                </div>
-                <div>
-                  <strong>Amount</strong>
-                  <p>
-                    {formatMoneyDisplay(
-                      selectedTransaction.normalizedAmount,
-                      selectedTransaction.workspaceCurrency,
-                      selectedTransaction.direction,
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <details className="disclosure">
-                <summary>Transaction details</summary>
-                <div className="meta-grid">
-                <div>
-                  <strong>Original</strong>
-                  <p>
-                    {formatMoneyDisplay(
-                      selectedTransaction.originalAmount,
-                      selectedTransaction.originalCurrency,
-                      selectedTransaction.direction,
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <strong>Normalized</strong>
-                  <p>
-                    {formatMoneyDisplay(
-                      selectedTransaction.normalizedAmount,
-                      selectedTransaction.workspaceCurrency,
-                      selectedTransaction.direction,
-                    )}
-                  </p>
-                </div>
-                <div>
-                  <strong>Account</strong>
-                  <p>{selectedTransaction.accountDisplayName}</p>
-                </div>
-                <div>
-                  <strong>Import source</strong>
-                  <p>{selectedTransaction.importSourceName ?? "Unknown source"}</p>
-                </div>
-                <div>
-                  <strong>Import file</strong>
-                  <p>{selectedTransaction.importOriginalFilename}</p>
-                </div>
-                </div>
-              </details>
-
-              <div className="stack compact">
-                <span
-                  className={`badge ${selectedTransaction.classification ? "badge-neutral" : "badge-warning"}`}
-                >
-                  {formatClassificationSummary(selectedTransaction.classification)}
-                </span>
-                {selectedTransaction.classification ? (
-                  <p className="table-note">
-                    {formatDecisionSourceLabel(selectedTransaction.classification.decidedBy)}
-                  </p>
-                ) : null}
-                {selectedQueuePosition ? (
-                  <p className="table-note">
-                    Item {selectedFilteredPosition} of {pagination.filteredCount} matching · {summary.queueCount} total left.
-                  </p>
-                ) : null}
-                <p className="table-note">
-                  Reporting: {formatAllocationSummary(selectedTransaction.allocation)}
-                </p>
-              </div>
-
-              {selectedTransactionCurrencyState?.label ? (
+              {selectedTransactionCurrencyState?.tone === "warning" && selectedTransactionCurrencyState.label ? (
                 <div className="stack compact">
-                  <span
-                    className={`badge ${
-                      selectedTransactionCurrencyState.tone === "warning"
-                        ? "badge-warning"
-                        : "badge-neutral"
-                    }`}
-                  >
-                    {selectedTransactionCurrencyState.label}
-                  </span>
+                  <span className="badge badge-warning">{selectedTransactionCurrencyState.label}</span>
                   {selectedTransactionCurrencyState.fullDescription ? (
-                    <p className="helper-text">
-                      {selectedTransactionCurrencyState.fullDescription}
-                    </p>
+                    <p className="helper-text">{selectedTransactionCurrencyState.fullDescription}</p>
                   ) : null}
                 </div>
               ) : null}
@@ -2408,22 +2320,82 @@ export function ReviewQueueClient({
                 ) : null}
               </div>
 
-              {selectedReportTargets.length > 0 ? (
+              <details className="disclosure">
+                <summary>Transaction details</summary>
                 <div className="stack compact">
-                  <p className="helper-text">
-                    {selectedReportTargets.length === 1
-                      ? "This row is ready for the matching report."
-                      : "This adjusted row lands in multiple report months."}
+                  <span
+                    className={`badge ${selectedTransaction.classification ? "badge-neutral" : "badge-warning"}`}
+                  >
+                    {formatClassificationSummary(selectedTransaction.classification)}
+                  </span>
+                  {selectedTransaction.classification ? (
+                    <p className="table-note">
+                      {formatDecisionSourceLabel(selectedTransaction.classification.decidedBy)}
+                    </p>
+                  ) : null}
+                  {selectedQueuePosition ? (
+                    <p className="table-note">
+                      Item {selectedFilteredPosition} of {pagination.filteredCount} matching · {summary.queueCount} total left.
+                    </p>
+                  ) : null}
+                  <p className="table-note">
+                    Reporting: {formatAllocationSummary(selectedTransaction.allocation)}
                   </p>
-                  <div className="action-row">
-                    {selectedReportTargets.map((target) => (
-                      <Link className="link-button" href={target.href} key={target.href}>
-                        {target.label}
-                      </Link>
-                    ))}
+                  {selectedTransactionCurrencyState?.label && selectedTransactionCurrencyState.tone !== "warning" ? (
+                    <span className="badge badge-neutral">{selectedTransactionCurrencyState.label}</span>
+                  ) : null}
+                </div>
+                <div className="meta-grid">
+                  <div>
+                    <strong>Original</strong>
+                    <p>
+                      {formatMoneyDisplay(
+                        selectedTransaction.originalAmount,
+                        selectedTransaction.originalCurrency,
+                        selectedTransaction.direction,
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Normalized</strong>
+                    <p>
+                      {formatMoneyDisplay(
+                        selectedTransaction.normalizedAmount,
+                        selectedTransaction.workspaceCurrency,
+                        selectedTransaction.direction,
+                      )}
+                    </p>
+                  </div>
+                  <div>
+                    <strong>Account</strong>
+                    <p>{selectedTransaction.accountDisplayName}</p>
+                  </div>
+                  <div>
+                    <strong>Import source</strong>
+                    <p>{selectedTransaction.importSourceName ?? "Unknown source"}</p>
+                  </div>
+                  <div>
+                    <strong>Import file</strong>
+                    <p>{selectedTransaction.importOriginalFilename}</p>
                   </div>
                 </div>
-              ) : null}
+                {selectedReportTargets.length > 0 ? (
+                  <div className="stack compact">
+                    <p className="helper-text">
+                      {selectedReportTargets.length === 1
+                        ? "This row is ready for the matching report."
+                        : "This adjusted row lands in multiple report months."}
+                    </p>
+                    <div className="action-row">
+                      {selectedReportTargets.map((target) => (
+                        <Link className="link-button" href={target.href} key={target.href}>
+                          {target.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </details>
 
               <details className="disclosure">
                 <summary>Report month allocation</summary>

@@ -42,7 +42,7 @@ async function ReviewQueue({ searchParams }: ReviewPageProps) {
 
 export default function TransactionsReviewPage({ searchParams }: ReviewPageProps) {
   return (
-    <Suspense fallback={<RouteDataFallback label="Review queue" />}>
+    <Suspense fallback={<RouteDataFallback label="Review queue" presentation="line" />}>
       <ReviewQueue searchParams={searchParams} />
     </Suspense>
   );

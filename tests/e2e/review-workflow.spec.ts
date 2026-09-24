@@ -216,7 +216,7 @@ test.describe("transaction review workflow", () => {
 
     const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
     const startingRowId = await activeRow.getAttribute("data-review-transaction-id");
-    await page.getByText("The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.").click();
+    await page.getByRole("heading", { name: "Transactions", exact: true }).click();
     await page.getByRole("searchbox", { name: "Search" }).blur();
     await page.keyboard.press("ArrowDown");
     await expect(activeRow).not.toHaveAttribute("data-review-transaction-id", startingRowId!);
