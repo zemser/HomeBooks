@@ -2,7 +2,19 @@
 
 import { canSaveMerchantRule, merchantRuleAttributionNote } from "@/features/expenses/merchant-rules";
 import Link from "next/link";
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  useTransition,
+  type CSSProperties,
+} from "react";
 
 import {
   AllocationEditor,
@@ -17,6 +29,7 @@ import {
   MemberAttributionFields,
   memberAttributionForClassificationType,
   SplitForSettlementField,
+  type MemberAttributionFormValue,
 } from "@/components/expenses/member-attribution-fields";
 import { CategoryCombobox } from "@/components/workspaces/category-combobox";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
@@ -242,6 +255,102 @@ function formatReviewReportMonth(value: string) {
   }).format(new Date(`${value}-01T00:00:00.000Z`));
 }
 
+const reviewStackedQuery = "(max-width: 960px)";
+
+function subscribeReviewStacked(onStoreChange: () => void) {
+  const media = window.matchMedia(reviewStackedQuery);
+  media.addEventListener("change", onStoreChange);
+  return () => media.removeEventListener("change", onStoreChange);
+}
+
+function getReviewStackedSnapshot() {
+  return window.matchMedia(reviewStackedQuery).matches;
+}
+
+function getReviewStackedServerSnapshot() {
+  return false;
+}
+
+function useReviewStacked() {
+  return useSyncExternalStore(
+    subscribeReviewStacked,
+    getReviewStackedSnapshot,
+    getReviewStackedServerSnapshot,
+  );
+}
+
+function BulkClassificationFields({
+  form,
+  formGeneration,
+  categories,
+  recentCategories,
+  members,
+  accountOwnerMemberId,
+  lockPayerToAccount,
+  hasDefinedCategories,
+  onTypeChange,
+  onCategoryChange,
+  onCreateCategory,
+  onAttributionChange,
+  onSplitChange,
+}: {
+  form: BulkFormState;
+  formGeneration: number;
+  categories: string[];
+  recentCategories: string[];
+  members: WorkspaceMemberOption[];
+  accountOwnerMemberId: string | null;
+  lockPayerToAccount: boolean;
+  hasDefinedCategories: boolean;
+  onTypeChange: (classificationType: ClassificationType) => void;
+  onCategoryChange: (category: string) => void;
+  onCreateCategory: (name: string) => Promise<string>;
+  onAttributionChange: (next: MemberAttributionFormValue) => void;
+  onSplitChange: (splitForSettlement: boolean) => void;
+}) {
+  return (
+    <div className="stack review-batch-fields">
+      <ClassificationTypePicker
+        value={form.classificationType}
+        onChange={onTypeChange}
+        legend="Apply which treatment?"
+      />
+      {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(form.classificationType) ? (
+        <CategoryCombobox
+          key={formGeneration}
+          categories={categories}
+          recentCategories={recentCategories}
+          value={form.category}
+          onChange={onCategoryChange}
+          blankLabel="Keep uncategorized"
+          onCreateCategory={onCreateCategory}
+        />
+      ) : null}
+      {form.classificationType ? (
+        <MemberAttributionFields
+          classificationType={form.classificationType}
+          value={form}
+          members={members}
+          accountOwnerMemberId={accountOwnerMemberId}
+          lockPayerToAccount={lockPayerToAccount}
+          onChange={onAttributionChange}
+        />
+      ) : null}
+      <SplitForSettlementField
+        classificationType={form.classificationType}
+        value={form.splitForSettlement}
+        canSplit={members.length >= 2}
+        onChange={onSplitChange}
+      />
+      {!hasDefinedCategories ? (
+        <p className="helper-text">
+          Add categories in <Link href="/settings">settings</Link> before assigning one here.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function ReviewQueueClient({
   initialData,
   initialQuery,
@@ -293,6 +402,21 @@ export function ReviewQueueClient({
   const [isSavingAllocation, startSavingAllocation] = useTransition();
   const [isSubmittingSingle, setIsSubmittingSingle] = useState(false);
   const [isSubmittingBulk, setIsSubmittingBulk] = useState(false);
+  const [bulkFormGeneration, setBulkFormGeneration] = useState(0);
+  const [batchDockBottom, setBatchDockBottom] = useState(0);
+  const [batchDockHeight, setBatchDockHeight] = useState(0);
+  const isStacked = useReviewStacked();
+  const selectedIdsRef = useRef(selectedIds);
+  const preserveBulkFormOnCloseRef = useRef(false);
+  const batchDockRef = useRef<HTMLDivElement>(null);
+  const [panelMotion, setPanelMotion] = useState<{ mode: "batch" | "single"; swapped: boolean }>({
+    mode: "single",
+    swapped: false,
+  });
+  const setMarkedIds = useCallback((next: string[]) => {
+    selectedIdsRef.current = next;
+    setSelectedIds(next);
+  }, []);
 
   function focusReviewRow(transactionId: string) {
     window.requestAnimationFrame(() => {
@@ -313,11 +437,14 @@ export function ReviewQueueClient({
     setPagination(data.pagination);
     setFilterOptions(data.filterOptions);
     setPage(data.pagination.page);
-    setSelectedIds((current) =>
-      current.filter((transactionId) =>
-        data.queue.some((transaction) => transaction.id === transactionId),
-      ),
+    const nextSelectedIds = selectedIdsRef.current.filter((transactionId) =>
+      data.queue.some((transaction) => transaction.id === transactionId),
     );
+    if (nextSelectedIds.length === 0 && selectedIdsRef.current.length > 0) {
+      setBulkForm(emptyBulkForm);
+      setBulkFormGeneration((generation) => generation + 1);
+    }
+    setMarkedIds(nextSelectedIds);
     setSelectedTransactionId((current) => {
       if (
         current &&
@@ -333,7 +460,7 @@ export function ReviewQueueClient({
 
       return data.focusTransaction?.id ?? data.queue[0]?.id ?? null;
     });
-  }, []);
+  }, [setMarkedIds]);
 
   const loadQueue = useCallback(async (
     focusId: string | null,
@@ -401,7 +528,7 @@ export function ReviewQueueClient({
     setMaximumAmount(initialQuery.maximumAmount);
     setSort(initialQuery.sort);
     setView(initialQuery.view);
-    setSelectedIds([]);
+    setMarkedIds([]);
     setSelectedTransactionId(
       initialTransactionId ??
         initialData.focusTransaction?.id ??
@@ -410,7 +537,7 @@ export function ReviewQueueClient({
     );
     setError(null);
     setIsLoading(false);
-  }, [initialData, initialQuery, initialTransactionId]);
+  }, [initialData, initialQuery, initialTransactionId, setMarkedIds]);
 
   useEffect(() => {
     function restoreUrlState() {
@@ -598,16 +725,27 @@ export function ReviewQueueClient({
   }, [selectedTransaction]);
 
   function toggleSelectedTransaction(transactionId: string) {
-    setSelectedIds((current) =>
-      current.includes(transactionId)
-        ? current.filter((value) => value !== transactionId)
-        : [...current, transactionId],
-    );
+    const current = selectedIdsRef.current;
+    const isMarked = current.includes(transactionId);
+    const next = isMarked
+      ? current.filter((value) => value !== transactionId)
+      : [...current, transactionId];
+    setMarkedIds(next);
     setSelectedTransactionId(transactionId);
+    if ((!isMarked && current.length === 0) || next.length === 0) {
+      replaceBulkForm(emptyBulkForm);
+    }
   }
 
   function toggleAllVisible() {
-    setSelectedIds(allVisibleSelected ? [] : allQueueIds);
+    if (allVisibleSelected) {
+      setMarkedIds([]);
+      replaceBulkForm(emptyBulkForm);
+      return;
+    }
+    const startingEmpty = selectedIdsRef.current.length === 0;
+    setMarkedIds(allQueueIds);
+    if (startingEmpty) replaceBulkForm(emptyBulkForm);
   }
 
   function clearFilters() {
@@ -624,7 +762,9 @@ export function ReviewQueueClient({
   function selectImportForReview(importId: string) {
     setImportFilter(importId);
     setPage(1);
-    setSelectedIds([]);
+    setMarkedIds([]);
+    replaceBulkForm(emptyBulkForm);
+    setIsBulkModalOpen(false);
   }
 
   function removeReviewedTransactions(transactionIds: string[]) {
@@ -632,7 +772,7 @@ export function ReviewQueueClient({
     const nextTransactionId = queue.find((transaction) => !reviewedIds.has(transaction.id))?.id ?? null;
 
     setQueue((current) => current.filter((transaction) => !reviewedIds.has(transaction.id)));
-    setSelectedIds((current) => current.filter((transactionId) => !reviewedIds.has(transactionId)));
+    setMarkedIds(selectedIdsRef.current.filter((transactionId) => !reviewedIds.has(transactionId)));
     setSelectedTransactionId((current) =>
       reviewedIds.has(current ?? "") ? nextTransactionId : current,
     );
@@ -759,14 +899,33 @@ export function ReviewQueueClient({
     setMessage("Suggestion applied. Review it, then save when ready.");
   }
 
-  function openBulkClassification(prefill: BulkFormState = emptyBulkForm) {
-    setBulkForm(prefill);
+  function replaceBulkForm(next: BulkFormState) {
+    setBulkForm(next);
+    setBulkFormGeneration((generation) => generation + 1);
+  }
+
+  function openBulkClassification() {
     setIsBulkModalOpen(true);
   }
 
   function closeBulkClassification() {
+    preserveBulkFormOnCloseRef.current = false;
     setIsBulkModalOpen(false);
-    setBulkForm(emptyBulkForm);
+    replaceBulkForm(emptyBulkForm);
+  }
+
+  function handleBulkDialogClose() {
+    if (preserveBulkFormOnCloseRef.current) {
+      preserveBulkFormOnCloseRef.current = false;
+      setIsBulkModalOpen(false);
+      return;
+    }
+    closeBulkClassification();
+  }
+
+  function clearMarks() {
+    setMarkedIds([]);
+    closeBulkClassification();
   }
 
   function selectSimilarTransactions() {
@@ -776,8 +935,8 @@ export function ReviewQueueClient({
     const matchingIds = visibleQueue
       .filter((transaction) => transaction.merchantRaw?.trim().toLocaleLowerCase() === normalized)
       .map((transaction) => transaction.id);
-    setSelectedIds(matchingIds);
-    openBulkClassification({
+    setMarkedIds(matchingIds);
+    replaceBulkForm({
       classificationType: singleForm.classificationType,
       category: singleForm.category,
       categoryId: singleForm.categoryId,
@@ -786,6 +945,7 @@ export function ReviewQueueClient({
       receivedByMemberId: singleForm.receivedByMemberId,
       splitForSettlement: singleForm.splitForSettlement,
     });
+    if (isStacked) setIsBulkModalOpen(true);
   }
 
   async function submitSingleClassification() {
@@ -917,7 +1077,7 @@ export function ReviewQueueClient({
     }
 
     const reviewedTransactionIds = [...selectedIds];
-    setSelectedIds([]);
+    setMarkedIds([]);
     closeBulkClassification();
     removeReviewedTransactions(reviewedTransactionIds);
     setMessage(`Classification applied to ${reviewedTransactionIds.length} transactions.`);
@@ -1165,6 +1325,31 @@ export function ReviewQueueClient({
     };
   }, []);
 
+  const isBatching = selectedIds.length >= 2;
+  const showWideBatch = isBatching && !isStacked;
+  const markedPreview = selectedQueueTransactions.slice(0, 4);
+  const markedRemainder = selectedQueueTransactions.length - markedPreview.length;
+
+  function changeBulkClassificationType(classificationType: ClassificationType) {
+    setBulkForm((current) => ({
+      ...current,
+      classificationType,
+      ...memberAttributionForClassificationType(
+        classificationType,
+        current,
+        bulkAccountOwnerMemberId ?? "",
+      ),
+      splitForSettlement: classificationType === "shared" ? current.splitForSettlement : false,
+    }));
+  }
+
+  function createBulkCategory(name: string) {
+    return createCategory(name).then((created) => {
+      setBulkForm((current) => ({ ...current, category: created.name, categoryId: created.id }));
+      return created.name;
+    });
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       const target = event.target;
@@ -1176,7 +1361,11 @@ export function ReviewQueueClient({
       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
         if (isTyping && !isInsideReviewDetail) return;
         event.preventDefault();
-        if (!isSavingSingle && !isSubmittingSingle) startSavingSingle(() => void runSingleClassification());
+        if (isBatching) {
+          if (!isSavingBulk && !isSubmittingBulk) startSavingBulk(() => void runBulkClassification());
+        } else if (!isSavingSingle && !isSubmittingSingle) {
+          startSavingSingle(() => void runSingleClassification());
+        }
         return;
       }
       if (isTyping) return;
@@ -1192,11 +1381,16 @@ export function ReviewQueueClient({
       } else if (/^[1-5]$/.test(event.key)) {
         event.preventDefault();
         const type = CLASSIFICATION_TYPES[Number(event.key) - 1];
-        if (type) changeSingleClassificationType(type);
+        if (!type) return;
+        if (isBatching) changeBulkClassificationType(type);
+        else changeSingleClassificationType(type);
       } else if (event.key.toLocaleLowerCase() === "c") {
         event.preventDefault();
-        reviewWorkspaceRef.current?.querySelector<HTMLInputElement>(".review-detail .category-combobox input")?.focus();
-      } else if (event.key.toLocaleLowerCase() === "r" && merchantCanCreateRule) {
+        const categorySelector = showWideBatch
+          ? ".review-detail .review-batch-fields .category-combobox input"
+          : ".review-detail .category-combobox input";
+        reviewWorkspaceRef.current?.querySelector<HTMLInputElement>(categorySelector)?.focus();
+      } else if (event.key.toLocaleLowerCase() === "r" && merchantCanCreateRule && !isBatching) {
         event.preventDefault();
         setSingleForm((current) => ({ ...current, createRule: !current.createRule }));
       } else if (event.key.toLocaleLowerCase() === "s" && nextTransactionId) {
@@ -1212,8 +1406,83 @@ export function ReviewQueueClient({
     return () => window.removeEventListener("keydown", onKeyDown);
   });
 
+  useLayoutEffect(() => {
+    if (isStacked || !isBulkModalOpen) return;
+    preserveBulkFormOnCloseRef.current = true;
+    setIsBulkModalOpen(false);
+  }, [isStacked, isBulkModalOpen]);
+
+  useEffect(() => {
+    if (isBulkModalOpen) return;
+    preserveBulkFormOnCloseRef.current = false;
+  }, [isBulkModalOpen]);
+
+  useLayoutEffect(() => {
+    if (!isStacked || !isBatching) {
+      setBatchDockHeight(0);
+      return;
+    }
+
+    const bar = batchDockRef.current;
+    const nav = document.querySelector(".app-mobile-nav");
+    if (!(bar instanceof HTMLElement) || !(nav instanceof HTMLElement)) return;
+
+    function measure(dock: HTMLElement, mobileNav: HTMLElement) {
+      const navTop = mobileNav.getBoundingClientRect().top;
+      const fontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const bottom = Math.round(window.innerHeight - navTop + 0.5 * fontSize);
+      const height = Math.round(dock.getBoundingClientRect().height);
+      setBatchDockBottom((current) => (current === bottom ? current : bottom));
+      setBatchDockHeight((current) => (current === height ? current : height));
+    }
+
+    const updateDock = () => measure(bar, nav);
+    updateDock();
+    const observer = new ResizeObserver(updateDock);
+    observer.observe(bar);
+    observer.observe(nav);
+    window.addEventListener("resize", updateDock);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateDock);
+    };
+  }, [isStacked, isBatching, selectedIds.length]);
+
+  const panelMode = showWideBatch ? "batch" : "single";
+  if (panelMotion.mode !== panelMode) {
+    setPanelMotion({ mode: panelMode, swapped: true });
+  }
+
+  function bulkClassificationFields() {
+    return (
+      <BulkClassificationFields
+        form={bulkForm}
+        formGeneration={bulkFormGeneration}
+        categories={categories}
+        recentCategories={recentCategories}
+        members={members}
+        accountOwnerMemberId={bulkAccountOwnerMemberId}
+        lockPayerToAccount={bulkLockPayerToAccount}
+        hasDefinedCategories={hasDefinedCategories}
+        onTypeChange={changeBulkClassificationType}
+        onCategoryChange={(category) =>
+          setBulkForm((current) => ({ ...current, category, categoryId: categoryIdForName(category) }))
+        }
+        onCreateCategory={createBulkCategory}
+        onAttributionChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
+        onSplitChange={(splitForSettlement) =>
+          setBulkForm((current) => ({ ...current, splitForSettlement }))
+        }
+      />
+    );
+  }
+
   return (
-    <section className="stack review-workspace" ref={reviewWorkspaceRef}>
+    <section
+      className="stack review-workspace"
+      ref={reviewWorkspaceRef}
+      style={{ "--review-batch-dock-height": `${batchDockHeight}px` } as CSSProperties}
+    >
       <article className="card stack compact">
         <div className="review-scope-header">
           <div>
@@ -1412,95 +1681,33 @@ export function ReviewQueueClient({
         <article className="card review-list">
           <div className="page-actions">
             <div>
-              <h2>Review queue</h2>
+              <h2 className="sr-only">Review queue</h2>
               <p className="muted-text">
                 The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.
               </p>
             </div>
           </div>
 
-          <div className="page-actions review-list-actions">
-            {selectedIds.length > 0 ? (
-              <div className="review-batch-bar" role="status">
-                <strong>{selectedIds.length} marked for batch</strong>
-                <div className="action-row">
-                  <button className="button" type="button" onClick={() => openBulkClassification()}>
-                    Classify selected
-                  </button>
-                  <button className="link-button" type="button" onClick={() => setSelectedIds([])}>
-                    Clear marks
-                  </button>
-                </div>
-              </div>
-            ) : (
+          {selectedIds.length === 0 ? (
+            <div className="page-actions review-list-actions">
               <div className="review-selection-prompt">
                 <p className="helper-text">Mark rows to classify several transactions together.</p>
                 <button className="link-button" type="button" onClick={toggleAllVisible} disabled={visibleQueue.length === 0}>
                   Mark all {visibleQueue.length} on this page
                 </button>
               </div>
-            )}
-          </div>
+            </div>
+          ) : null}
 
           <Modal
             open={isBulkModalOpen}
-            onClose={closeBulkClassification}
+            onClose={handleBulkDialogClose}
             title="Classify selected"
             description={`Apply one classification to ${selectedIds.length} selected transactions.`}
             allowContentOverflow
           >
             <div className="stack">
-              <ClassificationTypePicker
-                value={bulkForm.classificationType}
-                onChange={(classificationType) =>
-                  setBulkForm((current) => ({
-                    ...current,
-                    classificationType,
-                    ...memberAttributionForClassificationType(
-                      classificationType,
-                      current,
-                      bulkAccountOwnerMemberId ?? "",
-                    ),
-                    splitForSettlement:
-                      classificationType === "shared" ? current.splitForSettlement : false,
-                  }))
-                }
-                legend="Apply which treatment?"
-              />
-              {!(["transfer", "ignore"] as Array<ClassificationType | "">).includes(bulkForm.classificationType) ? (
-                <CategoryCombobox
-                  key={isBulkModalOpen ? "bulk-open" : "bulk-closed"}
-                  categories={categories}
-                  recentCategories={recentCategories}
-                  value={bulkForm.category}
-                  onChange={(category) => setBulkForm((current) => ({ ...current, category, categoryId: categoryIdForName(category) }))}
-                  blankLabel="Keep uncategorized"
-                  onCreateCategory={async (name) => {
-                    const created = await createCategory(name);
-                    setBulkForm((current) => ({ ...current, category: created.name, categoryId: created.id }));
-                    return created.name;
-                  }}
-                />
-              ) : null}
-              {bulkForm.classificationType ? (
-                <MemberAttributionFields
-                  classificationType={bulkForm.classificationType}
-                  value={bulkForm}
-                  members={members}
-                  accountOwnerMemberId={bulkAccountOwnerMemberId}
-                  lockPayerToAccount={bulkLockPayerToAccount}
-                  onChange={(next) => setBulkForm((current) => ({ ...current, ...next }))}
-                />
-              ) : null}
-              <SplitForSettlementField
-                classificationType={bulkForm.classificationType}
-                value={bulkForm.splitForSettlement}
-                canSplit={members.length >= 2}
-                onChange={(splitForSettlement) =>
-                  setBulkForm((current) => ({ ...current, splitForSettlement }))
-                }
-              />
-              {!hasDefinedCategories ? <p className="helper-text">Add categories in <Link href="/settings">settings</Link> before assigning one here.</p> : null}
+              {bulkClassificationFields()}
               <div className="action-row">
                 <button className="button" type="button" disabled={isSavingBulk || isSubmittingBulk} onClick={() => startSavingBulk(() => void runBulkClassification())}>
                   {isSavingBulk || isSubmittingBulk ? "Applying..." : "Apply to selected"}
@@ -1691,18 +1898,51 @@ export function ReviewQueueClient({
           ) : null}
         </article>
 
-        <article className="card review-detail">
-          <div className="page-actions">
-            <div>
-              <span className="eyebrow">Reviewing</span>
-              <h2>This transaction</h2>
-              <p className="muted-text">
-                Classify this row here. Checkboxes only mark other rows for a batch.
-              </p>
-            </div>
+        <article
+          className={`card review-detail${panelMotion.swapped ? " is-swapping" : ""}`}
+          data-panel-mode={panelMode}
+        >
+          <div className="page-actions review-detail-header" key={panelMode}>
+            {showWideBatch ? (
+              <div>
+                <span className="eyebrow">Together</span>
+                <h2>{selectedIds.length} transactions</h2>
+                <p className="muted-text">One classification applies to every marked row.</p>
+              </div>
+            ) : (
+              <div>
+                <span className="eyebrow">Reviewing</span>
+                <h2>This transaction</h2>
+                <p className="muted-text">
+                  Classify this row here. Checkboxes only mark other rows for a batch.
+                </p>
+              </div>
+            )}
           </div>
 
-          {!selectedTransaction ? (
+          <div className="review-detail-body" key={`${panelMode}-body`}>
+          {showWideBatch ? (
+            <div className="stack">
+              {markedPreview.length > 0 ? (
+                <ul className="review-batch-preview">
+                  {markedPreview.map((transaction) => (
+                    <li key={transaction.id}>
+                      <span>{getTransactionMerchant(transaction)}</span>
+                      <span>
+                        {formatMoneyDisplay(
+                          transaction.normalizedAmount,
+                          transaction.workspaceCurrency,
+                          transaction.direction,
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {markedRemainder > 0 ? <p className="helper-text">{markedRemainder} more</p> : null}
+              {bulkClassificationFields()}
+            </div>
+          ) : !selectedTransaction ? (
             <p className="empty-state">
               Choose a queue row to review it. If you came from History, the chosen
               transaction will appear here automatically.
@@ -1716,12 +1956,11 @@ export function ReviewQueueClient({
                 </p>
               ) : null}
 
-              {selectedIds.length > 0 ? (
-                <p className="helper-text">
-                  {selectedIds.includes(selectedTransaction.id)
-                    ? `This is 1 of ${selectedIds.length} marked row${selectedIds.length === 1 ? "" : "s"}. Saving here classifies this row only.`
-                    : `You're reviewing this row. Classify selected applies to the ${selectedIds.length} marked row${selectedIds.length === 1 ? "" : "s"}.`}
-                </p>
+              {selectedIds.length === 1 ? (
+                <p className="helper-text">Check more rows to classify them together in this panel.</p>
+              ) : null}
+              {isStacked && isBatching ? (
+                <p className="helper-text">Saving here classifies this row only.</p>
               ) : null}
 
               <div className="meta-grid review-primary-meta">
@@ -1948,23 +2187,6 @@ export function ReviewQueueClient({
                 ) : null}
               </div>
 
-              <div className="action-row review-decision-actions">
-                <button
-                  className="button"
-                  type="button"
-                  disabled={isSavingSingle || isSubmittingSingle}
-                  aria-busy={isSavingSingle || isSubmittingSingle}
-                  onClick={() => startSavingSingle(() => void runSingleClassification())}
-                >
-                  {isSavingSingle || isSubmittingSingle ? "Saving…" : nextTransactionId ? "Save and next  ⌘↵" : "Save classification  ⌘↵"}
-                </button>
-                {previousTransactionId ? <button className="button button-secondary" type="button" onClick={() => setSelectedTransactionId(previousTransactionId)}>Previous</button> : null}
-                {nextTransactionId ? <button className="link-button" type="button" onClick={() => { setSelectedTransactionId(nextTransactionId); setMessage("Skipped for now. No classification was saved."); }}>Skip for now <kbd>S</kbd></button> : null}
-                <Link className="button button-secondary" href={selectedHistoryHref}>
-                  Open in History
-                </Link>
-              </div>
-
               {selectedReportTargets.length > 0 ? (
                 <div className="stack compact">
                   <p className="helper-text">
@@ -2010,8 +2232,66 @@ export function ReviewQueueClient({
               </details>
             </div>
           )}
+          </div>
+
+          {showWideBatch ? (
+            <div className="action-row review-decision-actions" key="batch-actions">
+              <button
+                className="button"
+                type="button"
+                disabled={isSavingBulk || isSubmittingBulk}
+                aria-busy={isSavingBulk || isSubmittingBulk}
+                onClick={() => startSavingBulk(() => void runBulkClassification())}
+              >
+                {isSavingBulk || isSubmittingBulk ? "Applying..." : `Apply to ${selectedIds.length} transactions`}
+              </button>
+              <button className="button button-secondary" type="button" onClick={clearMarks}>
+                Clear marks
+              </button>
+            </div>
+          ) : selectedTransaction ? (
+            <div className="action-row review-decision-actions" key="single-actions">
+              <button
+                className="button"
+                type="button"
+                disabled={isSavingSingle || isSubmittingSingle}
+                aria-busy={isSavingSingle || isSubmittingSingle}
+                onClick={() => startSavingSingle(() => void runSingleClassification())}
+              >
+                {isSavingSingle || isSubmittingSingle ? "Saving…" : nextTransactionId ? "Save and next  ⌘↵" : "Save classification  ⌘↵"}
+              </button>
+              {previousTransactionId ? <button className="button button-secondary" type="button" onClick={() => setSelectedTransactionId(previousTransactionId)}>Previous</button> : null}
+              {nextTransactionId ? <button className="link-button" type="button" onClick={() => { setSelectedTransactionId(nextTransactionId); setMessage("Skipped for now. No classification was saved."); }}>Skip for now <kbd>S</kbd></button> : null}
+              <Link className="button button-secondary" href={selectedHistoryHref}>
+                Open in History
+              </Link>
+            </div>
+          ) : null}
         </article>
       </section>
+
+      {isStacked && isBatching
+        ? createPortal(
+            <div
+              className="review-batch-dock"
+              ref={batchDockRef}
+              style={{ bottom: batchDockBottom }}
+              role="region"
+              aria-label="Batch classification"
+            >
+              <strong>{selectedIds.length} marked</strong>
+              <div className="action-row">
+                <button className="button" type="button" onClick={openBulkClassification}>
+                  Classify selected
+                </button>
+                <button className="button button-secondary" type="button" onClick={clearMarks}>
+                  Clear marks
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       <Modal
         open={isShortcutHelpOpen}
@@ -2025,7 +2305,7 @@ export function ReviewQueueClient({
           <div><dt><kbd>C</kbd></dt><dd>Open category search</dd></div>
           <div><dt><kbd>R</kbd></dt><dd>Toggle exact merchant rule</dd></div>
           <div><dt><kbd>S</kbd></dt><dd>Skip for now</dd></div>
-          <div><dt><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd></dt><dd>Save and next</dd></div>
+          <div><dt><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>Enter</kbd></dt><dd>Save this row, or apply to marked rows</dd></div>
           <div><dt><kbd>?</kbd></dt><dd>Open this help</dd></div>
         </dl>
       </Modal>

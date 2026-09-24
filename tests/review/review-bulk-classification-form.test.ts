@@ -9,13 +9,26 @@ async function source(relativePath: string) {
   return readFile(path.join(projectRoot, relativePath), "utf8");
 }
 
-test("bulk Classify selected starts from an empty form instead of the last classification", async () => {
+test("a new batch starts empty and does not keep the previous category", async () => {
   const reviewQueue = await source("src/components/expenses/review-queue-client.tsx");
 
-  assert.match(reviewQueue, /function openBulkClassification\(prefill: BulkFormState = emptyBulkForm\)/);
-  assert.match(reviewQueue, /onClick=\{\(\) => openBulkClassification\(\)\}/);
-  assert.match(reviewQueue, /function closeBulkClassification\(\) \{[\s\S]*setBulkForm\(emptyBulkForm\)/);
+  assert.match(reviewQueue, /function replaceBulkForm\(next: BulkFormState\) \{\s*setBulkForm\(next\);\s*setBulkFormGeneration/);
+  assert.match(
+    reviewQueue,
+    /if \(\(!isMarked && current\.length === 0\) \|\| next\.length === 0\) \{\s*replaceBulkForm\(emptyBulkForm\);/,
+  );
+  assert.match(reviewQueue, /if \(startingEmpty\) replaceBulkForm\(emptyBulkForm\)/);
+  assert.match(reviewQueue, /function closeBulkClassification\(\) \{[\s\S]*replaceBulkForm\(emptyBulkForm\)/);
   assert.match(reviewQueue, /closeBulkClassification\(\);\s*removeReviewedTransactions/);
+  assert.match(reviewQueue, /key=\{formGeneration\}/);
+  assert.doesNotMatch(reviewQueue, /isBulkModalOpen \? "bulk-open" : "bulk-closed"/);
+  assert.match(reviewQueue, /function openBulkClassification\(\) \{\s*setIsBulkModalOpen\(true\);/);
+  assert.match(reviewQueue, /if \(isStacked\) setIsBulkModalOpen\(true\);/);
+  assert.match(reviewQueue, /classificationType: singleForm\.classificationType/);
+  assert.match(reviewQueue, /getReviewStackedServerSnapshot\(\) \{\s*return false;/);
+  assert.match(reviewQueue, /max-width: 960px/);
+  assert.doesNotMatch(reviewQueue, /min-width:\s*961px/);
+  assert.doesNotMatch(reviewQueue, /window\.innerWidth/);
 });
 
 test("checking a review row also focuses it in the detail panel", async () => {
@@ -23,10 +36,11 @@ test("checking a review row also focuses it in the detail panel", async () => {
 
   assert.match(
     reviewQueue,
-    /function toggleSelectedTransaction\(transactionId: string\) \{\s*setSelectedIds\([\s\S]*?\);\s*setSelectedTransactionId\(transactionId\);\s*\}/,
+    /function toggleSelectedTransaction\(transactionId: string\) \{[\s\S]*?setSelectedTransactionId\(transactionId\);/,
   );
   assert.match(reviewQueue, /<h2>This transaction<\/h2>/);
   assert.match(reviewQueue, /table-row-checked/);
+  assert.match(reviewQueue, /Check more rows to classify them together in this panel/);
   assert.doesNotMatch(reviewQueue, /Selected transaction/);
 });
 

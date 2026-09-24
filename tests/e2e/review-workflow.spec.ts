@@ -19,6 +19,18 @@ type ReviewResponse = {
   };
 };
 
+function duplicateMerchantGroup(queue: ReviewResponse["queue"]) {
+  const groups = new Map<string, ReviewResponse["queue"]>();
+  for (const row of queue) {
+    const merchant = row.merchantRaw?.trim().toLocaleLowerCase();
+    if (!merchant) continue;
+    const list = groups.get(merchant) ?? [];
+    list.push(row);
+    groups.set(merchant, list);
+  }
+  return [...groups.values()].find((rows) => rows.length >= 2) ?? null;
+}
+
 async function loadReviewData(page: Page) {
   const response = await page.request.get("/api/imports/review?page=1&pageSize=50");
   expect(response.ok()).toBeTruthy();
@@ -102,7 +114,9 @@ test.describe("transaction review workflow", () => {
       has: page.getByRole("heading", { name: "This transaction" }),
     });
     await expect(panel.getByText(merchant, { exact: true }).first()).toBeVisible();
-    await expect(panel.getByText(/This is 1 of 1 marked row/)).toBeVisible();
+    await expect(panel.getByText("Check more rows to classify them together in this panel.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Classify selected", exact: true })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: /Save and next|Save classification/ })).toBeVisible();
   });
 
   test("review form infers payer from the account and only asks whose personal expense", async ({ page }) => {
@@ -202,7 +216,7 @@ test.describe("transaction review workflow", () => {
 
     const activeRow = page.locator('[data-review-transaction-id][aria-current="true"]');
     const startingRowId = await activeRow.getAttribute("data-review-transaction-id");
-    await page.getByRole("heading", { name: "Review queue" }).click();
+    await page.getByText("The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.").click();
     await page.getByRole("searchbox", { name: "Search" }).blur();
     await page.keyboard.press("ArrowDown");
     await expect(activeRow).not.toHaveAttribute("data-review-transaction-id", startingRowId!);
@@ -597,20 +611,23 @@ test.describe("transaction review workflow", () => {
         await row.getByRole("checkbox").check();
       }
 
-      await page.getByRole("button", { name: "Classify selected", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "Classify selected" });
-      await expect(dialog).toBeVisible();
-      await dialog.getByRole("radio", { name: /Shared/ }).check();
-      const categoryInput = dialog.getByRole("combobox", { name: "Category", exact: true });
+      await expect(page.getByRole("button", { name: "Classify selected", exact: true })).toHaveCount(0);
+      const panel = page.getByRole("article").filter({
+        has: page.getByRole("heading", { name: "2 transactions", exact: true }),
+      });
+      await expect(panel).toBeVisible();
+      await expect(panel.getByText("One classification applies to every marked row.")).toBeVisible();
+      await panel.getByRole("radio", { name: /Shared/ }).check();
+      const categoryInput = panel.getByRole("combobox", { name: "Category", exact: true });
       await categoryInput.click();
-      await dialog.getByRole("option", { name: category.name, exact: true }).click();
+      await panel.getByRole("option", { name: category.name, exact: true }).click();
 
       const bulkResponsePromise = page.waitForResponse(
         (response) =>
           response.url().endsWith("/api/transaction-classifications/bulk")
           && response.request().method() === "POST",
       );
-      await dialog.getByRole("button", { name: "Apply to selected", exact: true }).click();
+      await panel.getByRole("button", { name: "Apply to 2 transactions", exact: true }).click();
       const bulkResponse = await bulkResponsePromise;
       expect(bulkResponse.ok()).toBeTruthy();
       const bulkPayload = (await bulkResponse.json()) as { undoBatchId?: string };
@@ -624,12 +641,14 @@ test.describe("transaction review workflow", () => {
         const row = page.locator(`[data-review-transaction-id="${transaction.id}"]`);
         await row.getByRole("checkbox").check();
       }
-      await page.getByRole("button", { name: "Classify selected", exact: true }).click();
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByRole("radio", { name: /Shared/ })).not.toBeChecked();
-      await expect(dialog.getByRole("combobox", { name: "Category", exact: true })).toHaveValue("");
-      await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
-      await expect(dialog).toBeHidden();
+      const nextPanel = page.getByRole("article").filter({
+        has: page.getByRole("heading", { name: "2 transactions", exact: true }),
+      });
+      await expect(nextPanel).toBeVisible();
+      await expect(nextPanel.getByRole("radio", { name: /Shared/ })).not.toBeChecked();
+      await expect(nextPanel.getByRole("combobox", { name: "Category", exact: true })).toHaveValue("");
+      await nextPanel.getByRole("button", { name: "Clear marks", exact: true }).click();
+      await expect(page.getByRole("heading", { name: "This transaction", exact: true })).toBeVisible();
 
       const classified = await loadReviewData(page);
       expect(classified.summary.queueCount).toBe(before.summary.queueCount - 2);
@@ -649,6 +668,141 @@ test.describe("transaction review workflow", () => {
         expect(cleanup.ok()).toBeTruthy();
       }
     }
+  });
+
+  test("command enter with two marks posts the bulk classification", async ({ page }) => {
+    const before = await loadReviewData(page);
+    const transactions = before.queue.slice(0, 2);
+    test.skip(transactions.length < 2, "The shortcut bulk test needs two review rows.");
+
+    let undoBatchId: string | undefined;
+    try {
+      await page.goto("/transactions/review");
+      for (const transaction of transactions) {
+        await page.locator(`[data-review-transaction-id="${transaction.id}"]`).getByRole("checkbox").check();
+      }
+      const panel = page.getByRole("article").filter({
+        has: page.getByRole("heading", { name: "2 transactions", exact: true }),
+      });
+      await panel.getByRole("heading", { name: "2 transactions", exact: true }).click();
+      await page.keyboard.press("2");
+      await expect(panel.getByRole("radio", { name: /Shared/ })).toBeChecked();
+
+      const bulkResponsePromise = page.waitForResponse(
+        (response) =>
+          response.url().endsWith("/api/transaction-classifications/bulk")
+          && response.request().method() === "POST",
+      );
+      await page.keyboard.press("ControlOrMeta+Enter");
+      const bulkResponse = await bulkResponsePromise;
+      expect(bulkResponse.ok()).toBeTruthy();
+      const posted = bulkResponse.request().postDataJSON() as { transactionIds?: string[] };
+      expect(posted.transactionIds?.slice().sort()).toEqual(transactions.map((item) => item.id).sort());
+      const payload = (await bulkResponse.json()) as { undoBatchId?: string };
+      undoBatchId = payload.undoBatchId;
+    } finally {
+      if (undoBatchId) {
+        const cleanup = await page.request.post("/api/transaction-classifications/undo", {
+          data: { batchId: undoBatchId },
+        });
+        expect(cleanup.ok()).toBeTruthy();
+      }
+    }
+  });
+
+  test("similar merchants prefill the wide panel without opening a dialog", async ({ page }) => {
+    const before = await loadReviewData(page);
+    const group = duplicateMerchantGroup(before.queue);
+    test.skip(!group, "Similar merchants need two rows with the same merchant.");
+
+    await page.goto("/transactions/review");
+    await page.locator(`[data-review-transaction-id="${group![0]!.id}"]`).click();
+    const singlePanel = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "This transaction", exact: true }),
+    });
+    await singlePanel.getByRole("radio", { name: /Shared/ }).check();
+    await singlePanel.getByRole("button", { name: /Mark and classify together/ }).click();
+
+    await expect(page.getByRole("dialog", { name: "Classify selected" })).toHaveCount(0);
+    const batchPanel = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: /\d+ transactions/ }),
+    });
+    await expect(batchPanel.getByRole("radio", { name: /Shared/ })).toBeChecked();
+  });
+});
+
+test.describe("stacked review batch", () => {
+  test.use({ viewport: { width: 960, height: 800 } });
+
+  test("one marked row still saves only that row", async ({ page }) => {
+    const before = await loadReviewData(page);
+    test.skip(before.queue.length < 1, "The stacked hint needs a review row.");
+
+    await page.goto("/transactions/review");
+    const transaction = before.queue[0]!;
+    await page.locator(`[data-review-transaction-id="${transaction.id}"]`).getByRole("checkbox").check();
+
+    const panel = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "This transaction", exact: true }),
+    });
+    await expect(panel.getByText("Check more rows to classify them together in this panel.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Classify selected", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "Batch classification" })).toHaveCount(0);
+    await expect(panel.getByRole("button", { name: /Save and next|Save classification/ })).toBeVisible();
+  });
+
+  test("two marked rows open the dialog from the bottom bar", async ({ page }) => {
+    const before = await loadReviewData(page);
+    const transactions = before.queue.slice(0, 2);
+    test.skip(transactions.length < 2, "The stacked batch bar needs two review rows.");
+
+    await page.goto("/transactions/review");
+    for (const transaction of transactions) {
+      await page.locator(`[data-review-transaction-id="${transaction.id}"]`).getByRole("checkbox").check();
+    }
+
+    const panel = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "This transaction", exact: true }),
+    });
+    await expect(panel.getByText("Saving here classifies this row only.")).toBeVisible();
+    await expect(panel.getByRole("heading", { name: /\d+ transactions/ })).toHaveCount(0);
+
+    const bar = page.getByRole("region", { name: "Batch classification" });
+    await expect(bar.getByText("2 marked")).toBeVisible();
+    const nav = page.locator(".app-mobile-nav");
+    const barBox = await bar.boundingBox();
+    const navBox = await nav.boundingBox();
+    expect(barBox).toBeTruthy();
+    expect(navBox).toBeTruthy();
+    const gap = navBox!.y - (barBox!.y + barBox!.height);
+    expect(gap).toBeGreaterThanOrEqual(4);
+    expect(gap).toBeLessThanOrEqual(16);
+
+    await bar.getByRole("button", { name: "Classify selected", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Classify selected" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Apply to selected", exact: true })).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(dialog).toBeHidden();
+  });
+
+  test("similar merchants open the dialog with the single-row prefill", async ({ page }) => {
+    const before = await loadReviewData(page);
+    const group = duplicateMerchantGroup(before.queue);
+    test.skip(!group, "Similar merchants need two rows with the same merchant.");
+
+    await page.goto("/transactions/review");
+    await page.locator(`[data-review-transaction-id="${group![0]!.id}"]`).click();
+    const panel = page.getByRole("article").filter({
+      has: page.getByRole("heading", { name: "This transaction", exact: true }),
+    });
+    await panel.getByRole("radio", { name: /Shared/ }).check();
+    await panel.getByRole("button", { name: /Mark and classify together/ }).click();
+
+    const dialog = page.getByRole("dialog", { name: "Classify selected" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: /Shared/ })).toBeChecked();
+    await expect(panel.getByText("Saving here classifies this row only.")).toBeVisible();
   });
 });
 
