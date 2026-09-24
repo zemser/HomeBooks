@@ -11,7 +11,7 @@ export function TransactionsPageFrame({
   const isReview = pathname === "/transactions/review";
 
   return (
-    <div className={`page-shell stack${isReview ? " transactions-review-shell" : ""}`}>
+    <div className={`page-shell stack transactions-shell${isReview ? " transactions-review-shell" : ""}`}>
       {children}
     </div>
   );

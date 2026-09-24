@@ -13,11 +13,7 @@ export default function TransactionsLayout({
     <main>
       <TransactionsPageFrame>
         <section className="page-header" data-testid="transactions-shell">
-          <div>
-            <span className="eyebrow">Transactions</span>
-            <h1>Transactions</h1>
-            <p>Import a statement, review it, or add a cash expense for the month.</p>
-          </div>
+          <h1>Transactions</h1>
         </section>
 
         <TransactionsWorkflowNav
