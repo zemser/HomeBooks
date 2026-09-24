@@ -820,3 +820,111 @@ test.describe("responsive review workflow", () => {
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
   });
 });
+
+async function readReviewBoardMetrics(page: Page) {
+  return page.evaluate(() => {
+    const shell = document.querySelector(".app-shell");
+    const scrollport = document.querySelector(".app-main-scroll");
+    const workspace = document.querySelector(".review-workspace");
+    const board = document.querySelector(".review-board");
+    const wrap = document.querySelector(".review-table-wrap");
+    const detail = document.querySelector(".review-detail");
+    const nav = document.querySelector(".app-mobile-nav");
+    if (
+      !(shell instanceof HTMLElement)
+      || !(scrollport instanceof HTMLElement)
+      || !(workspace instanceof HTMLElement)
+      || !(board instanceof HTMLElement)
+    ) {
+      return null;
+    }
+
+    const navVisible = nav instanceof HTMLElement && getComputedStyle(nav).display !== "none";
+    const columns = getComputedStyle(board).gridTemplateColumns.split(" ").filter(Boolean);
+    return {
+      shellOverflow: getComputedStyle(shell).overflow,
+      scrollportOverflowX: getComputedStyle(scrollport).overflowX,
+      locked: workspace.classList.contains("review-workspace-locked"),
+      scrollportScrollTop: scrollport.scrollTop,
+      documentOverflow: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      boardBottom: board.getBoundingClientRect().bottom,
+      navTop: navVisible && nav instanceof HTMLElement ? nav.getBoundingClientRect().top : null,
+      columnCount: columns.length,
+      detailPosition: detail instanceof HTMLElement ? getComputedStyle(detail).position : null,
+      wrapScrolls: wrap instanceof HTMLElement && getComputedStyle(wrap).overflowY === "auto",
+      paginationTop: document.querySelector(".review-pagination")?.getBoundingClientRect().top ?? null,
+      viewportHeight: window.innerHeight,
+    };
+  });
+}
+
+test.describe("review board scroll lock", () => {
+  test.use({ viewport: { width: 1440, height: 1100 } });
+
+  test("desktop review scrolls the queue inside the board", async ({ page }) => {
+    await page.goto("/transactions/review");
+    await expect(page.getByRole("heading", { name: "This transaction" })).toBeVisible();
+    await expect.poll(() => readReviewBoardMetrics(page).then((metrics) => metrics?.locked)).toBe(true);
+
+    const metrics = await readReviewBoardMetrics(page);
+    expect(metrics).toBeTruthy();
+    expect(metrics!.shellOverflow).toBe("visible");
+    expect(metrics!.scrollportOverflowX).toBe("hidden");
+    expect(metrics!.documentOverflow).toBeLessThanOrEqual(1);
+    expect(metrics!.scrollportScrollTop).toBe(0);
+    expect(metrics!.columnCount).toBe(2);
+    expect(metrics!.detailPosition).toBe("static");
+    expect(metrics!.wrapScrolls).toBe(true);
+    if (metrics!.paginationTop != null) {
+      expect(metrics!.paginationTop).toBeLessThanOrEqual(metrics!.viewportHeight);
+    }
+
+    const moved = await page.evaluate(() => {
+      const wrap = document.querySelector(".review-table-wrap");
+      const scrollport = document.querySelector(".app-main-scroll");
+      if (!(wrap instanceof HTMLElement) || !(scrollport instanceof HTMLElement)) return null;
+      wrap.scrollTop = Math.min(120, wrap.scrollHeight);
+      return {
+        wrapTop: wrap.scrollTop,
+        scrollportTop: scrollport.scrollTop,
+        windowY: window.scrollY,
+      };
+    });
+    expect(moved?.wrapTop).toBeGreaterThan(0);
+    expect(moved?.scrollportTop).toBe(0);
+    expect(moved?.windowY).toBe(0);
+  });
+});
+
+test.describe("review board above the tab bar", () => {
+  test.use({ viewport: { width: 1000, height: 1400 } });
+
+  test("keeps two columns and clears the tab bar", async ({ page }) => {
+    await page.goto("/transactions/review");
+    await expect(page.getByRole("heading", { name: "This transaction" })).toBeVisible();
+    await expect.poll(() => readReviewBoardMetrics(page).then((metrics) => metrics?.locked)).toBe(true);
+
+    const metrics = await readReviewBoardMetrics(page);
+    expect(metrics?.columnCount).toBe(2);
+    expect(metrics?.shellOverflow).toBe("visible");
+    expect(metrics?.scrollportOverflowX).toBe("hidden");
+    expect(metrics?.navTop).not.toBeNull();
+    expect(metrics!.boardBottom).toBeLessThanOrEqual(metrics!.navTop! + 1);
+    await expect(page.getByRole("button", { name: "Classify selected", exact: true })).toHaveCount(0);
+  });
+});
+
+test.describe("review board short window", () => {
+  test.use({ viewport: { width: 1280, height: 520 } });
+
+  test("falls back to page scroll", async ({ page }) => {
+    await page.goto("/transactions/review");
+    await expect(page.getByRole("heading", { name: "This transaction" })).toBeVisible();
+
+    const metrics = await readReviewBoardMetrics(page);
+    expect(metrics?.locked).toBe(false);
+    expect(metrics?.detailPosition).toBe("sticky");
+    expect(metrics?.shellOverflow).toBe("visible");
+    expect(metrics?.scrollportOverflowX).toBe("hidden");
+  });
+});

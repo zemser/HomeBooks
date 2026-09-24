@@ -279,6 +279,193 @@ function useReviewStacked() {
   );
 }
 
+const reviewBoardLockOnRem = 18;
+const reviewBoardLockOffRem = 16;
+const reviewTableRoomOnRem = 6;
+const reviewTableRoomOffRem = 4;
+const reviewDetailRoomOnRem = 2;
+const reviewDetailRoomOffRem = 0;
+
+function reviewChromeHeight(container: Element, skipClass: string) {
+  if (!(container instanceof HTMLElement)) return 0;
+  const style = getComputedStyle(container);
+  let height =
+    (Number.parseFloat(style.paddingTop) || 0) +
+    (Number.parseFloat(style.paddingBottom) || 0) +
+    (Number.parseFloat(style.borderTopWidth) || 0) +
+    (Number.parseFloat(style.borderBottomWidth) || 0);
+  for (const child of container.children) {
+    if (!(child instanceof HTMLElement)) continue;
+    if (child.classList.contains(skipClass)) continue;
+    if (getComputedStyle(child).display === "none") continue;
+    height += child.getBoundingClientRect().height;
+  }
+  return height;
+}
+
+function useReviewBoardLock(isStacked: boolean) {
+  const boardRef = useRef<HTMLDivElement>(null);
+  const scopeRef = useRef<HTMLElement>(null);
+  const lockedRef = useRef(false);
+  const rejectedAvailableRef = useRef<number | null>(null);
+  const [locked, setLocked] = useState(false);
+  const [height, setHeight] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    if (isStacked) {
+      lockedRef.current = false;
+      setLocked(false);
+      setHeight(null);
+      return;
+    }
+
+    let correctionFrame = 0;
+    let fitFrame = 0;
+
+    function lockedLayoutFits(board: HTMLElement) {
+      const fontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const wrap = board.querySelector(".review-table-wrap");
+      const body = board.querySelector(".review-detail-body");
+      const actions = board.querySelector(".review-detail > .review-decision-actions");
+      const detail = board.querySelector(".review-detail");
+      if (!(wrap instanceof HTMLElement) || !(detail instanceof HTMLElement)) return true;
+      const actionsInside = !(actions instanceof HTMLElement)
+        || actions.getBoundingClientRect().bottom <= detail.getBoundingClientRect().bottom + 1;
+      const bodyHeight = body instanceof HTMLElement ? body.getBoundingClientRect().height : 0;
+      return wrap.getBoundingClientRect().height >= reviewTableRoomOffRem * fontSize
+        && bodyHeight >= reviewDetailRoomOnRem * fontSize
+        && actionsInside;
+    }
+
+    function readAvailable() {
+      const board = boardRef.current;
+      if (!board) return null;
+      const scrollport = board.closest(".app-main-scroll");
+      if (!(scrollport instanceof HTMLElement)) return null;
+
+      const pageShell = board.closest(".page-shell");
+      const boardRect = board.getBoundingClientRect();
+      const scrollportRect = scrollport.getBoundingClientRect();
+      const top = boardRect.top - scrollportRect.top + scrollport.scrollTop;
+      const scrollportStyle = getComputedStyle(scrollport);
+      const shellStyle = pageShell instanceof HTMLElement ? getComputedStyle(pageShell) : null;
+      const trailing =
+        (Number.parseFloat(scrollportStyle.paddingBottom) || 0) +
+        (shellStyle ? Number.parseFloat(shellStyle.paddingBottom) || 0 : 0);
+      // The scrollport's height grows with its content, so clientHeight is the
+      // whole page until the board is locked. Fit the board to the part of the
+      // scrollport that is actually on screen. A bounded scrollport already
+      // reports that height as clientHeight.
+      const visibleBottom = Math.min(scrollportRect.bottom, window.innerHeight);
+      const visibleTop = Math.max(scrollportRect.top, 0);
+      const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+      const clientHeight =
+        scrollport.scrollHeight > scrollport.clientHeight + 1
+          ? scrollport.clientHeight
+          : Math.min(scrollport.clientHeight, visibleHeight);
+      let available = clientHeight - top - trailing;
+
+      const nav = document.querySelector(".app-mobile-nav");
+      if (nav instanceof HTMLElement && getComputedStyle(nav).display !== "none") {
+        const overlap = boardRect.top + available - nav.getBoundingClientRect().top;
+        if (overlap > 1) available -= overlap;
+      }
+
+      return { available, scrollport };
+    }
+
+    function measure() {
+      cancelAnimationFrame(correctionFrame);
+      cancelAnimationFrame(fitFrame);
+      const reading = readAvailable();
+      const board = boardRef.current;
+      if (!reading || !board) return;
+      const fontSize = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const toolbar = board.querySelector(".review-toolbar");
+      const list = board.querySelector(".review-list");
+      const detail = board.querySelector(".review-detail");
+      const rowGap = Number.parseFloat(getComputedStyle(board).rowGap) || 0;
+      const status = board.querySelector(".review-board-status");
+      const statusBlock = status ? status.getBoundingClientRect().height + rowGap : 0;
+      const toolbarBlock = (toolbar?.getBoundingClientRect().height ?? 0) + rowGap;
+      const rowHeight = reading.available - toolbarBlock - statusBlock;
+      const tableRoom = list ? rowHeight - reviewChromeHeight(list, "review-table-wrap") : 0;
+      const detailRoom = detail ? rowHeight - reviewChromeHeight(detail, "review-detail-body") : 0;
+      const heightOk = lockedRef.current
+        ? reading.available >= reviewBoardLockOffRem * fontSize
+        : reading.available >= reviewBoardLockOnRem * fontSize;
+      const fits = lockedRef.current
+        ? tableRoom >= reviewTableRoomOffRem * fontSize && detailRoom >= reviewDetailRoomOffRem * fontSize
+        : tableRoom >= reviewTableRoomOnRem * fontSize && detailRoom >= reviewDetailRoomOnRem * fontSize;
+      const blocked = !lockedRef.current
+        && rejectedAvailableRef.current != null
+        && reading.available <= rejectedAvailableRef.current + 1;
+      const nextLocked = heightOk && fits && !blocked;
+
+      if (!nextLocked) {
+        lockedRef.current = false;
+        setLocked(false);
+        setHeight(null);
+        return;
+      }
+
+      const nextHeight = Math.round(reading.available);
+      lockedRef.current = true;
+      setLocked(true);
+      setHeight((current) => (current === nextHeight ? current : nextHeight));
+      cancelAnimationFrame(correctionFrame);
+      cancelAnimationFrame(fitFrame);
+      const correctOverflow = (attempt: number) => {
+        if (!lockedRef.current) return;
+        const currentBoard = boardRef.current;
+        const scrollport = currentBoard?.closest(".app-main-scroll");
+        if (!(scrollport instanceof HTMLElement) || !currentBoard) return;
+        const applied = currentBoard.getBoundingClientRect().height;
+        if (Math.abs(applied - nextHeight) > 2 && attempt < 2) {
+          correctionFrame = window.requestAnimationFrame(() => correctOverflow(attempt + 1));
+          return;
+        }
+        const overflow = scrollport.scrollHeight - scrollport.clientHeight;
+        if (overflow > 1 && overflow < nextHeight) {
+          const corrected = Math.max(0, Math.round(nextHeight - overflow));
+          setHeight((current) => (current === corrected ? current : corrected));
+        }
+        fitFrame = window.requestAnimationFrame(() => {
+          const fitted = boardRef.current;
+          if (!lockedRef.current || !fitted) return;
+          if (lockedLayoutFits(fitted)) {
+            rejectedAvailableRef.current = null;
+            return;
+          }
+          rejectedAvailableRef.current = nextHeight;
+          lockedRef.current = false;
+          setLocked(false);
+          setHeight(null);
+        });
+      };
+      correctionFrame = window.requestAnimationFrame(() => correctOverflow(0));
+    }
+
+    measure();
+    const observer = new ResizeObserver(() => measure());
+    if (scopeRef.current) observer.observe(scopeRef.current);
+    const shell = document.querySelector("[data-testid='transactions-shell']");
+    const workflowNav = document.querySelector(".transactions-workflow-nav");
+    if (shell) observer.observe(shell);
+    if (workflowNav) observer.observe(workflowNav);
+    window.addEventListener("resize", measure);
+
+    return () => {
+      cancelAnimationFrame(correctionFrame);
+      cancelAnimationFrame(fitFrame);
+      observer.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [isStacked]);
+
+  return { boardRef, scopeRef, locked, height };
+}
+
 function BulkClassificationFields({
   form,
   formGeneration,
@@ -406,15 +593,34 @@ export function ReviewQueueClient({
   const [batchDockBottom, setBatchDockBottom] = useState(0);
   const [batchDockHeight, setBatchDockHeight] = useState(0);
   const isStacked = useReviewStacked();
+  const {
+    boardRef,
+    scopeRef,
+    locked: boardLocked,
+    height: boardHeight,
+  } = useReviewBoardLock(isStacked);
   const selectedIdsRef = useRef(selectedIds);
   const preserveBulkFormOnCloseRef = useRef(false);
   const batchDockRef = useRef<HTMLDivElement>(null);
 
   function focusReviewRow(transactionId: string) {
     window.requestAnimationFrame(() => {
-      reviewWorkspaceRef.current
-        ?.querySelector<HTMLElement>(`[data-review-transaction-id="${transactionId}"]`)
-        ?.focus();
+      const row = reviewWorkspaceRef.current?.querySelector<HTMLElement>(
+        `[data-review-transaction-id="${transactionId}"]`,
+      );
+      if (!row) return;
+      row.focus({ preventScroll: true });
+      const wrap = row.closest(".review-table-wrap");
+      if (!(wrap instanceof HTMLElement)) return;
+      const rowRect = row.getBoundingClientRect();
+      const wrapRect = wrap.getBoundingClientRect();
+      const header = wrap.querySelector("thead");
+      const headerHeight = header instanceof HTMLElement ? header.getBoundingClientRect().height : 0;
+      if (rowRect.top < wrapRect.top + headerHeight) {
+        wrap.scrollTop += rowRect.top - wrapRect.top - headerHeight;
+      } else if (rowRect.bottom > wrapRect.bottom) {
+        wrap.scrollTop += rowRect.bottom - wrapRect.bottom;
+      }
     });
   }
 
@@ -1453,11 +1659,11 @@ export function ReviewQueueClient({
 
   return (
     <section
-      className="stack review-workspace"
+      className={`stack review-workspace${boardLocked ? " review-workspace-locked" : ""}`}
       ref={reviewWorkspaceRef}
       style={{ "--review-batch-dock-height": `${batchDockHeight}px` } as CSSProperties}
     >
-      <article className="card stack compact">
+      <article className="card stack compact" ref={scopeRef}>
         <div className="review-scope-header">
           <div>
             <span className="eyebrow">{reviewHero.eyebrow}</span>
@@ -1542,6 +1748,11 @@ export function ReviewQueueClient({
         ) : null}
       </article>
 
+      <div
+        className="review-board"
+        ref={boardRef}
+        style={boardLocked && boardHeight != null ? { height: boardHeight } : undefined}
+      >
       <article className="card review-toolbar" aria-label="Review filters">
         <div className="review-view-tabs" role="group" aria-label="Review view">
           {([
@@ -1643,15 +1854,18 @@ export function ReviewQueueClient({
         </div>
       </article>
 
-      {error ? <p className="status error" role="alert">{error}</p> : null}
-      {message ? (
-        <div className="status review-status-message" aria-live="polite">
-          <span>{message}</span>
-          {lastUndo ? <button className="link-button" type="button" disabled={isUndoing} onClick={() => void undoLastClassification()}>{isUndoing ? "Undoing…" : "Undo"}</button> : null}
+      {error || message ? (
+        <div className="review-board-status">
+          {error ? <p className="status error" role="alert">{error}</p> : null}
+          {message ? (
+            <div className="status review-status-message" aria-live="polite">
+              <span>{message}</span>
+              {lastUndo ? <button className="link-button" type="button" disabled={isUndoing} onClick={() => void undoLastClassification()}>{isUndoing ? "Undoing…" : "Undo"}</button> : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
-      <section className="review-layout">
         <article className="card review-list">
           <div className="page-actions">
             <div>
@@ -2275,7 +2489,7 @@ export function ReviewQueueClient({
             </div>
           ) : null}
         </article>
-      </section>
+      </div>
 
       {isStacked && isBatching && typeof document !== "undefined"
         ? createPortal(
