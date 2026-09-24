@@ -18,10 +18,11 @@ async function ImportUpload() {
 }
 
 async function SavedImportHistory() {
-  const { savedImports, workspaceCurrency } = await withCurrentWorkspaceDb(
+  const { savedImports, workspaceCurrency, currentMemberId } = await withCurrentWorkspaceDb(
     async (context, db) => ({
       savedImports: await listSavedImports(context, { type: "bank" }, db),
       workspaceCurrency: context.baseCurrency,
+      currentMemberId: context.memberId,
     }),
   );
 
@@ -31,6 +32,7 @@ async function SavedImportHistory() {
         mode="history"
         savedImports={savedImports}
         workspaceCurrency={workspaceCurrency}
+        currentMemberId={currentMemberId}
       />
     </div>
   );

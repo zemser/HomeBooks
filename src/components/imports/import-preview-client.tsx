@@ -7,7 +7,6 @@ import { useEffect, useState, useTransition } from "react";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { buildHistoryMonthHref } from "@/features/expenses/history-query";
 import { formatMoneyDisplay } from "@/features/expenses/presentation";
-import { ImportSourceCell } from "@/components/shared/import-source-cell";
 
 type PreviewTransaction = {
   transactionDate: string;
@@ -43,6 +42,11 @@ type PreviewResponse = {
   automaticRuleCount: number;
   previewTransactions: PreviewTransaction[];
   warnings: string[];
+  existingImport?: {
+    id: string;
+    originalFilename: string;
+    createdAt: string;
+  } | null;
 };
 
 type SavedImportSummary = {
@@ -60,13 +64,20 @@ type SavedImportSummary = {
   reviewPendingCount: number;
   earliestTransactionDate: string | null;
   latestTransactionDate: string | null;
+  accountId?: string | null;
+  accountLabel?: string | null;
+  accountOwnerMemberId?: string | null;
+  accountOwnerName?: string | null;
 };
 
 type ImportPreviewClientProps = {
   savedImports?: SavedImportSummary[];
   workspaceCurrency: string;
+  currentMemberId?: string;
   mode?: "all" | "upload" | "history";
 };
+
+type StatementOwnerFilter = "all" | "mine" | string;
 
 type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
 
@@ -139,10 +150,95 @@ function formatTemplateName(value: string | null | undefined) {
 }
 
 const EMPTY_SAVED_IMPORTS: SavedImportSummary[] = [];
+const PREVIEW_ROW_LIMIT = 5;
+
+function ownerKey(item: SavedImportSummary) {
+  return item.accountOwnerMemberId ?? "joint";
+}
+
+function ownerLabel(item: SavedImportSummary) {
+  if (!item.accountOwnerMemberId) return "Joint";
+  return item.accountOwnerName?.trim() || "Account owner";
+}
+
+function PreviewRows({ rows }: { rows: PreviewTransaction[] }) {
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Merchant</th>
+            <th>Category</th>
+            <th>Original</th>
+            <th>Settlement</th>
+            <th>Normalized</th>
+            <th>Section</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((transaction, index) => {
+            const currencyState = getCurrencyNormalizationDisplayState(transaction);
+
+            return (
+              <tr key={`${transaction.transactionDate}-${transaction.merchantRaw}-${index}`}>
+                <td>{transaction.transactionDate}</td>
+                <td>{transaction.merchantRaw}</td>
+                <td>{transaction.category ?? "-"}</td>
+                <td>
+                  {formatMoneyDisplay(
+                    transaction.originalAmount,
+                    transaction.originalCurrency,
+                    transaction.direction,
+                  )}
+                </td>
+                <td>
+                  {transaction.settlementAmount
+                    ? formatMoneyDisplay(
+                        transaction.settlementAmount,
+                        transaction.settlementCurrency ?? transaction.originalCurrency,
+                        transaction.direction,
+                      )
+                    : "-"}
+                </td>
+                <td>
+                  <div className="stack compact">
+                    <span>
+                      {formatMoneyDisplay(
+                        transaction.normalizedAmount,
+                        transaction.workspaceCurrency,
+                      )}
+                    </span>
+                    {currencyState.label ? (
+                      <>
+                        <span
+                          className={`badge ${
+                            currencyState.tone === "warning" ? "badge-warning" : "badge-neutral"
+                          }`}
+                        >
+                          {currencyState.label}
+                        </span>
+                        {currencyState.shortDescription ? (
+                          <div className="table-note">{currencyState.shortDescription}</div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </td>
+                <td>{transaction.statementSection ?? "-"}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export function ImportPreviewClient({
   savedImports = EMPTY_SAVED_IMPORTS,
   workspaceCurrency: initialWorkspaceCurrency,
+  currentMemberId,
   mode = "all",
 }: ImportPreviewClientProps) {
   const router = useRouter();
@@ -156,8 +252,11 @@ export function ImportPreviewClient({
   const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
   const [savedImportList, setSavedImportList] = useState(savedImports);
   const [lastSavedImportId, setLastSavedImportId] = useState<string | null>(null);
-  const [selectedFileName, setSelectedFileName] = useState<string>("No file selected yet");
+  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
   const [fileInputVersion, setFileInputVersion] = useState(0);
+  const [needsReviewOnly, setNeedsReviewOnly] = useState(false);
+  const [ownerFilter, setOwnerFilter] = useState<StatementOwnerFilter>("all");
+  const [sourceFilter, setSourceFilter] = useState<string | null>(null);
 
   useEffect(() => {
     setSavedImportList(savedImports);
@@ -168,7 +267,7 @@ export function ImportPreviewClient({
   }, [initialWorkspaceCurrency]);
 
   useEffect(() => {
-    setSelectedFileName("No file selected yet");
+    setSelectedFileName(null);
   }, [initialWorkspaceCurrency]);
 
   useEffect(() => {
@@ -339,7 +438,7 @@ export function ImportPreviewClient({
     setPendingSave(null);
     setSaveState("idle");
     setSaveOutcome(null);
-    setSelectedFileName("No file selected yet");
+    setSelectedFileName(null);
     setFileInputVersion((current) => current + 1);
   }
 
@@ -359,11 +458,62 @@ export function ImportPreviewClient({
       ? "This file is already in the workspace."
       : `${savedTransactionCount} new transaction${savedTransactionCount === 1 ? "" : "s"} imported.`;
   const savedOutcomeNextStep =
-    savedUpdatedCount > 0
+    saveState === "duplicate"
+      ? "Nothing new was added."
+      : savedUpdatedCount > 0
       ? `Updated ${savedUpdatedCount} older foreign charges with monthly rates.`
       : savedReviewPendingCount > 0
-      ? `${savedReviewPendingCount} need review before reports are complete.`
-      : "Nothing from this import is waiting in the review queue.";
+        ? `${savedReviewPendingCount} need review before reports are complete.`
+        : "Nothing from this import is waiting in the review queue.";
+  const ownerChoices = (() => {
+    const byId = new Map<string, string>();
+    for (const item of savedImportList) {
+      const id = ownerKey(item);
+      if (!byId.has(id)) byId.set(id, ownerLabel(item));
+    }
+    return [...byId.entries()]
+      .map(([id, label]) => ({ id, label }))
+      .sort((left, right) => {
+        if (currentMemberId && left.id === currentMemberId) return -1;
+        if (currentMemberId && right.id === currentMemberId) return 1;
+        return left.label.localeCompare(right.label);
+      });
+  })();
+  const sourceChoices = [
+    ...new Set(
+      savedImportList
+        .map((item) => item.sourceName?.trim())
+        .filter((name): name is string => Boolean(name)),
+    ),
+  ];
+  const statementFiltersActive = needsReviewOnly || ownerFilter !== "all" || Boolean(sourceFilter);
+  const visibleImports = savedImportList
+    .filter((item) => {
+      if (needsReviewOnly && item.reviewPendingCount === 0) return false;
+      if (ownerFilter === "mine" && item.accountOwnerMemberId !== currentMemberId) return false;
+      if (ownerFilter !== "all" && ownerFilter !== "mine" && ownerKey(item) !== ownerFilter) return false;
+      if (sourceFilter && item.sourceName !== sourceFilter) return false;
+      return true;
+    })
+    .sort((left, right) => Number(right.reviewPendingCount > 0) - Number(left.reviewPendingCount > 0));
+
+  function clearStatementFilters() {
+    setNeedsReviewOnly(false);
+    setOwnerFilter("all");
+    setSourceFilter(null);
+  }
+
+  const emptyStatementCopy = needsReviewOnly && ownerFilter === "mine"
+    ? "You have no statements waiting for review."
+    : needsReviewOnly
+      ? "Nothing is waiting for review."
+      : ownerFilter === "mine"
+        ? "No statements for your accounts yet."
+        : ownerFilter !== "all"
+          ? "No statements match this person."
+          : sourceFilter
+            ? `No ${sourceFilter} statements match.`
+            : "No statements match.";
 
   return (
     <section className="stack">
@@ -371,9 +521,6 @@ export function ImportPreviewClient({
         <>
       <article className="card">
         <h2>Import bank statement</h2>
-        <p>
-          Upload a CSV or Excel statement. You will preview the rows before saving.
-        </p>
 
         <form
           className="stack"
@@ -381,44 +528,38 @@ export function ImportPreviewClient({
         >
           <input type="hidden" name="workspaceCurrency" value={workspaceCurrency} />
 
-          <label className="field">
-            <span>Statement file</span>
-            <div className="file-dropzone">
-              <input
-                key={fileInputVersion}
-                className="file-input"
-                type="file"
-                name="file"
-                accept=".xlsx,.csv"
-                required
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  setSelectedFileName(file ? file.name : "No file selected yet");
+          <label className={`file-dropzone${isPending ? " is-reading" : ""}`} aria-busy={isPending}>
+            <input
+              key={fileInputVersion}
+              className="file-input"
+              type="file"
+              name="file"
+              accept=".xlsx,.csv"
+              required
+              aria-label="Statement file"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                setSelectedFileName(file ? file.name : null);
 
-                  if (file && event.currentTarget.form) {
-                    const formData = new FormData(event.currentTarget.form);
-                    startTransition(() => void handleSubmit(formData));
-                  }
-                }}
-              />
-              <div className="file-dropzone-copy">
-                <strong>Drop a CSV or Excel export here</strong>
-                <p>Supports Max and Cal CSV or Excel exports.</p>
-                <span className="file-dropzone-filename" aria-live="polite">
-                  {selectedFileName}
-                </span>
-              </div>
-              <span className="button button-secondary file-dropzone-button">Choose file</span>
-            </div>
+                if (file && event.currentTarget.form) {
+                  const formData = new FormData(event.currentTarget.form);
+                  startTransition(() => void handleSubmit(formData));
+                }
+              }}
+            />
+            <span className="file-dropzone-copy">
+              <strong>{selectedFileName ?? "Choose a statement"}</strong>
+              <span aria-live="polite">
+                {isPending
+                  ? "Reading the file…"
+                  : result?.existingImport || result?.newTransactionCount === 0
+                    ? "This file is already imported."
+                    : selectedFileName
+                      ? "Review the rows below before saving."
+                      : "Max or Cal, CSV or Excel. Or drop a file here."}
+              </span>
+            </span>
           </label>
-
-          <p className="helper-text" aria-live="polite">
-            {isPending
-              ? "Previewing file..."
-              : selectedFileName === "No file selected yet"
-                ? "Choose a file to preview its transactions."
-                : "Preview ready below. Review it before saving the import."}
-          </p>
         </form>
 
         {error ? (
@@ -434,27 +575,62 @@ export function ImportPreviewClient({
             <h2>Detected statement</h2>
             <div className="meta-grid">
               <div>
-                <strong>Template</strong>
+                <strong>Bank</strong>
                 <p>{formatTemplateName(result.detectedTemplate.id)}</p>
-              </div>
-              <div>
-                <strong>Reason</strong>
-                <p>{result.detectedTemplate.reason}</p>
               </div>
               <div>
                 <strong>Account</strong>
                 <p>{result.accountLabel ?? "Not detected"}</p>
               </div>
               <div>
-                <strong>Statement</strong>
+                <strong>Period</strong>
                 <p>{result.statementLabel ?? "Not detected"}</p>
-              </div>
-              <div>
-                <strong>Transactions found</strong>
-                <p>{result.transactionCount}</p>
               </div>
             </div>
 
+            {!hasSavedOutcome && !result.existingImport && result.newTransactionCount > 0 ? (
+              <label className="field">
+                <span>This account belongs to</span>
+                <select className="input" aria-label="This account belongs to" value={accountOwner} onChange={(event) => setAccountOwner(event.target.value)} disabled={saveState === "saving"}>
+                  <option value="">Choose account owner</option>
+                  {result.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}
+                  <option value="joint">Joint or unknown — review people individually</option>
+                </select>
+                <span className="helper-text">Saved rules use this owner for who paid, personal spending, and income.</span>
+              </label>
+            ) : null}
+
+            {result.existingImport || result.newTransactionCount === 0 ? (
+              <section className="import-check" aria-labelledby="import-blocked-title">
+                <div>
+                  <span className="eyebrow">Already imported</span>
+                  <h3 id="import-blocked-title">This file is already in the workspace</h3>
+                </div>
+                <p className="status warning" role="status">
+                  {result.existingImport
+                    ? `Saved ${formatSavedAt(result.existingImport.createdAt)} as ${result.existingImport.originalFilename}. Nothing new was added.`
+                    : `All ${result.transactionCount} transactions in this file are already saved, so there is nothing new to import.`}
+                </p>
+                <div className="action-row">
+                  {result.existingImport ? (
+                    <Link
+                      className="button"
+                      href={`/transactions/review?import=${encodeURIComponent(result.existingImport.id)}`}
+                      onClick={() => router.refresh()}
+                    >
+                      Open the saved statement
+                    </Link>
+                  ) : null}
+                  <button
+                    className="button button-secondary"
+                    type="button"
+                    onClick={handleImportAnotherFile}
+                  >
+                    Choose a different file
+                  </button>
+                </div>
+              </section>
+            ) : (
             <section className="import-check" aria-labelledby="import-check-title">
               <div>
                 <span className="eyebrow">Import check</span>
@@ -482,19 +658,9 @@ export function ImportPreviewClient({
                 Existing transactions will not be added again. Saved rules apply only to new exact merchant matches.
               </p>
             </section>
+            )}
 
-            {!hasSavedOutcome ? (
-              <label className="field">
-                <span>This account belongs to</span>
-                <select className="input" aria-label="This account belongs to" value={accountOwner} onChange={(event) => setAccountOwner(event.target.value)} disabled={saveState === "saving"}>
-                  <option value="">Choose account owner</option>
-                  {result.members.map((member) => <option key={member.id} value={member.id}>{member.displayName}</option>)}
-                  <option value="joint">Joint or unknown — review people individually</option>
-                </select>
-                <span className="helper-text">Defaults to you for a new account. Change this if the statement belongs to someone else, or mark it joint. Saved rules use this owner for who paid, personal spending and income.</span>
-              </label>
-            ) : null}
-            {result.warnings.length > 0 ? (
+            {result.warnings.length > 0 && !result.existingImport && result.newTransactionCount > 0 ? (
               <div className="stack">
                 {result.warnings.map((warning) => (
                   <p className="status warning" key={warning}>
@@ -504,6 +670,7 @@ export function ImportPreviewClient({
               </div>
             ) : null}
 
+            {result.existingImport || result.newTransactionCount === 0 ? null : (
             <div className="stack">
               {hasSavedOutcome ? (
                 <div className="home-focus-card">
@@ -520,34 +687,29 @@ export function ImportPreviewClient({
                       href={`/transactions/review?import=${encodeURIComponent(highlightedImport?.id ?? lastSavedImportId ?? "")}`}
                       onClick={() => router.refresh()}
                     >
-                      {savedReviewPendingCount > 0
-                        ? `Review this statement · ${savedReviewPendingCount}`
-                        : "Open this statement"}
+                      {saveState === "duplicate"
+                        ? "Open the saved statement"
+                        : savedReviewPendingCount > 0
+                          ? `Review this statement · ${savedReviewPendingCount}`
+                          : "Open this statement"}
                     </Link>
                     <button
                       className="button button-secondary"
                       type="button"
                       onClick={handleImportAnotherFile}
                     >
-                      Upload another statement
+                      {saveState === "duplicate" ? "Choose a different file" : "Upload another statement"}
                     </button>
-                    <Link
-                      className="link-button"
-                      href={historyRowsHref({
-                        latestTransactionDate: highlightedImport?.latestTransactionDate,
-                        reviewStatus: "automatic",
-                      })}
-                    >
-                      View automatic classifications
-                    </Link>
-                    <Link
-                      className="link-button"
-                      href={historyRowsHref({
-                        latestTransactionDate: highlightedImport?.latestTransactionDate,
-                      })}
-                    >
-                      Open this statement in History
-                    </Link>
+                    {saveState === "duplicate" ? null : (
+                      <Link
+                        className="link-button"
+                        href={historyRowsHref({
+                          latestTransactionDate: highlightedImport?.latestTransactionDate,
+                        })}
+                      >
+                        Open this statement in History
+                      </Link>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -555,167 +717,132 @@ export function ImportPreviewClient({
                   className="button"
                   type="button"
                   onClick={() => void handleSaveImport()}
-                  disabled={saveState === "saving" || result.newTransactionCount === 0 || !accountOwner}
+                  disabled={saveState === "saving" || !accountOwner}
+                  aria-busy={saveState === "saving"}
                 >
                   {saveState === "saving"
-                    ? "Importing..."
-                    : result.newTransactionCount === 0
-                      ? "Nothing new to import"
+                    ? "Importing…"
+                    : !accountOwner
+                      ? "Choose who this account belongs to"
                       : `Import ${result.newTransactionCount} new transaction${result.newTransactionCount === 1 ? "" : "s"}`}
                 </button>
               )}
             </div>
+            )}
+            <PreviewRows rows={result.previewTransactions.slice(0, PREVIEW_ROW_LIMIT)} />
+            {result.previewTransactions.length > PREVIEW_ROW_LIMIT ? (
+              <details className="disclosure import-preview-disclosure">
+                <summary>
+                  Show the other {result.previewTransactions.length - PREVIEW_ROW_LIMIT} rows
+                </summary>
+                <PreviewRows rows={result.previewTransactions.slice(PREVIEW_ROW_LIMIT)} />
+              </details>
+            ) : null}
           </article>
-
-          <details className="card disclosure import-preview-disclosure">
-            <summary>Preview up to 50 statement rows</summary>
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Date</th>
-                    <th>Merchant</th>
-                    <th>Category</th>
-                    <th>Original</th>
-                    <th>Settlement</th>
-                    <th>Normalized</th>
-                    <th>Section</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.previewTransactions.map((transaction, index) => {
-                    const currencyState = getCurrencyNormalizationDisplayState(transaction);
-
-                    return (
-                      <tr key={`${transaction.transactionDate}-${transaction.merchantRaw}-${index}`}>
-                        <td>{transaction.transactionDate}</td>
-                        <td>{transaction.merchantRaw}</td>
-                        <td>{transaction.category ?? "-"}</td>
-                        <td>
-                          {formatMoneyDisplay(
-                            transaction.originalAmount,
-                            transaction.originalCurrency,
-                            transaction.direction,
-                          )}
-                        </td>
-                        <td>
-                          {transaction.settlementAmount
-                            ? formatMoneyDisplay(
-                                transaction.settlementAmount,
-                                transaction.settlementCurrency ?? transaction.originalCurrency,
-                                transaction.direction,
-                              )
-                            : "-"}
-                        </td>
-                        <td>
-                          <div className="stack compact">
-                            <span>
-                              {formatMoneyDisplay(
-                                transaction.normalizedAmount,
-                                transaction.workspaceCurrency,
-                              )}
-                            </span>
-                            {currencyState.label ? (
-                              <>
-                                <span
-                                  className={`badge ${
-                                    currencyState.tone === "warning"
-                                      ? "badge-warning"
-                                      : "badge-neutral"
-                                  }`}
-                                >
-                                  {currencyState.label}
-                                </span>
-                                {currencyState.shortDescription ? (
-                                  <div className="table-note">{currencyState.shortDescription}</div>
-                                ) : null}
-                              </>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td>{transaction.statementSection ?? "-"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </details>
         </section>
       ) : null}
         </>
       ) : null}
 
       {mode !== "upload" && savedImportList.length > 0 ? (
-        <article className="card">
-          <div className="page-actions">
-            <div>
-              <h2>Saved bank statements</h2>
-            </div>
-            {totalPendingReviewCount > 0 ? (
-              <span className="badge badge-warning">
-                {totalPendingReviewCount} still need review
-              </span>
-            ) : (
-              <span className="badge badge-neutral">Queue is clear</span>
-            )}
+        <article className="card stack">
+          <h2>Saved bank statements</h2>
+          <div className="statement-filters" role="group" aria-label="Filter saved statements">
+            <button
+              className="statement-filter"
+              type="button"
+              aria-pressed={!statementFiltersActive}
+              onClick={clearStatementFilters}
+            >
+              All
+            </button>
+            <button
+              className="statement-filter"
+              type="button"
+              aria-pressed={needsReviewOnly}
+              onClick={() => setNeedsReviewOnly((current) => !current)}
+            >
+              Needs review{totalPendingReviewCount > 0 ? ` · ${totalPendingReviewCount}` : ""}
+            </button>
+            {ownerChoices.length > 1 && currentMemberId ? (
+              <button
+                className="statement-filter"
+                type="button"
+                aria-pressed={ownerFilter === "mine"}
+                onClick={() => setOwnerFilter((current) => current === "mine" ? "all" : "mine")}
+              >
+                Mine
+              </button>
+            ) : null}
+            {ownerChoices.length > 1
+              ? ownerChoices
+                  .filter((choice) => choice.id !== currentMemberId)
+                  .map((choice) => (
+                    <button
+                      className="statement-filter"
+                      type="button"
+                      aria-pressed={ownerFilter === choice.id}
+                      key={choice.id}
+                      onClick={() => setOwnerFilter((current) => current === choice.id ? "all" : choice.id)}
+                    >
+                      {choice.label}
+                    </button>
+                  ))
+              : null}
+            {sourceChoices.length > 1
+              ? sourceChoices.map((source) => (
+                  <button
+                    className="statement-filter"
+                    type="button"
+                    aria-pressed={sourceFilter === source}
+                    key={source}
+                    onClick={() => setSourceFilter((current) => current === source ? null : source)}
+                  >
+                    {source}
+                  </button>
+                ))
+              : null}
           </div>
 
-          <div className="table-wrap">
-            <table className="data-table import-history-table">
-              <caption className="sr-only">Saved bank statement imports</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Statement</th>
-                  <th scope="col">Activity period</th>
-                  <th scope="col">Progress</th>
-                  <th scope="col">Imported</th>
-                  <th scope="col"><span className="sr-only">Actions</span></th>
-                </tr>
-              </thead>
-              <tbody>
-                {savedImportList.map((savedImport) => (
-                  <tr key={savedImport.id}>
-                    <td>
-                      <ImportSourceCell
-                        sourceName={savedImport.sourceName}
-                        filename={savedImport.originalFilename}
-                        filenameFirst
-                      />
-                      <div className="table-note">{formatTemplateName(savedImport.templateName)}</div>
-                      <span className="badge badge-neutral">Imported</span>
-                    </td>
-                    <td>{formatImportActivityRange(savedImport)}</td>
-                    <td>
-                      <strong>{savedImport.reviewPendingCount === 0 ? "Complete" : `${savedImport.reviewPendingCount} need review`}</strong>
-                      <div className="table-note">
-                        {savedImport.ruleAppliedCount > 0 ? <Link href={historyRowsHref({ latestTransactionDate: savedImport.latestTransactionDate, reviewStatus: "automatic" })}>View automatic classifications</Link> : null}
-                        {" "}{savedImport.manuallyReviewedCount} reviewed · {savedImport.ruleAppliedCount} by rules · {savedImport.transactionCount} total
-                      </div>
-                    </td>
-                    <td>{formatSavedAt(savedImport.createdAt)}</td>
-                    <td>
-                      <div className="import-history-actions">
-                        <Link
-                          className="link-button"
-                          href={`/transactions/review?import=${encodeURIComponent(savedImport.id)}`}
-                          onClick={() => router.refresh()}
-                        >
-                          {savedImport.reviewPendingCount > 0 ? "Review" : "Open queue"}
-                        </Link>
-                        <Link
-                          className="link-button"
-                          href={historyRowsHref({ latestTransactionDate: savedImport.latestTransactionDate })}
-                        >
-                          History
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {visibleImports.length === 0 ? (
+            <p className="empty-state">{emptyStatementCopy}</p>
+          ) : (
+            <ul className="import-statement-list">
+              {visibleImports.map((savedImport) => (
+                <li className="import-statement-row" key={savedImport.id}>
+                  <div className="import-statement-main">
+                    <div className="import-statement-title">
+                      <span className="badge badge-source">{savedImport.sourceName?.trim() || "Statement"}</span>
+                      <Link href={historyRowsHref({ latestTransactionDate: savedImport.latestTransactionDate })}>
+                        {formatImportActivityRange(savedImport)}
+                      </Link>
+                      <span>{ownerLabel(savedImport)}</span>
+                    </div>
+                    <p className="table-note">{savedImport.originalFilename}</p>
+                    <p className="import-statement-progress">
+                      {savedImport.reviewPendingCount > 0 ? (
+                        <strong>{savedImport.reviewPendingCount} need review</strong>
+                      ) : (
+                        <span>Complete</span>
+                      )}
+                      <span className="table-note">
+                        {savedImport.transactionCount} transaction{savedImport.transactionCount === 1 ? "" : "s"}
+                      </span>
+                    </p>
+                  </div>
+                  {savedImport.reviewPendingCount > 0 ? (
+                    <Link
+                      className="button"
+                      href={`/transactions/review?import=${encodeURIComponent(savedImport.id)}`}
+                      onClick={() => router.refresh()}
+                    >
+                      Review
+                    </Link>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
         </article>
       ) : null}
     </section>

@@ -13,6 +13,7 @@ import {
   importTemplates,
   transactionClassifications,
   transactions,
+  users,
   workspaceMembers,
 } from "@/db/schema";
 import { normalizeMerchantRuleValue } from "@/features/expenses/suggestions";
@@ -95,6 +96,10 @@ export type SavedImportSummary = {
   reviewPendingCount: number;
   earliestTransactionDate: string | null;
   latestTransactionDate: string | null;
+  accountId: string | null;
+  accountLabel: string | null;
+  accountOwnerMemberId: string | null;
+  accountOwnerName: string | null;
 };
 
 export type SaveImportResult =
@@ -121,6 +126,37 @@ export type SaveImportResult =
 
 function hashBuffer(fileBuffer: Buffer) {
   return createHash("sha256").update(fileBuffer).digest("hex");
+}
+
+export async function findExistingBankFileImport(
+  workspaceId: string,
+  checksum: string,
+  db: DbExecutor,
+) {
+  const existingImport = await db.query.imports.findFirst({
+    where: and(
+      eq(imports.workspaceId, workspaceId),
+      eq(imports.fileChecksum, checksum),
+      eq(imports.type, "bank"),
+    ),
+  });
+
+  if (!existingImport) return null;
+
+  const existingTransactionCount = await db.$count(
+    transactions,
+    eq(transactions.importId, existingImport.id),
+  );
+
+  if (existingImport.importStatus === "failed" && existingTransactionCount === 0) {
+    return null;
+  }
+
+  return {
+    id: existingImport.id,
+    originalFilename: existingImport.originalFilename,
+    createdAt: existingImport.createdAt.toISOString(),
+  };
 }
 
 function buildTransactionDedupeHash(input: {
@@ -381,7 +417,7 @@ export async function listSavedImports(
   }
 
   const importIds = savedImports.map((savedImport) => savedImport.id);
-  const [transactionCounts, pendingReviewCounts, classificationCounts, transactionDateRanges] = await Promise.all([
+  const [transactionCounts, pendingReviewCounts, classificationCounts, transactionDateRanges, accountRows] = await Promise.all([
     db
       .select({
         importId: transactions.importId,
@@ -429,6 +465,20 @@ export async function listSavedImports(
       .from(transactions)
       .where(inArray(transactions.importId, importIds))
       .groupBy(transactions.importId),
+    db
+      .select({
+        importId: transactions.importId,
+        accountId: sql<string | null>`min(${financialAccounts.id}::text)`,
+        accountLabel: sql<string | null>`min(${financialAccounts.displayName})`,
+        ownerMemberId: sql<string | null>`min(${financialAccounts.ownerMemberId}::text)`,
+        ownerName: sql<string | null>`min(coalesce(nullif(btrim(${workspaceMembers.displayNameOverride}), ''), ${users.displayName}))`,
+      })
+      .from(transactions)
+      .innerJoin(financialAccounts, eq(financialAccounts.id, transactions.accountId))
+      .leftJoin(workspaceMembers, eq(workspaceMembers.id, financialAccounts.ownerMemberId))
+      .leftJoin(users, eq(users.id, workspaceMembers.userId))
+      .where(inArray(transactions.importId, importIds))
+      .groupBy(transactions.importId),
   ]);
   const countByImportId = new Map(
     transactionCounts.map((item) => [item.importId, Number(item.count)]),
@@ -454,6 +504,7 @@ export async function listSavedImports(
       },
     ]),
   );
+  const accountByImportId = new Map(accountRows.map((item) => [item.importId, item]));
 
   return savedImports.map<SavedImportSummary>((savedImport) => ({
     ...(() => {
@@ -461,6 +512,7 @@ export async function listSavedImports(
       const reviewPendingCount = pendingCountByImportId.get(savedImport.id) ?? 0;
       const classificationCount = classificationCountByImportId.get(savedImport.id);
       const dateRange = dateRangeByImportId.get(savedImport.id);
+      const account = accountByImportId.get(savedImport.id);
 
       return {
         transactionCount,
@@ -470,6 +522,10 @@ export async function listSavedImports(
         reviewPendingCount,
         earliestTransactionDate: dateRange?.earliestTransactionDate ?? null,
         latestTransactionDate: dateRange?.latestTransactionDate ?? null,
+        accountId: account?.accountId ?? null,
+        accountLabel: account?.accountLabel ?? null,
+        accountOwnerMemberId: account?.ownerMemberId ?? null,
+        accountOwnerName: account?.ownerName ?? null,
       };
     })(),
     id: savedImport.id,
