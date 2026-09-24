@@ -1,9 +1,11 @@
+import { createHash } from "node:crypto";
+
 import { listWorkspaceMembersForSettings } from "@/features/workspaces/members";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { parseBankWorkbookWithMonthlyRates } from "@/features/imports/parse-bank-workbook";
-import { analyzeParsedBankImport } from "@/features/imports/persistence";
+import { analyzeParsedBankImport, findExistingBankFileImport } from "@/features/imports/persistence";
 import { detectBankTemplate } from "@/features/imports/templates/detect";
 import { withCurrentWorkspaceDb } from "@/features/workspaces/current-context";
 import { errorResponse } from "@/lib/logging/server";
@@ -46,8 +48,10 @@ export async function POST(request: Request) {
   }
 
   try {
+    const fileBuffer = await file.arrayBuffer();
+    const checksum = createHash("sha256").update(Buffer.from(fileBuffer)).digest("hex");
     const workbook = readTabularFileFromBuffer({
-      buffer: await file.arrayBuffer(),
+      buffer: fileBuffer,
       filename: file.name,
     });
     const detectedTemplate = detectBankTemplate(workbook);
@@ -62,7 +66,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const { importPlan, members, result } = await withCurrentWorkspaceDb(async (context, db) => {
+    const { importPlan, members, result, existingImport } = await withCurrentWorkspaceDb(async (context, db) => {
       const result = await parseBankWorkbookWithMonthlyRates({
         workbook,
         workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),
@@ -73,6 +77,7 @@ export async function POST(request: Request) {
         result,
         importPlan: await analyzeParsedBankImport({ context, parsed: result.parsed, db }),
         members: await listWorkspaceMembersForSettings(context, db),
+        existingImport: await findExistingBankFileImport(context.workspaceId, checksum, db),
       };
     });
 
@@ -87,6 +92,7 @@ export async function POST(request: Request) {
       automaticRuleCountWithOwner: importPlan.automaticRuleCountWithOwner,
       automaticRuleCountWithoutOwner: importPlan.automaticRuleCountWithoutOwner,
       accountOwnerMemberId: importPlan.accountOwnerMemberId,
+      existingImport,
       members: members.filter((member) => member.isActive).map((member) => ({ id: member.id, displayName: member.displayName })),
       previewTransactions: result.previewTransactions.slice(0, 50),
       warnings: buildPreviewWarnings({
