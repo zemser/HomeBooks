@@ -32,7 +32,7 @@ async function TransactionHistory({ searchParams }: AllTransactionsPageProps) {
 
 export default function AllTransactionsPage({ searchParams }: AllTransactionsPageProps) {
   return (
-    <Suspense fallback={<RouteDataFallback label="History" presentation="line" />}>
+    <Suspense fallback={<RouteDataFallback label="History" presentation="spinner" />}>
       <TransactionHistory searchParams={searchParams} />
     </Suspense>
   );

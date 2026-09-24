@@ -5,13 +5,14 @@ export function RouteDataFallback({
 }: {
   label: string;
   testId?: string;
-  presentation?: "card" | "line";
+  presentation?: "card" | "spinner";
 }) {
-  if (presentation === "line") {
+  if (presentation === "spinner") {
     return (
-      <p className="muted-text" aria-busy="true" aria-label={`Loading ${label}`} data-testid={testId}>
-        Loading {label}…
-      </p>
+      <div className="route-loader" role="status" aria-busy="true" data-testid={testId}>
+        <span className="route-loader-spinner" aria-hidden="true" />
+        <span className="sr-only">Loading {label}</span>
+      </div>
     );
   }
 

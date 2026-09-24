@@ -1259,6 +1259,34 @@ select.input:focus {
   overflow-x: auto;
 }
 
+.route-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 14rem;
+}
+
+.route-loader-spinner {
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: route-loader-spin 700ms linear infinite;
+}
+
+@keyframes route-loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-loader-spinner {
+    animation: none;
+  }
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
