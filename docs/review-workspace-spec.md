@@ -2,7 +2,7 @@
 
 ## Status
 
-Ready to implement. Replaces the rolled-back layout in #142 and #143. Those pulls locked `.app-shell` / `.page-shell` to `100dvh`, changed `.app-main-scroll` from `overflow-x: hidden` to `overflow-x: clip`, and gave the queue `min-height: 26rem`. The shared scroller clipped Review and every other page. This spec keeps the product goal. It does not lock those shells, and it does not change their overflow.
+Implemented. Slice 1 is #147, slices 2 and 3 are #148, and the slice 3 acceptance checks are in `tests/e2e/transactions-header.spec.ts`. Replaces the rolled-back layout in #142 and #143. Those pulls locked `.app-shell` / `.page-shell` to `100dvh`, changed `.app-main-scroll` from `overflow-x: hidden` to `overflow-x: clip`, and gave the queue `min-height: 26rem`. The shared scroller clipped Review and every other page. This spec keeps the product goal. It does not lock those shells, and it does not change their overflow.
 
 ## Product
 
