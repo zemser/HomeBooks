@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useDeferredValue, useEffect, useRef, useState, useTransition } from "react";
 
+import { DatePicker } from "@/components/dates/date-picker";
 import {
   AllocationEditor,
   createAllocationFormState,
@@ -1119,20 +1120,16 @@ export function ExpensesPageClient({
                 />
               </label>
 
-              <label className="field">
-                <span>Date</span>
-                <input
-                  className="input"
-                  type="date"
-                  value={manualEntryForm.eventDate}
-                  onChange={(event) =>
-                    setManualEntryForm((current) => ({
-                      ...current,
-                      eventDate: event.target.value,
-                    }))
-                  }
-                />
-              </label>
+              <DatePicker
+                label="Date"
+                value={manualEntryForm.eventDate}
+                onChange={(value) =>
+                  setManualEntryForm((current) => ({
+                    ...current,
+                    eventDate: value,
+                  }))
+                }
+              />
             </div>
 
             {!hasDefinedCategories ? (

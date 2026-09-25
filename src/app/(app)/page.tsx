@@ -2,6 +2,7 @@ import { buildReportsHref } from "@/features/reporting/line-item-slice";
 import Link from "next/link";
 import { cache, Suspense } from "react";
 
+import { MonthPicker } from "@/components/dates/month-picker";
 import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import {
   getWorkspaceHomeActivitySnapshot,
@@ -62,15 +63,12 @@ async function HomeReporting({ searchParams }: HomePageProps) {
             <p className="muted-text">Choose the month you want to finish or understand.</p>
           </div>
           <form className="inline-form report-controls-form" method="GET">
-            <label className="field">
-              <span>Selected month</span>
-              <input
-                className="input"
-                type="month"
-                name="month"
-                defaultValue={formatMonthInputValue(reporting.selectedMonth)}
-              />
-            </label>
+            <MonthPicker
+              key={formatMonthInputValue(reporting.selectedMonth)}
+              label="Selected month"
+              name="month"
+              defaultValue={formatMonthInputValue(reporting.selectedMonth)}
+            />
             <div className="field">
               <span>&nbsp;</span>
               <button className="button button-secondary" type="submit">Load month</button>

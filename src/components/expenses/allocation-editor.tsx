@@ -2,6 +2,8 @@
 
 import type { Dispatch, SetStateAction } from "react";
 
+import { DatePicker } from "@/components/dates/date-picker";
+import { MonthPicker } from "@/components/dates/month-picker";
 import type { ExpenseAllocationState } from "@/features/expenses/allocation";
 import { formatMoneyDisplay } from "@/features/expenses/presentation";
 
@@ -143,36 +145,28 @@ export function AllocationEditor({
 
           {form.allocationStrategy === "equal_split" ? (
             <div className="inline-form">
-              <label className="field">
-                <span>Coverage start</span>
-                <input
-                  className="input"
-                  disabled={disabled}
-                  type="date"
-                  value={form.coverageStartDate}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      coverageStartDate: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span>Coverage end</span>
-                <input
-                  className="input"
-                  disabled={disabled}
-                  type="date"
-                  value={form.coverageEndDate}
-                  onChange={(event) =>
-                    setForm((current) => ({
-                      ...current,
-                      coverageEndDate: event.target.value,
-                    }))
-                  }
-                />
-              </label>
+              <DatePicker
+                disabled={disabled}
+                label="Coverage start"
+                value={form.coverageStartDate}
+                onChange={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    coverageStartDate: value,
+                  }))
+                }
+              />
+              <DatePicker
+                disabled={disabled}
+                label="Coverage end"
+                value={form.coverageEndDate}
+                onChange={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    coverageEndDate: value,
+                  }))
+                }
+              />
             </div>
           ) : (
             <div className="stack compact">
@@ -212,28 +206,24 @@ export function AllocationEditor({
 
               {form.allocations.map((row, index) => (
                 <div className="inline-form" key={`${row.reportMonth}-${index}`}>
-                  <label className="field">
-                    <span>Month</span>
-                    <input
-                      className="input"
-                      disabled={disabled}
-                      type="month"
-                      value={row.reportMonth}
-                      onChange={(event) =>
-                        setForm((current) => ({
-                          ...current,
-                          allocations: current.allocations.map((candidate, candidateIndex) =>
-                            candidateIndex === index
-                              ? {
-                                  ...candidate,
-                                  reportMonth: event.target.value,
-                                }
-                              : candidate,
-                          ),
-                        }))
-                      }
-                    />
-                  </label>
+                  <MonthPicker
+                    disabled={disabled}
+                    label="Month"
+                    value={row.reportMonth}
+                    onChange={(value) =>
+                      setForm((current) => ({
+                        ...current,
+                        allocations: current.allocations.map((candidate, candidateIndex) =>
+                          candidateIndex === index
+                            ? {
+                                ...candidate,
+                                reportMonth: value,
+                              }
+                            : candidate,
+                        ),
+                      }))
+                    }
+                  />
                   <label className="field">
                     <span>Amount</span>
                     <input

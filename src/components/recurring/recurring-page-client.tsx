@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react";
 
+import { MonthPicker } from "@/components/dates/month-picker";
 import { CurrencyInput } from "@/components/shared/currency-input";
 import { ConfirmationModal } from "@/components/shared/confirmation-modal";
 import { Modal } from "@/components/shared/modal";
@@ -894,20 +895,16 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 />
               </label>
 
-              <label className="field">
-                <span>Starts</span>
-                <input
-                  className="input"
-                  type="month"
-                  value={createState.effectiveStartMonth}
-                  onChange={(event) =>
-                    setCreateState((current) => ({
-                      ...current,
-                      effectiveStartMonth: event.target.value,
-                    }))
-                  }
-                />
-              </label>
+              <MonthPicker
+                label="Starts"
+                value={createState.effectiveStartMonth}
+                onChange={(value) =>
+                  setCreateState((current) => ({
+                    ...current,
+                    effectiveStartMonth: value,
+                  }))
+                }
+              />
 
               <label className="field">
                 <span>Amount</span>
@@ -1250,20 +1247,16 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 </div>
 
                 <div className="inline-form">
-                  <label className="field">
-                    <span>Starts</span>
-                    <input
-                      className="input"
-                      type="month"
-                      max={latestAllowedStartMonth}
-                      value={editState.startsMonth}
-                      onChange={(event) =>
-                        setEditState((current) =>
-                          current ? { ...current, startsMonth: event.target.value } : current,
-                        )
-                      }
-                    />
-                  </label>
+                  <MonthPicker
+                    label="Starts"
+                    max={latestAllowedStartMonth}
+                    value={editState.startsMonth}
+                    onChange={(value) =>
+                      setEditState((current) =>
+                        current ? { ...current, startsMonth: value } : current,
+                      )
+                    }
+                  />
                   <label className="field">
                     <span>Amount</span>
                     <input
@@ -1348,21 +1341,17 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                     the new amount from January. Past months stay as they were.
                   </p>
                 <div className="inline-form">
-                  <label className="field">
-                    <span>New amount starts</span>
-                    <input
-                      className="input"
-                      type="month"
-                      min={nextMonthInputValue()}
-                      value={versionState.effectiveStartMonth}
-                      onChange={(event) =>
-                        setVersionState((current) => ({
-                          ...current,
-                          effectiveStartMonth: event.target.value,
-                        }))
-                      }
-                    />
-                  </label>
+                  <MonthPicker
+                    label="New amount starts"
+                    min={nextMonthInputValue()}
+                    value={versionState.effectiveStartMonth}
+                    onChange={(value) =>
+                      setVersionState((current) => ({
+                        ...current,
+                        effectiveStartMonth: value,
+                      }))
+                    }
+                  />
                   <label className="field">
                     <span>Amount</span>
                     <input

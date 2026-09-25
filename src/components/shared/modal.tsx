@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useId, useRef } from "react";
+import { useId } from "react";
+import { Dialog } from "react-aria-components/Dialog";
+import { Modal as AriaModal, ModalOverlay } from "react-aria-components/Modal";
 
 type ModalProps = {
   title: string;
@@ -21,41 +23,46 @@ export function Modal({
   size = "default",
   allowContentOverflow = false,
 }: ModalProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const descriptionId = useId();
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
-
   return (
-    <dialog
-      className={`modal ${size === "wide" ? "modal-wide" : ""} ${allowContentOverflow ? "modal-overflow-visible" : ""}`}
-      ref={dialogRef}
-      aria-labelledby={titleId}
-      aria-describedby={description ? descriptionId : undefined}
-      onCancel={(event) => {
-        event.preventDefault();
-        onClose();
+    <ModalOverlay
+      className="app-modal-overlay"
+      isOpen={open}
+      onOpenChange={(isOpen) => {
+        if (!isOpen) onClose();
       }}
-      onClose={onClose}
     >
-      <div className="modal-content">
-        <div className="page-actions">
-          <div>
-            <h2 id={titleId}>{title}</h2>
-            {description ? <p className="muted-text" id={descriptionId}>{description}</p> : null}
+      <AriaModal
+        className={`modal ${size === "wide" ? "modal-wide" : ""} ${allowContentOverflow ? "modal-overflow-visible" : ""}`}
+      >
+        <Dialog
+          className="modal-content"
+          aria-labelledby={titleId}
+          aria-describedby={description ? descriptionId : undefined}
+        >
+          <div className="page-actions">
+            <div>
+              <h2 id={titleId}>{title}</h2>
+              {description ? (
+                <p className="muted-text" id={descriptionId}>
+                  {description}
+                </p>
+              ) : null}
+            </div>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+            >
+              ×
+            </button>
           </div>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
-            ×
-          </button>
-        </div>
-        {children}
-      </div>
-    </dialog>
+          {children}
+        </Dialog>
+      </AriaModal>
+    </ModalOverlay>
   );
 }

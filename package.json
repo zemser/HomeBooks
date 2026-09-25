@@ -15,6 +15,7 @@
     "lint": "eslint .",
     "test:review": "tsx --test tests/review/*.test.ts",
     "test:e2e": "playwright test",
+    "test:calendar": "playwright test --config playwright.calendar.config.ts",
     "test:instant": "node scripts/run-instant-nav.mjs",
     "perf:benchmark": "tsx scripts/perf-benchmark.ts",
     "perf:pool-benchmark": "tsx scripts/pool-benchmark.ts",
@@ -30,6 +31,7 @@
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
+    "@internationalized/date": "3.12.4",
     "@supabase/ssr": "0.12.4",
     "@supabase/supabase-js": "2.112.2",
     "big.js": "7.0.1",
@@ -38,6 +40,7 @@
     "next": "16.3.0",
     "pg": "8.20.0",
     "react": "19.2.8",
+    "react-aria-components": "1.21.1",
     "react-dom": "19.2.8",
     "xlsx": "0.18.5",
     "zod": "3.25.76"
