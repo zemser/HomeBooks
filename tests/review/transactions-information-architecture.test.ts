@@ -48,6 +48,7 @@ test("navigation model carries parent activity, beta, and attention metadata", a
   assert.match(nav, /label: "Transactions"[\s\S]*attention: "review"/);
   assert.match(nav, /label: "Investments"[\s\S]*betaLabel: "Beta"/);
   assert.match(nav, /label: "More"[\s\S]*activePaths:/);
+  assert.doesNotMatch(nav, /title: "Money"|title: "More"/);
   assert.match(shell, /navigation\.titleItems\.find/);
   assert.match(shell, /navigation\.mobileItems\.map/);
   assert.doesNotMatch(shell, /item\.href ===/);

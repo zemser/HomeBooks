@@ -60,8 +60,7 @@ const mobileMoreItem: AppNavItem = {
 export function createAppNavigation(): AppNavigation {
   return {
     desktopSections: [
-      { title: "Money", items: primaryItems },
-      { title: "More", items: moreItems },
+      { title: "", items: [...primaryItems, ...moreItems] },
     ],
     mobileItems: [...primaryItems, mobileMoreItem],
     titleItems: [...primaryItems, ...moreItems, mobileMoreItem],

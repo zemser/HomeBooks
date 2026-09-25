@@ -117,8 +117,8 @@ export function AppShellClient({
 
           <nav className="app-nav" aria-label="Primary application">
             {navigation.desktopSections.map((section) => (
-              <div className="app-nav-section" key={section.title}>
-                <p className="app-nav-title">{section.title}</p>
+              <div className="app-nav-section" key={section.title || "destinations"}>
+                {section.title ? <p className="app-nav-title">{section.title}</p> : null}
                 <div className="app-nav-list">
                   {section.items.map((item) => (
                     <DesktopNavLink

@@ -9,9 +9,10 @@ export function TransactionsPageFrame({
 }) {
   const pathname = usePathname();
   const isReview = pathname === "/transactions/review";
+  const isHistory = pathname === "/transactions/all";
 
   return (
-    <div className={`page-shell stack transactions-shell${isReview ? " transactions-review-shell" : ""}`}>
+    <div className={`page-shell stack transactions-shell${isReview ? " transactions-review-shell" : ""}${isReview || isHistory ? " tool-shell" : ""}`}>
       {children}
     </div>
   );
