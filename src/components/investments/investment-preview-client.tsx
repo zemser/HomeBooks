@@ -1,18 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
-import { getInvestmentAssetTypeLabel } from "@/features/investments/classification";
-import { buildInvestmentPortfolioReport } from "@/features/investments/reporting";
+import { InvestmentHoldingsBoard } from "@/components/investments/investment-holdings-board";
+import { INVESTMENT_PROVIDER_SOURCE_NAME } from "@/features/investments/constants";
 import type {
   InvestmentAccountHoldingsSnapshot,
   InvestmentActivityType,
   InvestmentImportSummary,
-  PersistedInvestmentActivity,
+  InvestmentProviderId,
 } from "@/features/investments/types";
+import { normalizeInvestmentAccountLabel } from "@/features/investments/utils";
 import type { WorkspaceMemberSettingsItem } from "@/features/workspaces/types";
-import { formatMoneyWithCurrency } from "@/lib/money/format";
 
 type InvestmentPreviewHolding = {
   assetName: string;
@@ -65,7 +65,6 @@ type InvestmentSaveResponse = {
   status?: string;
   error?: string;
   accounts?: InvestmentAccountHoldingsSnapshot[];
-  activities?: PersistedInvestmentActivity[];
   import?: InvestmentImportSummary | null;
   imports?: InvestmentImportSummary[];
 };
@@ -79,7 +78,6 @@ type SaveState = "idle" | "saving" | "saved" | "duplicate" | "error";
 
 type InvestmentPreviewClientProps = {
   initialInvestmentAccountHoldings: InvestmentAccountHoldingsSnapshot[];
-  initialInvestmentActivities: PersistedInvestmentActivity[];
   initialInvestmentImports: InvestmentImportSummary[];
   initialMembers: WorkspaceMemberSettingsItem[];
   initialCurrentMemberId: string;
@@ -95,63 +93,53 @@ function formatDisplayValue(value: string | number | null | undefined) {
   return String(value);
 }
 
-function formatNumberValue(
-  value: number | null | undefined,
-  options?: Intl.NumberFormatOptions,
-) {
-  if (value === null || value === undefined) {
-    return "-";
+function providerSourceName(provider: string) {
+  if (
+    provider === "excellence"
+    || provider === "current-portfolio"
+    || provider === "bank-securities"
+  ) {
+    return INVESTMENT_PROVIDER_SOURCE_NAME[provider satisfies InvestmentProviderId];
   }
 
-  return new Intl.NumberFormat("en", {
-    maximumFractionDigits: 2,
-    ...options,
-  }).format(value);
+  return provider;
 }
 
-function formatMoneyValue(value: number | null | undefined, currency: string) {
-  if (value === null || value === undefined) {
-    return "-";
+function findExistingInvestmentAccount(input: {
+  accounts: InvestmentAccountHoldingsSnapshot[];
+  ownerMemberId: string;
+  accountLabel: string;
+  provider: string;
+}) {
+  const label = input.accountLabel.trim();
+
+  if (!label || !input.ownerMemberId.trim()) {
+    return null;
   }
 
-  return formatMoneyWithCurrency(value, currency);
-}
+  let canonicalLabel: string;
 
-function formatSignedMoneyValue(value: number | null | undefined, currency: string) {
-  if (value === null || value === undefined) {
-    return "-";
+  try {
+    canonicalLabel = normalizeInvestmentAccountLabel(label);
+  } catch {
+    return null;
   }
 
-  return formatMoneyWithCurrency(value, currency, { signDisplay: "exceptZero" });
-}
+  const sourceName = providerSourceName(input.provider);
 
-function formatPercentValue(
-  value: number | null | undefined,
-  options?: {
-    signed?: boolean;
-    maximumFractionDigits?: number;
-    minimumFractionDigits?: number;
-  },
-) {
-  if (value === null || value === undefined) {
-    return "-";
-  }
+  return (
+    input.accounts.find((account) => {
+      if (account.ownerMemberId !== input.ownerMemberId || account.sourceName !== sourceName) {
+        return false;
+      }
 
-  const formatted = new Intl.NumberFormat("en", {
-    minimumFractionDigits: options?.minimumFractionDigits ?? 1,
-    maximumFractionDigits: options?.maximumFractionDigits ?? 1,
-    signDisplay: options?.signed ? "exceptZero" : "auto",
-  }).format(value);
-
-  return `${formatted}%`;
-}
-
-function getProgressWidth(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "0%";
-  }
-
-  return `${Math.max(0, Math.min(100, value))}%`;
+      try {
+        return normalizeInvestmentAccountLabel(account.accountDisplayName) === canonicalLabel;
+      } catch {
+        return false;
+      }
+    }) ?? null
+  );
 }
 
 function formatSnapshotValue(value: string | null) {
@@ -242,7 +230,6 @@ function getPreviewSaveLabel(preview: InvestmentPreviewResponse | null, saveStat
 
 export function InvestmentPreviewClient({
   initialInvestmentAccountHoldings,
-  initialInvestmentActivities,
   initialInvestmentImports,
   initialMembers,
   initialCurrentMemberId,
@@ -260,16 +247,29 @@ export function InvestmentPreviewClient({
   const [accountLabelDraft, setAccountLabelDraft] = useState("");
   const [investmentAccountHoldings, setInvestmentAccountHoldings] =
     useState<InvestmentAccountHoldingsSnapshot[]>(initialInvestmentAccountHoldings);
-  const [investmentActivities, setInvestmentActivities] =
-    useState<PersistedInvestmentActivity[]>(initialInvestmentActivities);
   const [investmentImports, setInvestmentImports] =
     useState<InvestmentImportSummary[]>(initialInvestmentImports);
+
+  useEffect(() => {
+    setInvestmentAccountHoldings(initialInvestmentAccountHoldings);
+  }, [initialInvestmentAccountHoldings]);
+
+  useEffect(() => {
+    setInvestmentImports(initialInvestmentImports);
+  }, [initialInvestmentImports]);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const portfolioReport = buildInvestmentPortfolioReport(investmentAccountHoldings);
-  const leadingAssetMix = portfolioReport.assetMix[0] ?? null;
-  const leadingOwner = portfolioReport.ownerOverviews[0] ?? null;
+  const matchingAccount = preview
+    ? findExistingInvestmentAccount({
+        accounts: investmentAccountHoldings,
+        ownerMemberId: selectedOwnerMemberId,
+        accountLabel: accountLabelDraft,
+        provider: preview.provider,
+      })
+    : null;
+  const matchingOwnerName =
+    members.find((member) => member.id === selectedOwnerMemberId)?.displayName ?? "this member";
 
   const canSaveToWorkspace = workspaceCurrency === "ILS";
   const canSubmitSave = Boolean(
@@ -341,11 +341,18 @@ export function InvestmentPreviewClient({
     setError(null);
     setMessage(null);
     setSaveState("saving");
+    const accountLabel = accountLabelDraft.trim();
+    const updatingAccount = findExistingInvestmentAccount({
+      accounts: investmentAccountHoldings,
+      ownerMemberId: selectedOwnerMemberId,
+      accountLabel,
+      provider: pendingSave.preview.provider,
+    });
 
     const formData = new FormData();
     formData.append("file", pendingSave.file);
     formData.append("ownerMemberId", selectedOwnerMemberId);
-    formData.append("accountLabel", accountLabelDraft.trim());
+    formData.append("accountLabel", accountLabel);
 
     try {
       const response = await fetch("/api/investments", {
@@ -361,14 +368,11 @@ export function InvestmentPreviewClient({
           if (payload.accounts) {
             setInvestmentAccountHoldings(payload.accounts);
           }
-          if (payload.activities) {
-            setInvestmentActivities(payload.activities);
-          }
           if (payload.imports) {
             setInvestmentImports(payload.imports);
           }
           resetPreviewFlow();
-          setMessage("This workbook was already saved for the current workspace.");
+          setMessage("This file is already saved, so the account is already up to date.");
           router.refresh();
           return;
         }
@@ -382,9 +386,6 @@ export function InvestmentPreviewClient({
       if (payload.accounts) {
         setInvestmentAccountHoldings(payload.accounts);
       }
-      if (payload.activities) {
-        setInvestmentActivities(payload.activities);
-      }
       if (payload.imports) {
         setInvestmentImports(payload.imports);
       } else if (payload.import) {
@@ -395,9 +396,9 @@ export function InvestmentPreviewClient({
       }
       resetPreviewFlow();
       setMessage(
-        pendingSave.preview.activities.length > 0 && pendingSave.preview.holdings.length === 0
-          ? "Investment activity import saved to the workspace. Preview another file when you are ready."
-          : "Investment import saved to the workspace. Preview another file when you are ready.",
+        updatingAccount
+          ? `Updated ${updatingAccount.ownerDisplayName ?? matchingOwnerName} · ${updatingAccount.accountDisplayName}. The table shows the latest snapshot.`
+          : `Saved ${accountLabel}. The table shows the latest snapshot.`,
       );
       router.refresh();
     } catch {
@@ -408,626 +409,21 @@ export function InvestmentPreviewClient({
 
   return (
     <section className="stack">
-      {mode !== "upload" && investmentAccountHoldings.length > 0 ? (
-        <>
-          <article className="card stack compact">
-            <div>
-              <h2>Portfolio summary</h2>
-              <p className="muted-text">
-                Based on the latest active snapshot for each saved investment account.
-              </p>
-            </div>
-
-            <div className="summary-strip">
-              <div>
-                <strong>
-                  {formatMoneyValue(portfolioReport.summary.totalMarketValue, workspaceCurrency)}
-                </strong>
-                <span>Total market value</span>
-              </div>
-              <div>
-                <strong>
-                  {formatSignedMoneyValue(portfolioReport.summary.totalGainLoss, workspaceCurrency)}
-                </strong>
-                <span>Unrealized gain/loss</span>
-              </div>
-              <div>
-                <strong>{portfolioReport.summary.accountCount}</strong>
-                <span>Investment accounts</span>
-              </div>
-              <div>
-                <strong>{portfolioReport.summary.holdingCount}</strong>
-                <span>Active holdings</span>
-              </div>
-            </div>
-
-            <div className="meta-grid">
-              <div>
-                <strong>Largest account</strong>
-                <p>{portfolioReport.summary.largestAccount?.accountDisplayName ?? "-"}</p>
-                {portfolioReport.summary.largestAccount ? (
-                  <p className="helper-text">
-                    {formatMoneyValue(
-                      portfolioReport.summary.largestAccount.totalMarketValue,
-                      workspaceCurrency,
-                    )}{" "}
-                    ·{" "}
-                    {formatPercentValue(
-                      portfolioReport.summary.largestAccount.portfolioSharePct,
-                    )}{" "}
-                    of portfolio
-                  </p>
-                ) : null}
-              </div>
-              <div>
-                <strong>Top holding</strong>
-                <p>{portfolioReport.summary.topHolding?.assetName ?? "-"}</p>
-                {portfolioReport.summary.topHolding ? (
-                  <p className="helper-text">
-                    {formatMoneyValue(
-                      portfolioReport.summary.topHolding.marketValue,
-                      workspaceCurrency,
-                    )}{" "}
-                    · {portfolioReport.summary.topHolding.accountDisplayName} ·{" "}
-                    {formatPercentValue(
-                      portfolioReport.summary.topHolding.portfolioWeightPct,
-                    )}{" "}
-                    of portfolio
-                  </p>
-                ) : null}
-              </div>
-              <div>
-                <strong>Snapshot coverage</strong>
-                <p>
-                  {portfolioReport.summary.oldestSnapshotDate
-                    && portfolioReport.summary.latestSnapshotDate ? (
-                      portfolioReport.summary.oldestSnapshotDate
-                      === portfolioReport.summary.latestSnapshotDate ? (
-                        formatSnapshotValue(portfolioReport.summary.latestSnapshotDate)
-                      ) : (
-                        `${formatSnapshotValue(
-                          portfolioReport.summary.oldestSnapshotDate,
-                        )} -> ${formatSnapshotValue(portfolioReport.summary.latestSnapshotDate)}`
-                      )
-                    ) : (
-                      "-"
-                    )}
-                </p>
-                <p className="helper-text">
-                  Each account contributes its latest active snapshot, so dates can vary.
-                </p>
-              </div>
-              <div>
-                <strong>Cost basis coverage</strong>
-                <p>
-                  {portfolioReport.summary.holdingsWithCostBasisCount} of{" "}
-                  {portfolioReport.summary.holdingCount} holdings include cost basis
-                </p>
-                <p className="helper-text">
-                  {portfolioReport.summary.totalCostBasis !== null ? (
-                    <>
-                      Known basis{" "}
-                      {formatMoneyValue(
-                        portfolioReport.summary.totalCostBasis,
-                        workspaceCurrency,
-                      )}{" "}
-                      ·{" "}
-                      {formatPercentValue(portfolioReport.summary.totalGainLossPct, {
-                        signed: true,
-                      })}{" "}
-                      gain/loss vs known basis
-                    </>
-                  ) : (
-                    "Percent gain/loss becomes available once a saved snapshot includes cost basis."
-                  )}
-                </p>
-              </div>
-              <div>
-                <strong>Composition signal</strong>
-                <p>{leadingAssetMix?.assetTypeLabel ?? "-"}</p>
-                <p className="helper-text">
-                  {leadingAssetMix ? (
-                    <>
-                      {formatPercentValue(leadingAssetMix.portfolioSharePct)} of portfolio
-                      across {leadingAssetMix.holdingCount} holdings
-                    </>
-                  ) : (
-                    "No saved holdings are available yet."
-                  )}
-                </p>
-              </div>
-              <div>
-                <strong>Asset type coverage</strong>
-                <p>
-                  {portfolioReport.summary.estimatedAssetTypeCount} of{" "}
-                  {portfolioReport.summary.holdingCount} holdings are estimated
-                </p>
-                <p className="helper-text">
-                  Excellence snapshots do not expose a dedicated asset-type column, so
-                  the current mix uses holding-name heuristics when needed.
-                </p>
-              </div>
-            </div>
-          </article>
-
-          <article className="card stack compact">
-            <div className="page-actions">
-              <div>
-              <h2>Portfolio composition</h2>
-              <p className="muted-text">
-                  Estimated from the latest active holdings per account. Activity imports
-                  now sit beside this view without changing the holdings composition until
-                  a new snapshot is saved.
-                </p>
-              </div>
-              <span className="badge badge-neutral">
-                {portfolioReport.summary.estimatedAssetTypeCount > 0
-                  ? "Name-based mix"
-                  : "Saved asset mix"}
-              </span>
-            </div>
-
-            <div className="summary-strip">
-              <div>
-                <strong>{leadingAssetMix?.assetTypeLabel ?? "-"}</strong>
-                <span>Largest asset type</span>
-              </div>
-              <div>
-                <strong>
-                  {formatPercentValue(leadingAssetMix?.portfolioSharePct ?? null)}
-                </strong>
-                <span>Largest asset-type share</span>
-              </div>
-              <div>
-                <strong>{portfolioReport.assetMix.length}</strong>
-                <span>Asset types present</span>
-              </div>
-              <div>
-                <strong>{portfolioReport.summary.estimatedAssetTypeCount}</strong>
-                <span>Estimated classifications</span>
-              </div>
-            </div>
-
-            <div className="composition-list">
-              {portfolioReport.assetMix.map((mix) => (
-                <article className="composition-row" key={mix.assetType}>
-                  <div className="composition-row-header">
-                    <div>
-                      <h3>{mix.assetTypeLabel}</h3>
-                      <p className="muted-text">
-                        {mix.holdingCount} holdings across {mix.accountCount} accounts
-                      </p>
-                    </div>
-                    <div className="composition-row-meta">
-                      <strong>
-                        {formatMoneyValue(mix.totalMarketValue, workspaceCurrency)}
-                      </strong>
-                      <span>{formatPercentValue(mix.portfolioSharePct)} of portfolio</span>
-                    </div>
-                  </div>
-
-                  <div className="progress-meter" aria-hidden="true">
-                    <span
-                      className="progress-meter-fill"
-                      style={{ width: getProgressWidth(mix.portfolioSharePct) }}
-                    />
-                  </div>
-
-                  {mix.estimatedHoldingCount > 0 ? (
-                    <p className="helper-text">
-                      {mix.estimatedHoldingCount} holdings in this group were classified
-                      from the holding name because the source workbook does not provide a
-                      dedicated asset-type field yet.
-                    </p>
-                  ) : null}
-                </article>
-              ))}
-            </div>
-          </article>
-
-          <article className="card stack compact">
-            <div>
-              <h2>Owner split</h2>
-              <p className="muted-text">
-                Household-level view of who currently holds what across the saved
-                investment accounts.
-              </p>
-            </div>
-
-            <div className="summary-strip">
-              <div>
-                <strong>{portfolioReport.ownerOverviews.length}</strong>
-                <span>Owners represented</span>
-              </div>
-              <div>
-                <strong>{leadingOwner?.ownerDisplayName ?? "-"}</strong>
-                <span>Largest owner bucket</span>
-              </div>
-              <div>
-                <strong>
-                  {formatPercentValue(leadingOwner?.portfolioSharePct ?? null)}
-                </strong>
-                <span>Largest owner share</span>
-              </div>
-              <div>
-                <strong>
-                  {leadingOwner?.dominantAssetTypeLabel ?? "-"}
-                </strong>
-                <span>Largest owner&apos;s top asset type</span>
-              </div>
-            </div>
-
-            <div className="composition-list">
-              {portfolioReport.ownerOverviews.map((ownerOverview) => (
-                <article className="composition-row" key={ownerOverview.ownerKey}>
-                  <div className="composition-row-header">
-                    <div>
-                      <h3>{ownerOverview.ownerDisplayName}</h3>
-                      <p className="muted-text">
-                        {ownerOverview.accountCount} accounts · {ownerOverview.holdingCount}{" "}
-                        holdings
-                      </p>
-                    </div>
-                    <div className="composition-row-meta">
-                      <strong>
-                        {formatMoneyValue(
-                          ownerOverview.totalMarketValue,
-                          workspaceCurrency,
-                        )}
-                      </strong>
-                      <span>
-                        {formatPercentValue(ownerOverview.portfolioSharePct)} of portfolio
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="progress-meter" aria-hidden="true">
-                    <span
-                      className="progress-meter-fill"
-                      style={{ width: getProgressWidth(ownerOverview.portfolioSharePct) }}
-                    />
-                  </div>
-
-                  <p className="helper-text">
-                    {ownerOverview.dominantAssetTypeLabel ? (
-                      <>
-                        Dominant asset type: {ownerOverview.dominantAssetTypeLabel} at{" "}
-                        {formatPercentValue(ownerOverview.dominantAssetTypeSharePct)} of
-                        this owner&apos;s saved holdings.
-                      </>
-                    ) : (
-                      "No dominant asset type is available yet."
-                    )}{" "}
-                    Latest snapshot: {formatSnapshotValue(ownerOverview.latestSnapshotDate)}.
-                  </p>
-                </article>
-              ))}
-            </div>
-          </article>
-
-          <article className="card stack compact">
-            <div>
-              <h2>Top positions across accounts</h2>
-              <p className="muted-text">
-                Combined across the latest saved snapshot for each account, so repeated
-                holdings roll into one portfolio-level position.
-              </p>
-            </div>
-
-            <div className="table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>Asset</th>
-                    <th>Symbol</th>
-                    <th>Type</th>
-                    <th>Accounts</th>
-                    <th>Market value</th>
-                    <th>Portfolio share</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {portfolioReport.topPositions.slice(0, 8).map((position) => (
-                    <tr key={position.positionKey}>
-                      <td>
-                        <strong>{position.assetName}</strong>
-                      </td>
-                      <td>{position.assetSymbol ?? "-"}</td>
-                      <td>{position.assetTypeLabel}</td>
-                      <td>{position.accountCount}</td>
-                      <td>
-                        {formatMoneyValue(position.totalMarketValue, workspaceCurrency)}
-                      </td>
-                      <td>{formatPercentValue(position.portfolioSharePct)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </article>
-
-          <article className="card stack compact">
-            <div>
-              <h2>Account overview</h2>
-              <p className="muted-text">
-                Compare saved accounts before drilling into the full holdings tables.
-              </p>
-            </div>
-
-            <div className="stack">
-              {portfolioReport.accountOverviews.map((accountOverview) => (
-                <article className="card stack compact" key={`${accountOverview.accountId}-overview`}>
-                  <div className="page-actions">
-                    <div>
-                      <h3>{accountOverview.accountDisplayName}</h3>
-                      <p className="muted-text">
-                        {accountOverview.ownerDisplayName
-                          ? `${accountOverview.ownerDisplayName} · `
-                          : ""}
-                        {accountOverview.sourceName ?? "Investment"}
-                      </p>
-                    </div>
-                    <span
-                      className={`badge ${
-                        accountOverview.concentrationLevel === "watch"
-                          ? "badge-warning"
-                          : "badge-neutral"
-                      }`}
-                    >
-                      {accountOverview.concentrationHint}
-                    </span>
-                  </div>
-
-                  <div className="summary-strip">
-                    <div>
-                      <strong>
-                        {formatMoneyValue(accountOverview.totalMarketValue, workspaceCurrency)}
-                      </strong>
-                      <span>Total market value</span>
-                    </div>
-                    <div>
-                      <strong>
-                        {formatSignedMoneyValue(accountOverview.totalGainLoss, workspaceCurrency)}
-                      </strong>
-                      <span>Unrealized gain/loss</span>
-                    </div>
-                    <div>
-                      <strong>{accountOverview.holdingCount}</strong>
-                      <span>Holdings</span>
-                    </div>
-                    <div>
-                      <strong>{formatPercentValue(accountOverview.portfolioSharePct)}</strong>
-                      <span>Portfolio share</span>
-                    </div>
-                  </div>
-
-                  <div className="meta-grid">
-                    <div>
-                      <strong>Top holding</strong>
-                      <p>{accountOverview.topHoldingName ?? "-"}</p>
-                      <p className="helper-text">
-                        {accountOverview.topHoldingName ? (
-                          <>
-                            {accountOverview.topHoldingSymbol
-                              ? `${accountOverview.topHoldingSymbol} · `
-                              : ""}
-                            {formatMoneyValue(
-                              accountOverview.topHoldingMarketValue,
-                              workspaceCurrency,
-                            )}{" "}
-                            · {formatPercentValue(accountOverview.topHoldingWeightPct)} of
-                            account
-                          </>
-                        ) : (
-                          "No holding details are available for this snapshot."
-                        )}
-                      </p>
-                    </div>
-                    <div>
-                      <strong>Concentration</strong>
-                      <p>{accountOverview.concentrationHint}</p>
-                      <p className="helper-text">
-                        Top 3 holdings:{" "}
-                        {formatPercentValue(accountOverview.topThreeHoldingsWeightPct)} of
-                        account
-                      </p>
-                    </div>
-                    <div>
-                      <strong>Snapshot</strong>
-                      <p>{formatSnapshotValue(accountOverview.snapshotDate)}</p>
-                      <p className="helper-text">
-                        Saved {formatTimestampValue(accountOverview.importCreatedAt)}
-                      </p>
-                    </div>
-                    <div>
-                      <strong>Cost basis coverage</strong>
-                      <p>
-                        {accountOverview.holdingsWithCostBasisCount} of{" "}
-                        {accountOverview.holdingCount} holdings include cost basis
-                      </p>
-                      <p className="helper-text">
-                        {accountOverview.totalCostBasis !== null ? (
-                          <>
-                            Known basis{" "}
-                            {formatMoneyValue(
-                              accountOverview.totalCostBasis,
-                              workspaceCurrency,
-                            )}{" "}
-                            ·{" "}
-                            {formatPercentValue(accountOverview.totalGainLossPct, {
-                              signed: true,
-                            })}{" "}
-                            gain/loss vs known basis
-                          </>
-                        ) : (
-                          "Percent gain/loss is unavailable until cost basis is present."
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </article>
-        </>
+      {mode !== "upload" ? (
+        <InvestmentHoldingsBoard
+          accounts={investmentAccountHoldings}
+          members={members}
+          workspaceCurrency={workspaceCurrency}
+        />
       ) : null}
-
-      {mode !== "upload" && investmentAccountHoldings.length > 0 ? <article className="card stack compact">
-        <div>
-          <h2>Latest saved holdings</h2>
-          <p className="muted-text">
-            Active positions are grouped by investment account. Replaced imports stay
-            visible in history below, but only the latest active snapshot per account is
-            rendered here.
-          </p>
-        </div>
-
-        <div className="stack">
-            {investmentAccountHoldings.map((account) => (
-              <article className="card stack compact" key={account.accountId}>
-                <div className="page-actions">
-                  <div>
-                    <h3>{account.accountDisplayName}</h3>
-                    <p className="muted-text">
-                      {account.ownerDisplayName ? `${account.ownerDisplayName} · ` : ""}
-                      Latest active snapshot from {account.importOriginalFilename}
-                    </p>
-                  </div>
-                  <span className="badge badge-neutral">{account.sourceName ?? "Investment"}</span>
-                </div>
-
-                <div className="summary-strip">
-                  <div>
-                    <strong>{formatSnapshotValue(account.snapshotDate)}</strong>
-                    <span>Snapshot date</span>
-                  </div>
-                  <div>
-                    <strong>{account.holdingCount}</strong>
-                    <span>Holdings</span>
-                  </div>
-                  <div>
-                    <strong>{formatMoneyValue(account.totalMarketValue, workspaceCurrency)}</strong>
-                    <span>Total market value</span>
-                  </div>
-                  <div>
-                    <strong>{formatMoneyValue(account.totalCostBasis, workspaceCurrency)}</strong>
-                    <span>Total cost basis</span>
-                  </div>
-                  <div>
-                    <strong>{formatSignedMoneyValue(account.totalGainLoss, workspaceCurrency)}</strong>
-                    <span>Total gain/loss</span>
-                  </div>
-                  <div>
-                    <strong>{formatTimestampValue(account.importCreatedAt)}</strong>
-                    <span>Saved</span>
-                  </div>
-                </div>
-
-                <div className="table-wrap">
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Asset</th>
-                        <th>Symbol</th>
-                        <th>Type</th>
-                        <th>Quantity</th>
-                        <th>Market value</th>
-                        <th>Cost basis</th>
-                        <th>Gain/Loss</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {account.holdings.map((holding) => (
-                        <tr
-                          key={`${account.accountId}-${holding.assetName}-${holding.assetSymbol ?? "unknown"}`}
-                        >
-                        <td>
-                          <strong>{holding.assetName}</strong>
-                        </td>
-                        <td>{holding.assetSymbol ?? "-"}</td>
-                        <td>
-                          {getInvestmentAssetTypeLabel(holding.assetType)}
-                          {holding.assetTypeSource === "estimated" ? (
-                            <div className="table-note">Estimated from holding name</div>
-                          ) : null}
-                        </td>
-                        <td>{formatNumberValue(holding.quantity, { maximumFractionDigits: 8 })}</td>
-                        <td>{formatMoneyValue(holding.marketValue, holding.marketValueCurrency)}</td>
-                        <td>{formatMoneyValue(holding.costBasis, workspaceCurrency)}</td>
-                        <td>{formatSignedMoneyValue(holding.gainLoss, workspaceCurrency)}</td>
-                      </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </article>
-            ))}
-          </div>
-      </article> : null}
-
-      {mode !== "upload" && investmentActivities.length > 0 ? <article className="card stack compact">
-        <div>
-          <h2>Recent saved activity rows</h2>
-          <p className="muted-text">
-            Activity imports are stored beside the holdings snapshots so you can inspect
-            recent buys, dividends, transfers, and tax or fee rows without disturbing the
-            saved composition view.
-          </p>
-        </div>
-
-        <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Type</th>
-                  <th>Asset</th>
-                  <th>Account</th>
-                  <th>Quantity</th>
-                  <th>Total</th>
-                  <th>Normalized</th>
-                  <th>Imported</th>
-                </tr>
-              </thead>
-              <tbody>
-                {investmentActivities.slice(0, 40).map((activity) => (
-                  <tr key={activity.id}>
-                    <td>{formatSnapshotValue(activity.activityDate)}</td>
-                    <td>{activity.activityTypeLabel}</td>
-                    <td>
-                      <strong>{activity.assetName}</strong>
-                      {activity.assetSymbol ? (
-                        <div className="table-note">{activity.assetSymbol}</div>
-                      ) : null}
-                    </td>
-                    <td>
-                      <div>{activity.accountDisplayName}</div>
-                      <div className="table-note">
-                        {activity.ownerDisplayName ?? "Workspace owner"}
-                      </div>
-                    </td>
-                    <td>{formatNumberValue(activity.quantity, { maximumFractionDigits: 8 })}</td>
-                    <td>
-                      {formatDisplayValue(activity.totalAmount)}
-                      <div className="table-note">{activity.currency ?? "Currency unknown"}</div>
-                    </td>
-                    <td>{formatSignedMoneyValue(activity.normalizedAmount, workspaceCurrency)}</td>
-                    <td>{formatTimestampValue(activity.importCreatedAt)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-      </article> : null}
 
       {mode !== "saved" ? <article className="card stack compact">
         <div className="page-actions">
           <div>
-            <h2>Preview a workbook</h2>
+            <h2>Upload an export</h2>
             <p className="muted-text">
-              Parse an Excellence workbook here when you want to inspect a new holdings
-              snapshot or activity export before saving it into the household investment
-              view.
+              Upload an Excellence or bank portfolio file. Choose who the account belongs
+              to. Uploading a newer export for the same account updates it.
             </p>
           </div>
           <span className="badge badge-neutral">Excel only</span>
@@ -1071,7 +467,7 @@ export function InvestmentPreviewClient({
           <article className="card">
             <div className="summary-strip">
               <div>
-                <strong>{preview.provider}</strong>
+                <strong>{providerSourceName(preview.provider)}</strong>
                 <span>Provider</span>
               </div>
               <div>
@@ -1104,11 +500,11 @@ export function InvestmentPreviewClient({
 
           <article className="card stack compact">
             <div>
-              <h2>Confirm ownership</h2>
+              <h2>{matchingAccount ? "Update this account" : "Confirm ownership"}</h2>
               <p className="muted-text">
-                Investment accounts are treated as confirmed workspace identities, so
-                choose the owner and confirm the account label before saving this
-                import into the workspace.
+                {matchingAccount
+                  ? `This file matches ${matchingOwnerName} · ${matchingAccount.accountDisplayName}. Saving replaces the snapshot the table shows.`
+                  : "Choose who this account belongs to. The same account label on a later export updates that account."}
               </p>
             </div>
 
@@ -1156,7 +552,13 @@ export function InvestmentPreviewClient({
                 onClick={() => void handleSave()}
                 disabled={!canSubmitSave || saveState === "saving"}
               >
-                {getPreviewSaveLabel(preview, saveState)}
+                {saveState === "saving"
+                  ? "Saving..."
+                  : saveState === "saved"
+                    ? "Saved"
+                    : matchingAccount
+                      ? `Update ${matchingOwnerName} · ${matchingAccount.accountDisplayName}`
+                      : getPreviewSaveLabel(preview, saveState)}
               </button>
               {!selectedOwnerMemberId.trim() ? (
                 <span className="helper-text">Choose an owner before saving.</span>

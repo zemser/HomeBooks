@@ -12,7 +12,7 @@ import {
   users,
   workspaceMembers,
 } from "@/db/schema";
-import { getExcellenceInvestmentImportSource } from "@/features/investments/catalog";
+import { getInvestmentImportSource } from "@/features/investments/catalog";
 import {
   inferInvestmentAssetType,
   resolveInvestmentAssetType,
@@ -604,9 +604,6 @@ export async function persistInvestmentImport(input: {
     );
   }
 
-  const source = await withDbTransaction(input.context.userId, (db) =>
-    getExcellenceInvestmentImportSource(db),
-  );
   const checksum = hashBuffer(input.fileBuffer);
   let parsed: ReturnType<typeof parseInvestmentWorkbookToPreview>;
 
@@ -619,13 +616,11 @@ export async function persistInvestmentImport(input: {
       error instanceof Error ? error.message : "Could not parse this investment workbook.",
     );
   }
-  const displayAccountLabel = normalizeAccountLabelForDisplay(input.accountLabel);
 
-  if (parsed.preview.provider !== "excellence") {
-    throw new InvestmentImportValidationError(
-      "Only Excellence investment workbooks can be saved right now.",
-    );
-  }
+  const source = await withDbTransaction(input.context.userId, (db) =>
+    getInvestmentImportSource(db, parsed.preview.provider),
+  );
+  const displayAccountLabel = normalizeAccountLabelForDisplay(input.accountLabel);
 
   if (parsed.preview.holdings.length > 0 && !parsed.preview.snapshotDate) {
     throw new InvestmentImportValidationError(
