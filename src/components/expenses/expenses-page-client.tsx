@@ -135,7 +135,16 @@ function todayDateInputValue() {
   return `${year}-${month}-${day}`;
 }
 
-function createInitialManualEntryFormState(): ManualEntryFormState {
+function defaultManualEntryDate(month: string) {
+  const today = todayDateInputValue();
+  if (historyMonthIsUnscoped(month) || today.startsWith(`${month}-`)) {
+    return today;
+  }
+
+  return `${month}-01`;
+}
+
+function createInitialManualEntryFormState(month: string): ManualEntryFormState {
   return {
     title: "",
     eventKind: "expense",
@@ -147,8 +156,44 @@ function createInitialManualEntryFormState(): ManualEntryFormState {
     category: "",
     categoryId: "",
     amount: "",
-    eventDate: todayDateInputValue(),
+    eventDate: defaultManualEntryDate(month),
   };
+}
+
+function manualEntryFormIsComplete(form: ManualEntryFormState) {
+  const amount = Number(form.amount);
+  const hasPersonalOwner =
+    form.classificationType !== "personal" || Boolean(form.personalOwnerMemberId);
+
+  return (
+    form.title.trim().length > 0 &&
+    Number.isFinite(amount) &&
+    amount > 0 &&
+    form.eventDate.trim().length > 0 &&
+    hasPersonalOwner
+  );
+}
+
+function manualEntryRequirementMessage(form: ManualEntryFormState) {
+  if (manualEntryFormIsComplete(form)) return null;
+
+  const missing: string[] = [];
+  if (!form.title.trim()) missing.push("a title");
+  if (!(Number(form.amount) > 0)) missing.push("an amount");
+  if (!form.eventDate.trim()) missing.push("a date");
+  const needsOwner =
+    form.classificationType === "personal" && !form.personalOwnerMemberId;
+
+  if (missing.length === 0 && needsOwner) {
+    return "Choose whose personal expense this is to save.";
+  }
+
+  if (needsOwner) missing.push("a personal owner");
+  if (missing.length === 0) return null;
+  if (missing.length === 1) return `Add ${missing[0]} to save.`;
+
+  const last = missing[missing.length - 1];
+  return `Add ${missing.slice(0, -1).join(", ")} and ${last} to save.`;
 }
 
 function manualEntryToFormState(entry: OneTimeManualEntryItem): ManualEntryFormState {
@@ -227,8 +272,8 @@ export function ExpensesPageClient({
   const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(
     initialData.query.transactionId ?? null,
   );
-  const [manualEntryForm, setManualEntryForm] = useState<ManualEntryFormState>(
-    createInitialManualEntryFormState(),
+  const [manualEntryForm, setManualEntryForm] = useState<ManualEntryFormState>(() =>
+    createInitialManualEntryFormState(initialData.query.month),
   );
   const [manualEntryAllocationForm, setManualEntryAllocationForm] =
     useState<AllocationFormState>(emptyAllocationForm);
@@ -258,12 +303,14 @@ export function ExpensesPageClient({
   const [justSavedManualEntryId, setJustSavedManualEntryId] = useState<string | null>(null);
   const [savedEntryMonth, setSavedEntryMonth] = useState<string | null>(null);
   const pendingManualEntryIdRef = useRef<string | null>(null);
+  const monthFilterRef = useRef(monthFilter);
   const loadGenerationRef = useRef(0);
   const lastWrittenMonthRef = useRef<string | null>(null);
   const restoringFromPopRef = useRef(false);
   const accountsRef = useRef(initialData.filterOptions.accounts);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   accountsRef.current = filterOptions.accounts;
+  monthFilterRef.current = monthFilter;
 
   function applyExpensesData(
     data: ExpensesPageData,
@@ -505,6 +552,7 @@ export function ExpensesPageClient({
   const reviewCount = scope.pendingCount;
   const showManualsTable = shouldShowHistoryManuals({ month: scope.month });
   const isEditingManualEntry = Boolean(selectedManualEntry);
+  const canSaveManualEntry = manualEntryFormIsComplete(manualEntryForm);
   const manualEntryClassificationOptions = listClassificationOptions(manualEntryForm.eventKind);
   const hasDefinedCategories = categories.length > 0;
   const transactionAllocationEditable =
@@ -540,7 +588,7 @@ export function ExpensesPageClient({
     setManualEntryForm(
       selectedManualEntry
         ? manualEntryToFormState(selectedManualEntry)
-        : createInitialManualEntryFormState(),
+        : createInitialManualEntryFormState(monthFilterRef.current),
     );
     setManualEntryAllocationForm(
       selectedManualEntry
@@ -630,7 +678,7 @@ export function ExpensesPageClient({
 
   function startNewManualEntry() {
     setSelectedManualEntryId(null);
-    setManualEntryForm(createInitialManualEntryFormState());
+    setManualEntryForm(createInitialManualEntryFormState(monthFilter));
     setManualEntryAllocationForm(emptyAllocationForm);
     dismissStatus();
     setIsManualEntryModalOpen(true);
@@ -697,11 +745,7 @@ export function ExpensesPageClient({
   async function submitManualEntry() {
     dismissStatus();
 
-    if (
-      manualEntryForm.classificationType === "personal" &&
-      !manualEntryForm.personalOwnerMemberId
-    ) {
-      setError("Choose whose personal expense this is before saving.");
+    if (!manualEntryFormIsComplete(manualEntryForm)) {
       return;
     }
 
@@ -1000,6 +1044,7 @@ export function ExpensesPageClient({
               <span>Title</span>
               <input
                 className="input"
+                required
                 value={manualEntryForm.title}
                 onChange={(event) =>
                   setManualEntryForm((current) => ({ ...current, title: event.target.value }))
@@ -1111,6 +1156,7 @@ export function ExpensesPageClient({
                   className="input"
                   inputMode="decimal"
                   min="0.01"
+                  required
                   step="0.01"
                   type="number"
                   value={manualEntryForm.amount}
@@ -1139,8 +1185,16 @@ export function ExpensesPageClient({
               </p>
             ) : null}
 
+            {!canSaveManualEntry ? (
+              <p className="helper-text">{manualEntryRequirementMessage(manualEntryForm)}</p>
+            ) : null}
+
             <div className="action-row">
-              <button className="button" disabled={isSavingManualEntry} type="submit">
+              <button
+                className="button"
+                disabled={isSavingManualEntry || !canSaveManualEntry}
+                type="submit"
+              >
                 {isSavingManualEntry
                   ? "Saving..."
                   : isEditingManualEntry

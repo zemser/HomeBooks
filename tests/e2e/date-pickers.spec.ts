@@ -136,10 +136,10 @@ for (const viewport of [
       await page.keyboard.press("Tab");
       await chooseDate.click();
       await expect(
-        calendar.getByRole("button", { name: /Thursday, February 29, 2024/ }),
+        calendar.getByRole("button", { name: /Thursday, 29 February 2024/ }),
       ).toBeVisible();
       await calendar
-        .getByRole("button", { name: /Thursday, February 29, 2024/ })
+        .getByRole("button", { name: /Thursday, 29 February 2024/ })
         .click();
       await expect(calendar).toBeHidden();
       await page.route("**/api/manual-entries", async (route) => {
