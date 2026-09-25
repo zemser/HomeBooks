@@ -345,6 +345,33 @@ async function listTransactionsByWorkspace(input: {
   return mapTransactionRows(input.context, rows, input.db);
 }
 
+async function listReviewMonthOptions(
+  context: CurrentWorkspaceContext,
+  importId: string | undefined,
+  db: DbExecutor,
+) {
+  const filters = buildTransactionListFilters({
+    workspaceId: context.workspaceId,
+    onlyUnclassified: true,
+    importId,
+  });
+  const rows = await db
+    .select({
+      month: sql<string>`to_char(${transactions.transactionDate}, 'YYYY-MM')`,
+    })
+    .from(transactions)
+    .leftJoin(
+      transactionClassifications,
+      eq(transactionClassifications.transactionId, transactions.id),
+    )
+    .where(and(...filters))
+    .groupBy(sql`to_char(${transactions.transactionDate}, 'YYYY-MM')`);
+
+  return rows
+    .map((row) => row.month)
+    .sort((left, right) => right.localeCompare(left));
+}
+
 async function countTransactionsByWorkspace(input: {
   workspaceId: string;
   onlyUnclassified?: boolean;
@@ -414,7 +441,7 @@ export async function listReviewQueue(
 ): Promise<ReviewQueueResponse> {
   const scopedImportId = reviewImportIsUnscoped(query.importId) ? undefined : query.importId;
   const scopedMonth = query.month !== "all" ? query.month : undefined;
-  const [rawQueue, focusTransaction, members, categoryCatalog, recentCategories, summary, savedImports] =
+  const [rawQueue, focusTransaction, members, categoryCatalog, recentCategories, summary, savedImports, months] =
     await Promise.all([
       listTransactionsByWorkspace({
         context,
@@ -437,6 +464,7 @@ export async function listReviewQueue(
       listRecentReviewCategories(context, db),
       getReviewQueueSummary(context, query, db),
       listSavedImports(context, { type: "bank" }, db),
+      listReviewMonthOptions(context, scopedImportId, db),
     ]);
 
   const resolvedImportId = options?.resolveLanding
@@ -499,9 +527,6 @@ export async function listReviewQueue(
   const page = Math.min(resolvedQuery.page, totalPages);
   const pageStart = (page - 1) * resolvedQuery.pageSize;
   const queue = filteredQueue.slice(pageStart, pageStart + resolvedQuery.pageSize);
-  const months = Array.from(
-    new Set(rawQueue.map((transaction) => transaction.transactionDate.slice(0, 7))),
-  ).sort((left, right) => right.localeCompare(left));
   const importLabels = new Map<string, string>();
   const importRemainingCounts = new Map<string, number>();
   const accountLabels = new Map<string, string>();
