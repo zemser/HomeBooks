@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { MonthPicker } from "@/components/dates/month-picker";
 
 import {
   HISTORY_MONTH_ALL,
@@ -46,7 +46,6 @@ export function HistoryMonthNav({
   months: string[];
   onChange: (month: string) => void;
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const allMonths = historyMonthIsUnscoped(month);
   const earliest = earliestYearMonth(months);
   const latest = latestNavigableYearMonth(defaultMonth);
@@ -54,21 +53,6 @@ export function HistoryMonthNav({
   const canNext = !allMonths && month.localeCompare(latest) < 0;
   const label = allMonths ? "All months" : formatYearMonthLabel(month);
   const pickerValue = allMonths ? latest : month;
-
-  function openMonthPicker() {
-    const input = inputRef.current;
-    if (!input) return;
-    if (typeof input.showPicker === "function") {
-      try {
-        input.showPicker();
-        return;
-      } catch {
-        // Fall through to focus when the picker cannot open.
-      }
-    }
-    input.focus();
-    input.click();
-  }
 
   return (
     <div className="history-month-nav" role="group" aria-label="Month">
@@ -83,30 +67,17 @@ export function HistoryMonthNav({
       >
         <ChevronIcon direction="prev" />
       </button>
-      <div className="history-month-jump">
-        <button
-          aria-label={`Jump to month, ${label}`}
-          className="history-month-jump-label"
-          onClick={openMonthPicker}
-          type="button"
-        >
-          {label}
-        </button>
-        <input
-          aria-hidden="true"
-          className="sr-only"
-          data-testid="history-month-input"
-          max={latest}
-          min={earliest ?? undefined}
-          onChange={(event) => {
-            if (event.target.value) onChange(event.target.value);
-          }}
-          ref={inputRef}
-          tabIndex={-1}
-          type="month"
-          value={pickerValue}
-        />
-      </div>
+      <MonthPicker
+        label="Jump to month"
+        hideLabel
+        triggerLabel={label}
+        triggerClassName="history-month-jump-label"
+        value={allMonths ? "" : month}
+        defaultValue={pickerValue}
+        min={earliest ?? undefined}
+        max={latest}
+        onChange={onChange}
+      />
       <button
         aria-hidden={allMonths || undefined}
         aria-label="Next month"

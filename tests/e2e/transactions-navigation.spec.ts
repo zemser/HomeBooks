@@ -363,7 +363,12 @@ test("History month picker includes a manual-only month", async ({ page, request
     await expect(page.getByRole("button", { name: "Previous month" })).toBeHidden();
     await expect(page.getByRole("button", { name: "Next month" })).toBeHidden();
     await page.getByRole("button", { name: /Jump to month/ }).click();
-    await page.getByTestId("history-month-input").fill(month);
+    const picker = page.getByRole("dialog", { name: "Jump to month" });
+    const displayedYear = Number(await picker.locator(".date-picker-year").textContent());
+    for (let current = displayedYear; current > year; current -= 1) {
+      await picker.getByRole("button", { name: "Previous year" }).click();
+    }
+    await picker.getByRole("option", { name: `February ${year}`, exact: true }).click();
     await expect(page.getByText(title, { exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Previous month" })).toBeVisible();
   } finally {

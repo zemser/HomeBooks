@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { MonthPicker } from "@/components/dates/month-picker";
 import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { buildReportsHref } from "@/features/reporting/line-item-slice";
 import {
@@ -274,15 +275,12 @@ function YearReportView({
             <form className="inline-form report-controls-form" method="GET">
               <input type="hidden" name="view" value="year" />
               <input type="hidden" name="mode" value={reportingMode} />
-              <label className="field">
-                <span>Year through month</span>
-                <input
-                  className="input"
-                  type="month"
-                  name="month"
-                  defaultValue={formatMonthInputValue(selectedMonth)}
-                />
-              </label>
+              <MonthPicker
+                key={formatMonthInputValue(selectedMonth)}
+                label="Year through month"
+                name="month"
+                defaultValue={formatMonthInputValue(selectedMonth)}
+              />
               <div className="field">
                 <span>&nbsp;</span>
                 <button className="button" type="submit">Load year</button>
@@ -538,15 +536,12 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
               <input type="hidden" name="view" value="month" />
               <ReportSliceInputs />
               <input type="hidden" name="mode" value={report.summary.reportingMode} />
-              <label className="field">
-                <span>Selected month</span>
-                <input
-                  className="input"
-                  type="month"
-                  name="month"
-                  defaultValue={formatMonthInputValue(report.summary.selectedMonth)}
-                />
-              </label>
+              <MonthPicker
+                key={formatMonthInputValue(report.summary.selectedMonth)}
+                label="Selected month"
+                name="month"
+                defaultValue={formatMonthInputValue(report.summary.selectedMonth)}
+              />
               <div className="field">
                 <span>&nbsp;</span>
                 <button className="button" type="submit">
