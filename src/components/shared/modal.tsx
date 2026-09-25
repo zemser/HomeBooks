@@ -11,6 +11,7 @@ type ModalProps = {
   onClose: () => void;
   children: React.ReactNode;
   size?: "default" | "wide";
+  placement?: "center" | "sheet";
   allowContentOverflow?: boolean;
 };
 
@@ -21,6 +22,7 @@ export function Modal({
   onClose,
   children,
   size = "default",
+  placement = "center",
   allowContentOverflow = false,
 }: ModalProps) {
   const titleId = useId();
@@ -28,14 +30,15 @@ export function Modal({
 
   return (
     <ModalOverlay
-      className="app-modal-overlay"
+      className={`app-modal-overlay ${placement === "sheet" ? "app-modal-overlay-sheet" : ""}`}
       isOpen={open}
+      isDismissable={placement === "sheet"}
       onOpenChange={(isOpen) => {
         if (!isOpen) onClose();
       }}
     >
       <AriaModal
-        className={`modal ${size === "wide" ? "modal-wide" : ""} ${allowContentOverflow ? "modal-overflow-visible" : ""}`}
+        className={`modal ${size === "wide" ? "modal-wide" : ""} ${placement === "sheet" ? "modal-sheet" : ""} ${allowContentOverflow ? "modal-overflow-visible" : ""}`}
       >
         <Dialog
           className="modal-content"

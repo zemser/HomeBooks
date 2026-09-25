@@ -123,6 +123,8 @@ export type InvestmentAccountHoldingsSnapshot = {
   totalMarketValue: number;
   totalCostBasis: number | null;
   totalGainLoss: number | null;
+  previousSnapshotDate: string | null;
+  previousTotalMarketValue: number | null;
   holdings: PersistedInvestmentHolding[];
 };
 

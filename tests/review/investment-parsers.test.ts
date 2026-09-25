@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildInvestmentHoldingRows } from "@/features/investments/holdings-table";
+import {
+  buildInvestmentHoldingRows,
+  buildInvestmentPortfolioSummary,
+  buildInvestmentPositionRows,
+  daysSinceSnapshot,
+} from "@/features/investments/holdings-table";
 import { parseInvestmentWorkbookToPreview } from "@/features/investments/parse-investment-workbook";
 import type { InvestmentAccountHoldingsSnapshot } from "@/features/investments/types";
 import type { WorkbookData } from "@/features/imports/types";
@@ -114,13 +119,58 @@ test("holding rows recompute portfolio share for one owner or everyone", () => {
   assert.equal(lee[0]?.portfolioSharePct, 100);
 });
 
+test("position rows merge the same security held in several accounts", () => {
+  const accounts = [
+    snapshot("a", "member-1", "Lee", "S&P 500", 100, { securityId: "1159250", gainLoss: 20 }),
+    snapshot("b", "member-2", "Izzy", "S&P 500 ETF", 300, { securityId: "1159250", gainLoss: 30 }),
+    snapshot("c", "member-2", "Izzy", "Cash fund", 100, { securityId: "5138763", gainLoss: null }),
+  ];
+
+  const combined = buildInvestmentPositionRows(accounts, null);
+  const izzy = buildInvestmentPositionRows(accounts, "member-2");
+
+  assert.equal(combined.length, 2);
+  assert.equal(combined[0]?.marketValue, 400);
+  assert.equal(combined[0]?.holdings.length, 2);
+  assert.equal(combined[0]?.holdings[0]?.accountId, "b");
+  assert.equal(combined[0]?.gainLoss, 50);
+  assert.equal(combined[0]?.gainLossPct, 50 / 350 * 100);
+  assert.equal(combined[0]?.portfolioSharePct, 80);
+  assert.equal(combined[1]?.gainLoss, null);
+  assert.equal(izzy[0]?.holdings.length, 1);
+  assert.equal(izzy[0]?.portfolioSharePct, 75);
+});
+
+test("portfolio summary compares only accounts with an earlier export", () => {
+  const accounts = [
+    snapshot("a", "member-1", "Lee", "A", 120, { securityId: "1", gainLoss: 20, previousTotal: 100 }),
+    snapshot("b", "member-2", "Izzy", "B", 300, { securityId: "2", gainLoss: 50 }),
+  ];
+
+  const summary = buildInvestmentPortfolioSummary(accounts, null);
+
+  assert.equal(summary.totalMarketValue, 420);
+  assert.equal(summary.changeSincePrevious, 20);
+  assert.equal(summary.comparedAccountCount, 1);
+  assert.equal(summary.totalGainLoss, 70);
+  assert.equal(buildInvestmentPortfolioSummary(accounts, "member-2").changeSincePrevious, null);
+});
+
+test("snapshot age counts whole calendar days", () => {
+  assert.equal(daysSinceSnapshot("2026-09-20", new Date(2026, 8, 25, 23, 30)), 5);
+  assert.equal(daysSinceSnapshot("2026-09-25", new Date(2026, 8, 25, 0, 5)), 0);
+});
+
 function snapshot(
   accountId: string,
   ownerMemberId: string,
   ownerDisplayName: string,
   assetName: string,
   marketValue: number,
+  options: { securityId?: string; gainLoss?: number | null; previousTotal?: number } = {},
 ): InvestmentAccountHoldingsSnapshot {
+  const gainLoss = options.gainLoss ?? null;
+
   return {
     accountId,
     accountDisplayName: accountId,
@@ -134,11 +184,13 @@ function snapshot(
     holdingCount: 1,
     totalMarketValue: marketValue,
     totalCostBasis: null,
-    totalGainLoss: null,
+    totalGainLoss: gainLoss,
+    previousSnapshotDate: options.previousTotal === undefined ? null : "2026-06-01",
+    previousTotalMarketValue: options.previousTotal ?? null,
     holdings: [
       {
         assetName,
-        assetSymbol: "1",
+        assetSymbol: options.securityId ?? accountId,
         assetType: "fund",
         assetTypeSource: "estimated",
         quantity: 1,
@@ -146,7 +198,7 @@ function snapshot(
         marketValueCurrency: "ILS",
         normalizedMarketValue: marketValue,
         costBasis: null,
-        gainLoss: null,
+        gainLoss,
       },
     ],
   };
