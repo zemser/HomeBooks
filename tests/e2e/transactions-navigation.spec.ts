@@ -30,18 +30,16 @@ async function reviewSnapshot(page: Page) {
 test("desktop navigation exposes the Phase 4 information architecture", async ({ page }) => {
   await page.goto("/");
   const navigation = page.getByRole("navigation", { name: "Primary application" });
-  const money = navigation.locator(".app-nav-section").filter({ hasText: "Money" });
-  const more = navigation.locator(".app-nav-section").filter({ hasText: "More" });
 
-  await expect(money.getByRole("link")).toHaveCount(3);
-  await expect(money.getByRole("link", { name: "Home", exact: true })).toBeVisible();
-  await expect(money.getByRole("link", { name: /Transactions/ })).toBeVisible();
-  await expect(money.getByRole("link", { name: "Reports", exact: true })).toBeVisible();
-  await expect(more.getByRole("link")).toHaveCount(4);
-  await expect(more.getByRole("link", { name: "Recurring", exact: true })).toBeVisible();
-  await expect(more.getByRole("link", { name: "Settlements", exact: true })).toBeVisible();
-  await expect(more.getByRole("link", { name: /Investments.*Beta/ })).toBeVisible();
-  await expect(more.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
+  await expect(navigation.locator(".app-nav-title")).toHaveCount(0);
+  await expect(navigation.getByRole("link")).toHaveCount(7);
+  await expect(navigation.getByRole("link", { name: "Home", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: /Transactions/ })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Reports", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Recurring", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Settlements", exact: true })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: /Investments.*Beta/ })).toBeVisible();
+  await expect(navigation.getByRole("link", { name: "Settings", exact: true })).toBeVisible();
   const account = page.locator(".app-sidebar-footer");
   const menuButton = account.getByRole("button", { name: /, account menu$/ });
   if (await menuButton.count()) {

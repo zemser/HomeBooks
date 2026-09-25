@@ -47,8 +47,13 @@ main {
   padding: 2rem 1rem 4rem;
 }
 
+.page-shell.tool-shell {
+  width: min(1600px, 100%);
+  margin-inline: 0;
+}
+
 .settings-shell {
-  width: min(1200px, 100%);
+  width: min(46rem, 100%);
 }
 
 .app-shell {
@@ -2062,7 +2067,7 @@ select.input:focus {
 
 .review-board {
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(22rem, 0.95fr);
+  grid-template-columns: minmax(0, 1fr) 28rem;
   grid-template-rows: auto minmax(0, 1fr);
   grid-template-areas:
     "toolbar toolbar"
@@ -2605,6 +2610,7 @@ kbd {
   flex: none;
   gap: 0.75rem;
   align-items: center;
+  margin-left: auto;
 }
 
 .review-list {
@@ -2734,8 +2740,14 @@ kbd {
 .review-detail-body {
   flex: 1 1 auto;
   min-height: 0;
+  margin-inline: -0.45rem;
+  padding-inline: 0.45rem;
   overflow: auto;
   overscroll-behavior: contain;
+}
+
+.review-detail .category-combobox-control .input:focus-visible {
+  outline-offset: 0;
 }
 
 .review-detail > .review-decision-actions {
@@ -2826,10 +2838,19 @@ kbd {
 }
 
 .review-table {
-  min-width: 52rem;
+  min-width: 0;
   border-collapse: separate;
   border-spacing: 0;
   font-variant-numeric: tabular-nums;
+}
+
+.review-table.has-source {
+  min-width: 48rem;
+}
+
+.review-table td[data-label="Date"],
+.review-table td[data-label="Amount"] {
+  white-space: nowrap;
 }
 
 .review-table thead th {
@@ -3769,6 +3790,7 @@ kbd {
   }
 
   .review-table,
+  .review-table.has-source,
   .review-table tbody,
   .review-table tr,
   .review-table td {

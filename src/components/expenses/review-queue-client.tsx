@@ -1480,6 +1480,15 @@ export function ReviewQueueClient({
   const showLifetimeMeter = Boolean(activeImportSummary) || monthScoped;
   const statementLibrary =
     summary.statementLibrary.length > 0 ? summary.statementLibrary : summary.remainingByImport;
+  const sharedSourceKey = visibleQueue[0]
+    ? `${visibleQueue[0].importSourceName ?? ""}|${visibleQueue[0].accountDisplayName}`
+    : null;
+  const showSourceColumn = sharedSourceKey !== null && visibleQueue.some((transaction) =>
+    `${transaction.importSourceName ?? ""}|${transaction.accountDisplayName}` !== sharedSourceKey,
+  );
+  const sharedAccountName = !showSourceColumn && visibleQueue[0]
+    ? visibleQueue[0].accountDisplayName.trim() || null
+    : null;
   const reviewHero = activeImportSummary
     ? {
         title: activeImportSummary.originalFilename,
@@ -1499,6 +1508,9 @@ export function ReviewQueueClient({
             title: "Imported statements",
             helper: `${statementCount} statement${statementCount === 1 ? "" : "s"} still in progress`,
           };
+  if (sharedAccountName && !reviewHero.helper.includes(sharedAccountName)) {
+    reviewHero.helper = `${reviewHero.helper} · ${sharedAccountName}`;
+  }
   const advancedFilterCount = [
     monthFilter !== "all",
     explicitAllRemaining ||
@@ -1602,7 +1614,7 @@ export function ReviewQueueClient({
       } else if (event.key.toLocaleLowerCase() === "s" && nextTransactionId) {
         event.preventDefault();
         setSelectedTransactionId(nextTransactionId);
-        setMessage("Skipped for now. No classification was saved.");
+        focusReviewRow(nextTransactionId);
       } else if (event.key === "?") {
         event.preventDefault();
         setIsShortcutHelpOpen(true);
@@ -1884,10 +1896,14 @@ export function ReviewQueueClient({
         <article className="card review-list">
           <div className="review-list-meta">
             <h2 className="sr-only">Review queue</h2>
-            <p className="helper-text" aria-live="polite">
-              {visibleQueue.length} of {pagination.filteredCount} on this page · {summary.queueCount} remaining
-              <span className="sr-only"> The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.</span>
-            </p>
+            {pagination.totalPages > 1 ? (
+              <p className="helper-text" aria-live="polite">
+                {visibleQueue.length} of {pagination.filteredCount} on this page
+                <span className="sr-only"> The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.</span>
+              </p>
+            ) : (
+              <p className="sr-only">The highlighted row is the one in the panel. Checkboxes only mark rows for a batch.</p>
+            )}
             <div className="review-list-meta-actions">
               {filtersActive ? <button className="link-button" type="button" onClick={clearFilters}>Clear filters</button> : null}
               {selectedIds.length === 0 ? (
@@ -1970,7 +1986,7 @@ export function ReviewQueueClient({
 
           {!isLoading && visibleQueue.length > 0 ? (
             <div className="table-wrap review-table-wrap">
-              <table className="data-table review-table">
+              <table className={`data-table review-table${showSourceColumn ? " has-source" : ""}`}>
                 <thead>
                   <tr>
                     <th className="checkbox-cell">
@@ -1984,7 +2000,7 @@ export function ReviewQueueClient({
                     <th>Date</th>
                     <th>Merchant</th>
                     <th>Amount</th>
-                    <th>Source</th>
+                    {showSourceColumn ? <th>Source</th> : null}
                   </tr>
                 </thead>
                 <tbody>
@@ -2061,10 +2077,12 @@ export function ReviewQueueClient({
                             ) : null}
                           </div>
                         </td>
-                        <td data-label="Source">
-                          <strong>{transaction.importSourceName ?? "Unknown"}</strong>
-                          <div className="table-note">{transaction.accountDisplayName}</div>
-                        </td>
+                        {showSourceColumn ? (
+                          <td data-label="Source">
+                            <strong>{transaction.importSourceName ?? "Unknown"}</strong>
+                            <div className="table-note">{transaction.accountDisplayName}</div>
+                          </td>
+                        ) : null}
                       </tr>
                     );
                   })}
@@ -2072,7 +2090,7 @@ export function ReviewQueueClient({
               </table>
             </div>
           ) : null}
-          {!isLoading && pagination.filteredCount > 0 ? (
+          {!isLoading && pagination.filteredCount > 0 && pagination.totalPages > 1 ? (
             <nav className="review-pagination" aria-label="Review queue pages">
               <button
                 className="button button-secondary"
@@ -2447,7 +2465,7 @@ export function ReviewQueueClient({
                 {isSavingSingle || isSubmittingSingle ? "Saving…" : nextTransactionId ? "Save and next  ⌘↵" : "Save classification  ⌘↵"}
               </button>
               {previousTransactionId ? <button className="button button-secondary" type="button" onClick={() => setSelectedTransactionId(previousTransactionId)}>Previous</button> : null}
-              {nextTransactionId ? <button className="link-button" type="button" onClick={() => { setSelectedTransactionId(nextTransactionId); setMessage("Skipped for now. No classification was saved."); }}>Skip for now <kbd>S</kbd></button> : null}
+              {nextTransactionId ? <button className="link-button" type="button" onClick={() => setSelectedTransactionId(nextTransactionId)}>Skip for now <kbd>S</kbd></button> : null}
               <Link className="button button-secondary" href={selectedHistoryHref}>
                 Open in History
               </Link>

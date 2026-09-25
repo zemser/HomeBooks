@@ -780,7 +780,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
 export default function ReportsPage({ searchParams }: ReportsPageProps) {
   return (
     <main>
-      <div className="page-shell stack">
+      <div className="page-shell stack tool-shell">
         <section className="page-header" data-testid="reports-shell">
           <div>
             <span className="eyebrow">Reports</span>
