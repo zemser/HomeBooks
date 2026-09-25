@@ -18,6 +18,10 @@ type MonthPickerProps = {
   name?: string;
   min?: string;
   max?: string;
+  /** When set, only these YYYY-MM values can be chosen. */
+  allowedMonths?: readonly string[];
+  /** Label for clearing the value, such as "All months". */
+  emptyLabel?: string;
   disabled?: boolean;
   hideLabel?: boolean;
   triggerLabel?: string;
@@ -33,6 +37,8 @@ export function MonthPicker({
   name,
   min,
   max,
+  allowedMonths,
+  emptyLabel,
   disabled,
   hideLabel = false,
   triggerLabel,
@@ -41,14 +47,29 @@ export function MonthPicker({
   const [internalValue, setInternalValue] = useState(defaultValue);
   const selected = value ?? internalValue;
   const [isOpen, setIsOpen] = useState(false);
-  const [year, setYear] = useState(
-    Number((selected || min || max || "2000").slice(0, 4)),
+  const allowedList = allowedMonths ? [...allowedMonths].sort() : null;
+  const allowedSet = allowedList ? new Set(allowedList) : null;
+  const allowedMin = allowedList?.[0];
+  const allowedMax = allowedList?.[allowedList.length - 1];
+  const allowedMinYear = allowedMin ? Number(allowedMin.slice(0, 4)) : null;
+  const allowedMaxYear = allowedMax ? Number(allowedMax.slice(0, 4)) : null;
+  const boundedYear = Number(localYearMonth().slice(0, 4));
+  const minYear = Math.max(
+    min ? Number(min.slice(0, 4)) : 1,
+    allowedMinYear ?? (allowedList ? boundedYear : 1),
   );
-  const minYear = min ? Number(min.slice(0, 4)) : 1;
-  const maxYear = max ? Number(max.slice(0, 4)) : 9999;
+  const maxYear = Math.min(
+    max ? Number(max.slice(0, 4)) : 9999,
+    allowedMaxYear ?? (allowedList ? minYear : 9999),
+  );
+  const [year, setYear] = useState(
+    Number((selected || allowedMax || min || max || "2000").slice(0, 4)),
+  );
   const caption =
     triggerLabel ??
-    (selected ? formatYearMonthLabel(selected) : "Choose month");
+    (selected
+      ? formatYearMonthLabel(selected)
+      : (emptyLabel ?? "Choose month"));
   const months = Array.from({ length: 12 }, (_, index) => {
     const date = new CalendarDate(year, index + 1, 1);
     const id = date.toString().slice(0, 7);
@@ -64,8 +85,16 @@ export function MonthPicker({
 
   function selectMonth(next: string) {
     if ((min && next < min) || (max && next > max) || disabled) return;
+    if (allowedSet && !allowedSet.has(next)) return;
     setInternalValue(next);
     onChange?.(next);
+    setIsOpen(false);
+  }
+
+  function clearMonth() {
+    if (disabled) return;
+    setInternalValue("");
+    onChange?.("");
     setIsOpen(false);
   }
 
@@ -79,7 +108,8 @@ export function MonthPicker({
         isOpen={isOpen}
         onOpenChange={(open) => {
           if (open) {
-            const initial = selected || defaultValue || localYearMonth();
+            const initial =
+              selected || defaultValue || allowedMax || localYearMonth();
             setYear(
               Math.min(maxYear, Math.max(minYear, Number(initial.slice(0, 4)))),
             );
@@ -135,9 +165,14 @@ export function MonthPicker({
               selectionBehavior="toggle"
               selectedKeys={selected ? [selected] : []}
               disabledKeys={months
-                .filter(({ id }) => (min && id < min) || (max && id > max))
+                .filter(
+                  ({ id }) =>
+                    (min && id < min) ||
+                    (max && id > max) ||
+                    (allowedSet != null && !allowedSet.has(id)),
+                )
                 .map(({ id }) => id)}
-              autoFocus
+              autoFocus={!emptyLabel || Boolean(selected)}
               items={months}
               onSelectionChange={(keys) => {
                 if (keys !== "all")
@@ -155,6 +190,16 @@ export function MonthPicker({
                 </ListBoxItem>
               )}
             </ListBox>
+            {emptyLabel ? (
+              <Button
+                className="month-picker-clear"
+                aria-pressed={!selected}
+                autoFocus={!selected}
+                onPress={clearMonth}
+              >
+                {emptyLabel}
+              </Button>
+            ) : null}
           </Dialog>
         </Popover>
       </DialogTrigger>

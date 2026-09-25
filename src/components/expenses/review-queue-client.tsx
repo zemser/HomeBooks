@@ -22,6 +22,7 @@ import {
   emptyAllocationForm,
   type AllocationFormState,
 } from "@/components/expenses/allocation-editor";
+import { MonthPicker } from "@/components/dates/month-picker";
 import { Modal } from "@/components/shared/modal";
 import { ClassificationTypePicker } from "@/components/expenses/classification-type-picker";
 import {
@@ -1525,21 +1526,28 @@ export function ReviewQueueClient({
     function closeOnOutsidePointer(event: PointerEvent) {
       const disclosure = filterDisclosureRef.current;
       if (!disclosure?.open || !(event.target instanceof Node)) return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".date-picker-popover")
+      ) {
+        return;
+      }
       if (!disclosure.contains(event.target)) disclosure.open = false;
     }
 
     function closeOnEscape(event: KeyboardEvent) {
       const disclosure = filterDisclosureRef.current;
       if (event.key !== "Escape" || !disclosure?.open) return;
+      if (document.querySelector(".date-picker-popover")) return;
       disclosure.open = false;
       disclosure.querySelector<HTMLElement>("summary")?.focus();
     }
 
     document.addEventListener("pointerdown", closeOnOutsidePointer);
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("keydown", closeOnEscape, true);
     return () => {
       document.removeEventListener("pointerdown", closeOnOutsidePointer);
-      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("keydown", closeOnEscape, true);
     };
   }, []);
 
@@ -1826,13 +1834,13 @@ export function ReviewQueueClient({
                 value={importFilter}
                 onChange={setImportFilter}
               />
-              <label className="field">
-                <span>Month</span>
-                <select className="input" value={monthFilter} onChange={(event) => setMonthFilter(event.target.value)}>
-                  <option value="all">All months</option>
-                  {availableMonths.map((month) => <option value={month} key={month}>{formatReviewReportMonth(month)}</option>)}
-                </select>
-              </label>
+              <MonthPicker
+                allowedMonths={availableMonths}
+                emptyLabel="All months"
+                label="Month"
+                value={monthFilter === "all" ? "" : monthFilter}
+                onChange={(value) => setMonthFilter(value || "all")}
+              />
               <label className="field">
                 <span>Account</span>
                 <select className="input" value={accountFilter} onChange={(event) => setAccountFilter(event.target.value)}>

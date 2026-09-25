@@ -138,7 +138,13 @@ test("canonical review deep links retain filters and restore review state", asyn
 
   await page.goto(`/transactions/review?${params.toString()}`);
   await expect(page.getByRole("button", { name: "High value", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByLabel("Month").and(page.locator("select"))).toHaveValue(month);
+  const monthLabel = new Intl.DateTimeFormat("en", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${month}-01T00:00:00.000Z`));
+  await page.locator("details.review-filter-disclosure > summary").click();
+  await expect(page.getByRole("button", { name: `Month, ${monthLabel}`, exact: true })).toBeVisible();
   await expect.poll(() => Object.fromEntries(new URL(page.url()).searchParams)).toMatchObject(
     Object.fromEntries(params),
   );
