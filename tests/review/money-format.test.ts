@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatMoneyDisplay } from "../../src/features/expenses/presentation";
+import { formatMoneyDisplay, formatTransactionDateLabel } from "../../src/features/expenses/presentation";
 import { formatReportMoney } from "../../src/features/reporting/presentation";
 import { formatMoneyNumber, formatMoneyWithCurrency } from "../../src/lib/money/format";
 
@@ -30,4 +30,11 @@ test("signed money keeps an explicit plus for gains", () => {
 test("missing money amounts stay as a dash, but a present amount without currency still shows", () => {
   assert.equal(formatMoneyDisplay(null, "ILS"), "-");
   assert.equal(formatMoneyDisplay(55, null), "55.00");
+});
+
+test("review dates read as a short day and month, and keep the year when it is not this year", () => {
+  const now = new Date(2026, 8, 25);
+  assert.equal(formatTransactionDateLabel("2026-09-12", now), "12 Sep");
+  assert.equal(formatTransactionDateLabel("2025-12-03", now), "3 Dec 2025");
+  assert.equal(formatTransactionDateLabel("not-a-date", now), "not-a-date");
 });

@@ -43,6 +43,7 @@ import {
   formatDecisionSourceLabel,
   formatMerchantRulePreview,
   formatMoneyDisplay,
+  formatTransactionDateLabel,
   getTransactionMerchant,
 } from "@/features/expenses/presentation";
 import {
@@ -536,6 +537,84 @@ function BulkClassificationFields({
         </p>
       ) : null}
     </div>
+  );
+}
+
+function CopyMerchantName({ name }: { name: string }) {
+  const [copied, setCopied] = useState(false);
+  const resetTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    };
+  }, []);
+
+  async function copyName() {
+    let didCopy = false;
+
+    try {
+      await navigator.clipboard.writeText(name);
+      didCopy = true;
+    } catch {
+      const field = document.createElement("textarea");
+      field.value = name;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.left = "-9999px";
+      document.body.append(field);
+      field.select();
+      didCopy = document.execCommand("copy");
+      field.remove();
+    }
+
+    if (!didCopy) return;
+
+    setCopied(true);
+    if (resetTimer.current !== null) window.clearTimeout(resetTimer.current);
+    resetTimer.current = window.setTimeout(() => setCopied(false), 1400);
+  }
+
+  return (
+    <>
+      <button
+        className={`review-detail-merchant${copied ? " is-copied" : ""}`}
+        type="button"
+        aria-label={`Copy ${name}`}
+        onClick={() => void copyName()}
+      >
+        <span className="review-detail-merchant-name">
+          {name}
+          <span className="review-detail-merchant-mark" aria-hidden="true">
+            {copied ? (
+              <svg viewBox="0 0 16 16">
+                <path
+                  d="M3.5 8.25 6.5 11.25 12.5 4.75"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 16 16">
+                <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                <path
+                  d="M10.5 5.5V3.75A1.25 1.25 0 0 0 9.25 2.5H3.75A1.25 1.25 0 0 0 2.5 3.75v5.5A1.25 1.25 0 0 0 3.75 10.5H5.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.4"
+                />
+              </svg>
+            )}
+          </span>
+        </span>
+      </button>
+      <span className="sr-only" aria-live="polite">
+        {copied ? "Copied" : ""}
+      </span>
+    </>
   );
 }
 
@@ -2137,10 +2216,13 @@ export function ReviewQueueClient({
               </div>
             ) : (
               <div className="review-detail-title">
-                <div>
+                <div className="review-detail-identity">
                   <h2>This transaction</h2>
                   {selectedTransaction ? (
-                    <p className="review-detail-merchant">{getTransactionMerchant(selectedTransaction)}</p>
+                    <CopyMerchantName
+                      key={selectedTransaction.id}
+                      name={getTransactionMerchant(selectedTransaction)}
+                    />
                   ) : (
                     <p className="muted-text">Choose a row to classify it.</p>
                   )}
@@ -2155,7 +2237,9 @@ export function ReviewQueueClient({
                         selectedTransaction.direction,
                       )}
                     </strong>
-                    <span>{selectedTransaction.transactionDate}</span>
+                    <time dateTime={selectedTransaction.transactionDate}>
+                      {formatTransactionDateLabel(selectedTransaction.transactionDate)}
+                    </time>
                   </div>
                 ) : null}
               </div>
