@@ -75,6 +75,26 @@ export const EXCELLENCE_ACTIVITY_COLUMN = {
 } as const;
 
 export const EXCELLENCE_ACCOUNT_PREFIX = "חשבון:";
+export const BANK_BRANCH_PREFIX = "סניף:";
+export const BANK_EXPORT_DATE_PREFIX = "תאריך ייצוא:";
+
+export const INVESTMENT_PROVIDER_SOURCE_NAME = {
+  excellence: "Excellence",
+  "current-portfolio": "Bank",
+  "bank-securities": "Bank",
+} as const;
+
+export const CURRENT_PORTFOLIO_DETECT_HEADER = [
+  "שם נייר",
+  "שווי אחזקה במטבע הנייר",
+  "כמות בתיק",
+] as const;
+
+export const BANK_SECURITIES_DETECT_HEADER = [
+  "נייר",
+  "שווי אחזקה בשח",
+  "אחוז מהתיק",
+] as const;
 export const EXCELLENCE_FILE_DATE_PREFIX = "תאריך הפקת הקובץ:";
 export const EXCELLENCE_DATA_DATE_PREFIX = "תאריך נכונות הנתונים:";
 export const EXCELLENCE_PERIOD_PREFIX = "תאריכים הנכללים בתקופה:";

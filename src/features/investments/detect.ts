@@ -1,6 +1,8 @@
 import type { WorkbookData } from "@/features/imports/types";
 import { normalizeRow } from "@/features/imports/utils";
 import {
+  BANK_SECURITIES_DETECT_HEADER,
+  CURRENT_PORTFOLIO_DETECT_HEADER,
   EXCELLENCE_ACTIVITY_HEADER,
   EXCELLENCE_HOLDINGS_HEADER,
 } from "@/features/investments/constants";
@@ -11,6 +13,22 @@ export function detectInvestmentTemplate(workbook: WorkbookData): DetectedInvest
   for (const sheet of workbook.sheets) {
     for (const rawRow of sheet.rows.slice(0, 40)) {
       const row = normalizeRow(rawRow);
+
+      if (investmentHeaderIncludes(row, CURRENT_PORTFOLIO_DETECT_HEADER)) {
+        return {
+          id: "current-portfolio",
+          confidence: 0.95,
+          reason: `Matched current-portfolio holdings header in sheet "${sheet.name}"`,
+        };
+      }
+
+      if (investmentHeaderIncludes(row, BANK_SECURITIES_DETECT_HEADER)) {
+        return {
+          id: "bank-securities",
+          confidence: 0.95,
+          reason: `Matched bank securities holdings header in sheet "${sheet.name}"`,
+        };
+      }
 
       if (investmentHeaderIncludes(row, EXCELLENCE_HOLDINGS_HEADER)) {
         return {

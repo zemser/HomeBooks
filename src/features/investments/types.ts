@@ -1,6 +1,6 @@
 import type { WorkbookData } from "@/features/imports/types";
 
-export type InvestmentProviderId = "excellence";
+export type InvestmentProviderId = "excellence" | "current-portfolio" | "bank-securities";
 export type InvestmentActivityType =
   | "buy"
   | "sell"
