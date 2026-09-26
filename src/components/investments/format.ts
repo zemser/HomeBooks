@@ -18,6 +18,12 @@ const snapshotDateFormat = new Intl.DateTimeFormat("en-GB", {
   timeZone: "UTC",
 });
 
+const wholeMoneyFormat = new Intl.NumberFormat("en", { maximumFractionDigits: 0 });
+
+export function formatWholeMoney(value: number, currency: string) {
+  return `${wholeMoneyFormat.format(value)} ${currency}`;
+}
+
 export function formatPercent(value: number | null) {
   return value === null ? "-" : `${percentFormat.format(value)}%`;
 }
