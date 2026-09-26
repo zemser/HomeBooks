@@ -48,7 +48,7 @@ for (const route of [
     await expect(page.getByRole("main")).toBeVisible();
     if (route.includes("view=year")) {
       await expect(page.getByTestId("reports-content")).toBeVisible();
-      await expect(page.getByRole("link", { name: "Download year summary" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Download", exact: true })).toBeVisible();
     }
     await expectNoSeriousAccessibilityViolations(page);
   });

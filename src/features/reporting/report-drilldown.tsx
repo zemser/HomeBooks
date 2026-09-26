@@ -1,11 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
-import type { MonthlyReportData, ReportingViewMode } from "./monthly-report";
+import type { MonthlyReportData } from "./monthly-report";
 import {
-  buildReportsHref, getReportSliceAmount, getReportSliceLabel, lineItemMatchesSlice,
+  getReportSliceAmount, getReportSliceLabel, lineItemMatchesSlice,
   parseReportLineItemSlice, serializeReportLineItemSlice, SLICE_PARAMS,
   type ReportLineItemSlice, type SliceState,
 } from "./line-item-slice";
@@ -80,7 +79,7 @@ export function ReportDrilldown({ report, children }: { report: MonthlyReportDat
         focusAndScroll(button?.isConnected && button.getClientRects().length ? button : document.getElementById("report-summary"));
       },
     }}>
-      <div className="stack" data-testid="reports-content" onKeyDown={(event) => {
+      <div className="stack report-view" data-testid="reports-content" onKeyDown={(event) => {
         if (event.key === "Escape" && state.status !== "none" && !isFormFieldTarget(event.target)) {
           event.preventDefault();
           clear();
@@ -98,23 +97,6 @@ export function ReportSliceControl({ slice, selectable, children, label }: {
   const active = state.status === "valid" && serializeReportLineItemSlice(state.slice).toString() === serializeReportLineItemSlice(slice).toString();
   return <button type="button" className="report-slice-control" aria-label={label} aria-pressed={active}
     onClick={(event) => select(slice, event.currentTarget)}>{children}</button>;
-}
-
-// These controls read the live URL, including unavailable params, so a month/mode
-// change never silently broadens a requested filter.
-export function ReportSliceInputs() {
-  const searchParams = useSearchParams();
-  return <>{SLICE_PARAMS.flatMap((key) => searchParams.getAll(key).map((value, index) =>
-    <input key={`${key}-${index}`} type="hidden" name={key} value={value} />))}</>;
-}
-
-export function ReportsMonthLink({ month, mode, className, children, current }: {
-  month: string; mode: ReportingViewMode; className: string; children: ReactNode; current: boolean;
-}) {
-  const searchParams = useSearchParams();
-  const params = new URLSearchParams(buildReportsHref("month", month, mode).split("?")[1]);
-  if (searchParams.get("view") !== "year") SLICE_PARAMS.forEach((key) => searchParams.getAll(key).forEach((value) => params.append(key, value)));
-  return <Link href={`/reports?${params}`} className={className} aria-current={current ? "page" : undefined}>{children}</Link>;
 }
 
 export function ReportIncludedLineItems() {

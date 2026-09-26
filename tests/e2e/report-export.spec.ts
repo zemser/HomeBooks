@@ -13,9 +13,10 @@ test("year view year-summary link downloads a CSV with the machine header", asyn
   await page.goto("/reports?view=year");
   await expect(page.getByTestId("reports-content")).toBeVisible();
 
-  const summary = page.getByRole("link", { name: "Download year summary" });
-  const category = page.getByRole("link", { name: "Download category detail" });
-  const workbook = page.getByRole("link", { name: "Download Excel workbook" });
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  const summary = page.getByRole("menuitem", { name: "Year summary (CSV)" });
+  const category = page.getByRole("menuitem", { name: "Category detail (CSV)" });
+  const workbook = page.getByRole("menuitem", { name: "Excel workbook" });
 
   await expect(summary).toBeVisible();
   await expect(category).toBeVisible();
@@ -115,7 +116,8 @@ test("exports use payment dates or allocation months according to the selected U
     expect(allocated.status()).toBe(200);
     for (const mode of modes) {
       await page.goto(`/reports?view=year&month=${february}&mode=${mode}`);
-      const link = page.getByRole("link", { name: "Download year summary" });
+      await page.getByRole("button", { name: "Download", exact: true }).click();
+      const link = page.getByRole("menuitem", { name: "Year summary (CSV)" });
       await expect(link).toHaveAttribute("href", `/api/reports/export?kind=year_summary&month=${february}&mode=${mode}`);
       const tables = await readExports(mode);
       for (const kind of ["year_summary", "category_detail"]) {

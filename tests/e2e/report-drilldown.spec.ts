@@ -84,7 +84,7 @@ for (const mobile of [false, true]) test.describe(mobile ? "mobile" : "desktop",
     await expect(list).toContainText("Drilldown shared housing");
     await expect(list).not.toContainText("Drilldown personal housing");
     await expect(list).not.toContainText("Drilldown housing income");
-    await page.getByLabel("Selected month").focus();
+    await page.getByRole("button", { name: /^Report month,/ }).focus();
     await page.keyboard.press("Escape");
     await expect(heading).toHaveText("Included line items · Housing · Shared");
     await expect(page).toHaveURL(/kind=shared/);
@@ -149,13 +149,11 @@ test("month and mode preserve empty slices; allocations expose full source detai
   await expect(list).toContainText("0 items · 0.00 ILS");
   await page.goto(`/reports?view=month&month=${month}&mode=payment_date&kind=shared&category=${categoryId}#line-items`);
   await expect(sharedHousingRow).toBeVisible();
-  await page.getByLabel("Selected month").fill("2023-06");
-  await page.getByRole("button", { name: "Load report", exact: true }).click();
+  await page.getByRole("button", { name: "Report month, August 2023", exact: true }).click();
+  await page.getByRole("option", { name: "June 2023", exact: true }).click();
   await expect(sharedHousingRow).toHaveCount(0);
   await expect(page).toHaveURL(new RegExp(`kind=shared&category=${categoryId}`));
-  await page.getByText("Advanced reporting and FX", { exact: true }).click();
-  await page.getByRole("combobox", { name: "Reporting mode", exact: true }).selectOption("allocated_period");
-  await page.getByRole("button", { name: "Apply mode" }).click();
+  await page.getByRole("navigation", { name: "Reporting mode" }).getByRole("link", { name: "Adjusted period", exact: true }).click();
   await expect(sharedHousingRow).toBeVisible();
   await expect(sharedHousingRow).toContainText("300.00 ILS");
   await expect(sharedHousingRow).toContainText("Source payment/event date: 2023-08-15");
