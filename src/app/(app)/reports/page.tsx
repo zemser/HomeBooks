@@ -1,16 +1,18 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { MonthPicker } from "@/components/dates/month-picker";
 import { RouteDataFallback } from "@/components/app-shell/route-data-fallback";
 import { buildReportsHref } from "@/features/reporting/line-item-slice";
 import {
   ReportDrilldown,
   ReportIncludedLineItems,
   ReportSliceControl,
-  ReportSliceInputs,
-  ReportsMonthLink,
 } from "@/features/reporting/report-drilldown";
+import {
+  ReportDownloadMenu,
+  ReportToolbar,
+  type ReportsView,
+} from "@/features/reporting/report-toolbar";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import {
   getMonthlyReport,
@@ -29,7 +31,6 @@ import {
   type YearReportData,
 } from "@/features/reporting/monthly-report";
 import {
-  formatMonthInputValue,
   formatReportMoney,
   formatReportMonthLabel,
   formatReportingModeLabel,
@@ -50,8 +51,6 @@ type ReportsPageProps = {
   }>;
 };
 
-type ReportsView = "month" | "year";
-
 function buildYearExportHref(
   kind: "year_summary" | "category_detail" | "workbook",
   month: string,
@@ -63,36 +62,6 @@ function buildYearExportHref(
     mode,
   });
   return `/api/reports/export?${params.toString()}`;
-}
-
-function ReportViewSwitch({
-  view,
-  month,
-  mode,
-}: {
-  view: ReportsView;
-  month: string;
-  mode: ReportingViewMode;
-}) {
-  return (
-    <nav className="report-view-switch" aria-label="Report view">
-      <ReportsMonthLink
-        className={`button ${view === "month" ? "" : "button-secondary"}`}
-        month={month}
-        mode={mode}
-        current={view === "month"}
-      >
-        Month
-      </ReportsMonthLink>
-      <Link
-        className={`button ${view === "year" ? "" : "button-secondary"}`}
-        href={buildReportsHref("year", month, mode)}
-        aria-current={view === "year" ? "page" : undefined}
-      >
-        Year
-      </Link>
-    </nav>
-  );
 }
 
 function PeriodSummarySection({
@@ -189,27 +158,6 @@ function AdvancedMonthlyReporting({
     <details className="card disclosure">
       <summary>Advanced reporting and FX</summary>
       <div className="stack">
-        <form className="inline-form report-controls-form" method="GET">
-          <input type="hidden" name="view" value="month" />
-          <ReportSliceInputs />
-          <input
-            type="hidden"
-            name="month"
-            value={formatMonthInputValue(report.summary.selectedMonth)}
-          />
-          <label className="field">
-            <span>Reporting mode</span>
-            <select className="input" name="mode" defaultValue={report.summary.reportingMode}>
-              <option value="payment_date">Payment date</option>
-              <option value="allocated_period">Adjusted period</option>
-            </select>
-          </label>
-          <div className="field">
-            <span>&nbsp;</span>
-            <button className="button button-secondary" type="submit">Apply mode</button>
-          </div>
-        </form>
-
         {placeholderFxLineItemCount > 0 ? (
           <section className="card">
             <div>
@@ -258,57 +206,32 @@ function YearReportView({
   reportingMode: ReportingViewMode;
 }) {
   return (
-    <div className="stack" data-testid="reports-content">
-      <section className="card stack compact">
-        <ReportViewSwitch view="year" month={selectedMonth} mode={reportingMode} />
-        <div className="report-controls-header">
-          <div>
-            <h2>{report.year} overview</h2>
-            <p className="muted-text">
-              Compare income, spending scopes, and savings month by month.
-              {reportingMode === "allocated_period"
-                ? " Completion status still follows each source transaction month."
-                : " Totals use payment dates."}
-            </p>
-          </div>
-          <div className="report-controls-actions">
-            <form className="inline-form report-controls-form" method="GET">
-              <input type="hidden" name="view" value="year" />
-              <input type="hidden" name="mode" value={reportingMode} />
-              <MonthPicker
-                key={formatMonthInputValue(selectedMonth)}
-                label="Year through month"
-                name="month"
-                defaultValue={formatMonthInputValue(selectedMonth)}
-              />
-              <div className="field">
-                <span>&nbsp;</span>
-                <button className="button" type="submit">Load year</button>
-              </div>
-            </form>
-            <nav className="report-export-actions" aria-label="Download year report">
-              <a
-                className="button button-secondary"
-                href={buildYearExportHref("year_summary", selectedMonth, reportingMode)}
-              >
-                Download year summary
-              </a>
-              <a
-                className="button button-secondary"
-                href={buildYearExportHref("category_detail", selectedMonth, reportingMode)}
-              >
-                Download category detail
-              </a>
-              <a
-                className="button button-secondary"
-                href={buildYearExportHref("workbook", selectedMonth, reportingMode)}
-              >
-                Download Excel workbook
-              </a>
-            </nav>
-          </div>
-        </div>
-      </section>
+    <div className="stack report-view" data-testid="reports-content">
+      <ReportToolbar
+        view="year"
+        month={selectedMonth}
+        mode={reportingMode}
+        actions={
+          <ReportDownloadMenu
+            items={[
+              { label: "Year summary (CSV)", href: buildYearExportHref("year_summary", selectedMonth, reportingMode) },
+              { label: "Category detail (CSV)", href: buildYearExportHref("category_detail", selectedMonth, reportingMode) },
+              { label: "Excel workbook", href: buildYearExportHref("workbook", selectedMonth, reportingMode) },
+            ]}
+          />
+        }
+      >
+        <h2>{report.year} overview</h2>
+        <p className="muted-text">
+          {report.months.length < 12
+            ? `January through ${formatReportMonthLabel(report.months[report.months.length - 1]?.month ?? selectedMonth)}. `
+            : ""}
+          Compare income, spending scopes, and savings month by month.
+          {reportingMode === "allocated_period"
+            ? " Completion status still follows each source transaction month."
+            : ""}
+        </p>
+      </ReportToolbar>
 
       <section className="card stack compact">
         <div>
@@ -420,25 +343,6 @@ function YearReportView({
           </table>
         </div>
       </section>
-
-      <details className="card disclosure">
-        <summary>Advanced reporting</summary>
-        <form className="inline-form report-controls-form" method="GET">
-          <input type="hidden" name="view" value="year" />
-          <input type="hidden" name="month" value={formatMonthInputValue(selectedMonth)} />
-          <label className="field">
-            <span>Reporting mode</span>
-            <select className="input" name="mode" defaultValue={reportingMode}>
-              <option value="payment_date">Payment date</option>
-              <option value="allocated_period">Adjusted period</option>
-            </select>
-          </label>
-          <div className="field">
-            <span>&nbsp;</span>
-            <button className="button button-secondary" type="submit">Apply mode</button>
-          </div>
-        </form>
-      </details>
     </div>
   );
 }
@@ -515,42 +419,18 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
 
   return (
     <ReportDrilldown report={report}>
-        <section className="card stack compact">
-          <ReportViewSwitch
-            view="month"
-            month={report.summary.selectedMonth}
-            mode={report.summary.reportingMode}
-          />
-          <div className="report-controls-header">
-            <div>
-              <h2 id="report-summary" tabIndex={-1}>{formatReportMonthLabel(report.summary.selectedMonth)}</h2>
-              <p className="muted-text">
-                {formatReportingModeLabel(report.summary.reportingMode)} view.
-                {" "}
-                {report.summary.reportingMode === "allocated_period"
-                  ? "Spread expenses across the months they cover."
-                  : "Use the date each transaction was recorded."}
-              </p>
-            </div>
-            <form className="inline-form report-controls-form" method="GET">
-              <input type="hidden" name="view" value="month" />
-              <ReportSliceInputs />
-              <input type="hidden" name="mode" value={report.summary.reportingMode} />
-              <MonthPicker
-                key={formatMonthInputValue(report.summary.selectedMonth)}
-                label="Selected month"
-                name="month"
-                defaultValue={formatMonthInputValue(report.summary.selectedMonth)}
-              />
-              <div className="field">
-                <span>&nbsp;</span>
-                <button className="button" type="submit">
-                  Load report
-                </button>
-              </div>
-            </form>
-          </div>
-        </section>
+        <ReportToolbar
+          view="month"
+          month={report.summary.selectedMonth}
+          mode={report.summary.reportingMode}
+        >
+          <h2 id="report-summary" tabIndex={-1}>{reportMonthLabel}</h2>
+          <p className="muted-text">
+            {report.summary.reportingMode === "allocated_period"
+              ? "Expenses are spread across the months they cover."
+              : "Each transaction counts in the month it was paid."}
+          </p>
+        </ReportToolbar>
 
         <section
           className={`status ${completenessPresentation.tone}`}

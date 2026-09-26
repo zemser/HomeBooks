@@ -61,28 +61,40 @@ for (const viewport of [
     });
 
     test("GET forms submit the selected YYYY-MM value", async ({ page }) => {
-      for (const [route, submit] of [
-        ["/?month=2026-05", "Load month"],
-        ["/reports?month=2026-05", "Load report"],
-        ["/reports?view=year&month=2026-05", "Load year"],
-      ]) {
-        await page.goto(route);
-        await page
-          .getByRole("button", {
-            name: /^(Selected month|Year through month), May 2026$/,
-          })
-          .click();
-        await page
-          .getByRole("option", { name: "April 2026", exact: true })
-          .click();
-        await page.getByRole("button", { name: submit, exact: true }).click();
-        await expect(page).toHaveURL(/month=2026-04/);
-        await expect(
-          page.getByRole("button", {
-            name: /^(Selected month|Year through month), April 2026$/,
-          }),
-        ).toBeVisible();
-      }
+      await page.goto("/?month=2026-05");
+      await page
+        .getByRole("button", { name: "Selected month, May 2026", exact: true })
+        .click();
+      await page
+        .getByRole("option", { name: "April 2026", exact: true })
+        .click();
+      await page.getByRole("button", { name: "Load month", exact: true }).click();
+      await expect(page).toHaveURL(/month=2026-04/);
+      await expect(
+        page.getByRole("button", { name: "Selected month, April 2026", exact: true }),
+      ).toBeVisible();
+    });
+
+    test("report period controls load on selection", async ({ page }) => {
+      await page.goto("/reports?month=2026-05");
+      await page
+        .getByRole("button", { name: "Report month, May 2026", exact: true })
+        .click();
+      await page
+        .getByRole("option", { name: "April 2026", exact: true })
+        .click();
+      await expect(page).toHaveURL(/month=2026-04/);
+      await expect(page.locator("#report-summary")).toHaveText("April 2026");
+      await page.getByRole("button", { name: "Next month", exact: true }).click();
+      await expect(page).toHaveURL(/month=2026-05/);
+      await expect(page.locator("#report-summary")).toHaveText("May 2026");
+
+      await page.goto("/reports?view=year&month=2026-05");
+      await expect(page.getByRole("button", { name: /^Report month,/ })).toHaveCount(0);
+      const year = page.getByRole("group", { name: "Year", exact: true });
+      await year.getByRole("button", { name: "Previous year", exact: true }).click();
+      await expect(page).toHaveURL(/view=year&month=2025-12/);
+      await expect(page.getByRole("heading", { name: "2025 overview" })).toBeVisible();
     });
 
     test("calendar works inside the entry modal and submits a date-only value", async ({
