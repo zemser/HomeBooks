@@ -1,16 +1,21 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState, type KeyboardEvent } from "react";
 
 import { InvestmentAccountTiles } from "@/components/investments/investment-account-tiles";
 import { InvestmentHoldingsBoard } from "@/components/investments/investment-holdings-board";
+import { InvestmentOverview } from "@/components/investments/investment-overview";
 import {
   InvestmentUpdateSheet,
   type InvestmentUpdateResult,
 } from "@/components/investments/investment-update-sheet";
 import { changeTone, formatSignedMoney, formatSignedPercent } from "@/components/investments/format";
-import { buildInvestmentPortfolioSummary } from "@/features/investments/holdings-table";
+import {
+  INVESTMENT_ACCOUNT_STALE_AFTER_DAYS,
+  buildInvestmentPortfolioSummary,
+  daysSinceSnapshot,
+} from "@/features/investments/holdings-table";
 import type { InvestmentAccountHoldingsSnapshot } from "@/features/investments/types";
 import type { WorkspaceMemberSettingsItem } from "@/features/workspaces/types";
 import { formatMoneyWithCurrency } from "@/lib/money/format";
@@ -30,6 +35,18 @@ type UpdateSession = {
 
 const HIGHLIGHT_DURATION_MS = 2400;
 
+const VIEWS = [
+  { id: "overview", label: "Overview" },
+  { id: "holdings", label: "Holdings" },
+  { id: "accounts", label: "Accounts" },
+] as const;
+
+type InvestmentsView = (typeof VIEWS)[number]["id"];
+
+function parseView(value: string | null): InvestmentsView {
+  return VIEWS.find((view) => view.id === value)?.id ?? "overview";
+}
+
 export function InvestmentsPageClient({
   initialAccounts,
   members,
@@ -37,6 +54,8 @@ export function InvestmentsPageClient({
   workspaceCurrency,
 }: InvestmentsPageClientProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const view = parseView(searchParams.get("view"));
   const [accounts, setAccounts] = useState(initialAccounts);
   const [ownerFilter, setOwnerFilter] = useState<string | null>(null);
   const [session, setSession] = useState<UpdateSession | null>(null);
@@ -66,6 +85,37 @@ export function InvestmentsPageClient({
     : accounts;
   const showOwner = activeOwner === null && owners.length > 1;
   const summary = buildInvestmentPortfolioSummary(accounts, activeOwner);
+  const today = new Date();
+  const staleAccountCount = scopedAccounts.filter((account) => {
+    const days = daysSinceSnapshot(account.snapshotDate, today);
+    return days !== null && days > INVESTMENT_ACCOUNT_STALE_AFTER_DAYS;
+  }).length;
+
+  function selectView(next: InvestmentsView) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (next === "overview") {
+      params.delete("view");
+    } else {
+      params.set("view", next);
+    }
+    const query = params.toString();
+    window.history.pushState(null, "", query ? `?${query}` : window.location.pathname);
+  }
+
+  function handleTabKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    const offset = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    if (!offset) {
+      return;
+    }
+
+    event.preventDefault();
+    const index = VIEWS.findIndex((item) => item.id === view);
+    const next = VIEWS[(index + offset + VIEWS.length) % VIEWS.length];
+    if (next) {
+      selectView(next.id);
+      document.getElementById(`investments-tab-${next.id}`)?.focus();
+    }
+  }
 
   function openUpdate(account: InvestmentAccountHoldingsSnapshot | null, file: File | null) {
     setNotice(null);
@@ -156,20 +206,78 @@ export function InvestmentsPageClient({
         </p>
       ) : null}
 
-      <InvestmentAccountTiles
-        accounts={scopedAccounts}
-        showOwner={showOwner}
-        workspaceCurrency={workspaceCurrency}
-        highlightedAccountId={highlightedAccountId}
-        onUpdate={openUpdate}
-      />
+      {accounts.length === 0 ? (
+        <InvestmentAccountTiles
+          accounts={scopedAccounts}
+          showOwner={showOwner}
+          workspaceCurrency={workspaceCurrency}
+          highlightedAccountId={highlightedAccountId}
+          onUpdate={openUpdate}
+        />
+      ) : (
+        <>
+          <div className="investments-tabbar">
+            <div className="investments-tabs" role="tablist" aria-label="Investments view">
+              {VIEWS.map((item) => (
+                <button
+                  key={item.id}
+                  id={`investments-tab-${item.id}`}
+                  type="button"
+                  role="tab"
+                  className="investments-tab"
+                  aria-selected={view === item.id}
+                  aria-controls={`investments-panel-${item.id}`}
+                  tabIndex={view === item.id ? 0 : -1}
+                  onClick={() => selectView(item.id)}
+                  onKeyDown={handleTabKeyDown}
+                >
+                  {item.label}
+                  {item.id === "accounts" && staleAccountCount > 0 ? (
+                    <span className="investments-tab-badge" aria-label={`${staleAccountCount} need an update`}>
+                      {staleAccountCount}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+            </div>
+            <button className="button button-compact" type="button" onClick={() => openUpdate(null, null)}>
+              Update<span className="investments-update-suffix"> from export</span>
+            </button>
+          </div>
 
-      <InvestmentHoldingsBoard
-        accounts={accounts}
-        ownerMemberId={activeOwner}
-        showOwner={showOwner}
-        workspaceCurrency={workspaceCurrency}
-      />
+          <div
+            id={`investments-panel-${view}`}
+            role="tabpanel"
+            aria-labelledby={`investments-tab-${view}`}
+          >
+            {view === "overview" ? (
+              <InvestmentOverview
+                accounts={scopedAccounts}
+                showOwner={showOwner}
+                staleAccountCount={staleAccountCount}
+                workspaceCurrency={workspaceCurrency}
+                onShowAccounts={() => selectView("accounts")}
+                onShowHoldings={() => selectView("holdings")}
+              />
+            ) : view === "holdings" ? (
+              <InvestmentHoldingsBoard
+                accounts={accounts}
+                ownerMemberId={activeOwner}
+                showOwner={showOwner}
+                workspaceCurrency={workspaceCurrency}
+              />
+            ) : (
+              <InvestmentAccountTiles
+                accounts={scopedAccounts}
+                showOwner={showOwner}
+                workspaceCurrency={workspaceCurrency}
+                highlightedAccountId={highlightedAccountId}
+                onUpdate={openUpdate}
+              />
+            )}
+          </div>
+        </>
+      )}
 
       {session ? (
         <InvestmentUpdateSheet
