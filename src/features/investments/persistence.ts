@@ -489,7 +489,18 @@ export async function listInvestmentAccountHoldings(
     .groupBy(holdingSnapshots.investmentAccountId)
     .as("latest_snapshot_dates");
 
-  const rows = await db
+  const snapshotTotalsQuery = db
+    .select({
+      investmentAccountId: holdingSnapshots.investmentAccountId,
+      snapshotDate: holdingSnapshots.snapshotDate,
+      totalMarketValue: sql<string>`sum(${holdingSnapshots.marketValue})`,
+    })
+    .from(holdingSnapshots)
+    .where(eq(holdingSnapshots.workspaceId, context.workspaceId))
+    .groupBy(holdingSnapshots.investmentAccountId, holdingSnapshots.snapshotDate)
+    .orderBy(asc(holdingSnapshots.investmentAccountId), desc(holdingSnapshots.snapshotDate));
+
+  const rowsQuery = db
     .select({
       accountId: investmentAccounts.id,
       accountDisplayName: investmentAccounts.displayName,
@@ -533,6 +544,24 @@ export async function listInvestmentAccountHoldings(
       asc(holdingSnapshots.assetName),
     );
 
+  const [rows, snapshotTotals] = await Promise.all([rowsQuery, snapshotTotalsQuery]);
+  const previousSnapshotByAccountId = new Map<string, { snapshotDate: string; totalMarketValue: number }>();
+  const seenLatestSnapshot = new Set<string>();
+
+  for (const total of snapshotTotals) {
+    if (!seenLatestSnapshot.has(total.investmentAccountId)) {
+      seenLatestSnapshot.add(total.investmentAccountId);
+      continue;
+    }
+
+    if (!previousSnapshotByAccountId.has(total.investmentAccountId)) {
+      previousSnapshotByAccountId.set(total.investmentAccountId, {
+        snapshotDate: total.snapshotDate,
+        totalMarketValue: toNullableNumber(total.totalMarketValue) ?? 0,
+      });
+    }
+  }
+
   const snapshotsByAccountId = new Map<string, InvestmentAccountHoldingsSnapshot>();
 
   for (const row of rows) {
@@ -564,6 +593,9 @@ export async function listInvestmentAccountHoldings(
         totalMarketValue: 0,
         totalCostBasis: null,
         totalGainLoss: null,
+        previousSnapshotDate: previousSnapshotByAccountId.get(row.accountId)?.snapshotDate ?? null,
+        previousTotalMarketValue:
+          previousSnapshotByAccountId.get(row.accountId)?.totalMarketValue ?? null,
         holdings: [],
       } satisfies InvestmentAccountHoldingsSnapshot;
 

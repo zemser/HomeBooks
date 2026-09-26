@@ -1,140 +1,227 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 
-import { buildInvestmentHoldingRows } from "@/features/investments/holdings-table";
+import { changeTone, formatPercent, formatSignedMoney, formatSignedPercent } from "@/components/investments/format";
+import { getInvestmentAssetTypeLabel } from "@/features/investments/classification";
+import {
+  buildInvestmentPositionRows,
+  type InvestmentPositionRow,
+} from "@/features/investments/holdings-table";
 import type { InvestmentAccountHoldingsSnapshot } from "@/features/investments/types";
-import type { WorkspaceMemberSettingsItem } from "@/features/workspaces/types";
 import { formatMoneyWithCurrency } from "@/lib/money/format";
 
 type InvestmentHoldingsBoardProps = {
   accounts: InvestmentAccountHoldingsSnapshot[];
-  members: WorkspaceMemberSettingsItem[];
+  ownerMemberId: string | null;
+  showOwner: boolean;
   workspaceCurrency: string;
 };
 
-function formatPercent(value: number | null) {
-  if (value === null) {
+type SortKey = "value" | "gain" | "name";
+
+const SORT_LABELS: Record<SortKey, string> = {
+  value: "Value",
+  gain: "Gain/loss",
+  name: "Name",
+};
+
+function sortPositions(rows: InvestmentPositionRow[], sortKey: SortKey) {
+  if (sortKey === "value") {
+    return rows;
+  }
+
+  return [...rows].sort((left, right) => {
+    if (sortKey === "name") {
+      return left.assetName.localeCompare(right.assetName);
+    }
+
+    return (right.gainLoss ?? Number.NEGATIVE_INFINITY) - (left.gainLoss ?? Number.NEGATIVE_INFINITY);
+  });
+}
+
+function matchesQuery(row: InvestmentPositionRow, query: string) {
+  if (!query) {
+    return true;
+  }
+
+  const needle = query.normalize("NFKC").toLowerCase();
+
+  return (
+    row.assetName.normalize("NFKC").toLowerCase().includes(needle)
+    || (row.securityId ?? "").toLowerCase().includes(needle)
+  );
+}
+
+function heldInLabel(row: InvestmentPositionRow, showOwner: boolean) {
+  if (row.holdings.length > 1) {
+    return `${row.holdings.length} accounts`;
+  }
+
+  const holding = row.holdings[0];
+
+  if (!holding) {
     return "-";
   }
 
-  return `${new Intl.NumberFormat("en", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(value)}%`;
-}
-
-function formatSnapshotDate(value: string) {
-  const [year, month, day] = value.split("-");
-
-  if (!year || !month || !day) {
-    return value;
-  }
-
-  return `${day}/${month}/${year}`;
+  return showOwner ? `${holding.ownerDisplayName} · ${holding.accountDisplayName}` : holding.accountDisplayName;
 }
 
 export function InvestmentHoldingsBoard({
   accounts,
-  members,
+  ownerMemberId,
+  showOwner,
   workspaceCurrency,
 }: InvestmentHoldingsBoardProps) {
-  const [ownerFilter, setOwnerFilter] = useState("all");
-  const ownerMemberId = ownerFilter === "all" ? null : ownerFilter;
-  const rows = buildInvestmentHoldingRows(accounts, ownerMemberId);
-  const totalMarketValue = rows.reduce((sum, row) => sum + row.marketValue, 0);
-  const visibleMembers = members.filter(
-    (member) => member.isActive || accounts.some((account) => account.ownerMemberId === member.id),
-  );
-  const selectedMember = visibleMembers.find((member) => member.id === ownerFilter) ?? null;
-  const exportParams = new URLSearchParams();
+  const [sortKey, setSortKey] = useState<SortKey>("value");
+  const [query, setQuery] = useState("");
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(() => new Set());
+  const positions = buildInvestmentPositionRows(accounts, ownerMemberId);
+  const rows = sortPositions(positions, sortKey).filter((row) => matchesQuery(row, query.trim()));
+  const exportHref = ownerMemberId
+    ? `/api/investments/export?${new URLSearchParams({ ownerMemberId }).toString()}`
+    : "/api/investments/export";
 
-  if (ownerMemberId) {
-    exportParams.set("ownerMemberId", ownerMemberId);
+  function toggleExpanded(key: string) {
+    setExpandedKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
   }
 
-  const exportHref = exportParams.size > 0
-    ? `/api/investments/export?${exportParams.toString()}`
-    : "/api/investments/export";
+  if (positions.length === 0) {
+    return null;
+  }
 
   return (
     <article className="card stack compact" data-testid="investment-holdings">
-      <div className="page-actions">
+      <div className="investment-holdings-header">
         <div>
           <h2>Holdings</h2>
           <p className="muted-text">
-            Latest snapshot for each account.
-            {selectedMember
-              ? ` Showing ${selectedMember.displayName} only.`
-              : " Showing every saved account together."}
-            {" "}
-            Percentages are the share of this view.
+            {positions.length} {positions.length === 1 ? "position" : "positions"}. The same security
+            held in several accounts is shown once.
           </p>
         </div>
-        <a className="button button-secondary" href={exportHref}>
+        <a className="button button-secondary button-compact" href={exportHref}>
           Export
         </a>
       </div>
 
-      <label className="field">
-        <span>Show</span>
-        <select
+      <div className="investment-holdings-tools">
+        <input
           className="input"
-          value={ownerFilter}
-          onChange={(event) => setOwnerFilter(event.target.value)}
-        >
-          <option value="all">Combined</option>
-          {visibleMembers.map((member) => (
-            <option key={member.id} value={member.id}>
-              {member.displayName}
-              {member.isActive ? "" : " (inactive)"}
-            </option>
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search by name or security number"
+          aria-label="Search holdings"
+        />
+        <div className="statement-filters" role="group" aria-label="Sort holdings">
+          {(Object.keys(SORT_LABELS) as SortKey[]).map((key) => (
+            <button
+              key={key}
+              type="button"
+              className="statement-filter"
+              aria-pressed={sortKey === key}
+              onClick={() => setSortKey(key)}
+            >
+              {SORT_LABELS[key]}
+            </button>
           ))}
-        </select>
-      </label>
+        </div>
+      </div>
 
       {rows.length === 0 ? (
-        <p className="empty-state">No saved holdings for this view yet.</p>
+        <p className="empty-state">No holdings match “{query.trim()}”.</p>
       ) : (
-        <>
-          <p className="helper-text">
-            {formatMoneyWithCurrency(totalMarketValue, workspaceCurrency)} across {rows.length}{" "}
-            {rows.length === 1 ? "holding" : "holdings"}.
-          </p>
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Owner</th>
-                  <th>Account</th>
-                  <th>Asset</th>
-                  <th>Security number</th>
-                  <th>Market value</th>
-                  <th>Portfolio</th>
-                  <th>As of</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={`${row.accountId}-${row.securityId ?? row.assetName}`}>
-                    <td>{row.ownerDisplayName}</td>
-                    <td>
-                      {row.accountDisplayName}
-                      {row.sourceName ? <div className="table-note">{row.sourceName}</div> : null}
-                    </td>
-                    <td>
-                      <strong>{row.assetName}</strong>
-                    </td>
-                    <td>{row.securityId ?? "-"}</td>
-                    <td>{formatMoneyWithCurrency(row.marketValue, workspaceCurrency)}</td>
-                    <td>{formatPercent(row.portfolioSharePct)}</td>
-                    <td>{formatSnapshotDate(row.snapshotDate)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <div className="table-wrap">
+          <table className="data-table investment-positions-table">
+            <thead>
+              <tr>
+                <th>Asset</th>
+                <th>Held in</th>
+                <th className="numeric-cell">Value</th>
+                <th className="numeric-cell">Share</th>
+                <th className="numeric-cell">Gain/loss</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const canExpand = row.holdings.length > 1;
+                const isExpanded = canExpand && expandedKeys.has(row.key);
+
+                return (
+                  <Fragment key={row.key}>
+                    <tr>
+                      <td>
+                        <strong dir="auto">{row.assetName}</strong>
+                        <div className="table-note">
+                          {getInvestmentAssetTypeLabel(row.assetType)}
+                          {row.securityId ? ` · ${row.securityId}` : ""}
+                        </div>
+                      </td>
+                      <td>
+                        {canExpand ? (
+                          <button
+                            type="button"
+                            className="investment-expand-button"
+                            aria-expanded={isExpanded}
+                            onClick={() => toggleExpanded(row.key)}
+                          >
+                            {heldInLabel(row, showOwner)}
+                            <span aria-hidden="true" className="investment-expand-caret" />
+                          </button>
+                        ) : (
+                          <span dir="auto">{heldInLabel(row, showOwner)}</span>
+                        )}
+                      </td>
+                      <td className="numeric-cell">
+                        {formatMoneyWithCurrency(row.marketValue, workspaceCurrency)}
+                      </td>
+                      <td className="numeric-cell">{formatPercent(row.portfolioSharePct)}</td>
+                      <td className={`numeric-cell ${changeTone(row.gainLoss)}`}>
+                        {row.gainLoss === null ? (
+                          "-"
+                        ) : (
+                          <>
+                            {formatSignedMoney(row.gainLoss, workspaceCurrency)}
+                            <div className="table-note">{formatSignedPercent(row.gainLossPct)}</div>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                    {isExpanded
+                      ? row.holdings.map((holding) => (
+                          <tr key={`${row.key}-${holding.accountId}`} className="investment-position-subrow">
+                            <td />
+                            <td dir="auto">
+                              {showOwner ? `${holding.ownerDisplayName} · ` : ""}
+                              {holding.accountDisplayName}
+                            </td>
+                            <td className="numeric-cell">
+                              {formatMoneyWithCurrency(holding.marketValue, workspaceCurrency)}
+                            </td>
+                            <td />
+                            <td className={`numeric-cell ${changeTone(holding.gainLoss)}`}>
+                              {holding.gainLoss === null
+                                ? "-"
+                                : formatSignedMoney(holding.gainLoss, workspaceCurrency)}
+                            </td>
+                          </tr>
+                        ))
+                      : null}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
     </article>
   );
