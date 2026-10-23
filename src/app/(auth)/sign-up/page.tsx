@@ -27,7 +27,7 @@ async function SignUpForm({ searchParams }: SignUpPageProps) {
       }
       testId="sign-up-shell"
       title="Set up this household"
-      trustLine="Then you’ll add a second-factor code. Data stays in this workspace."
+      trustLine="Continue with Google or create an account with your email and password."
     >
       <GoogleContinueForm from="sign-up" next="/onboarding" />
 

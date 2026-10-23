@@ -1,5 +1,7 @@
 # Finance App Implementation Plan
 
+> Current authentication policy: Google or email/password sign-in is sufficient. The required TOTP MFA milestones below record the earlier implementation and are superseded by this policy. Workspace authorization and RLS remain required.
+
 ## Goal
 
 Turn the product and architecture decisions into a practical build order for the first working version.

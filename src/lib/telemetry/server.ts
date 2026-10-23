@@ -4,7 +4,6 @@ import { io } from "next/cache";
 type TelemetryValue = boolean | number | string | null;
 type CounterName =
   | "authCalls"
-  | "mfaCalls"
   | "databaseUnits"
   | "sqlStatements"
   | "poolAcquisitions"
@@ -70,10 +69,6 @@ export function recordAuthCall() {
   increment("authCalls");
 }
 
-export function recordMfaCall() {
-  increment("mfaCalls");
-}
-
 export function recordDatabaseUnit() {
   increment("databaseUnits");
 }
@@ -130,7 +125,6 @@ function buildState(input: TelemetryOperationInput): TelemetryState {
     runtime: getRuntime(),
     startedAt: performance.now(),
     authCalls: 0,
-    mfaCalls: 0,
     databaseUnits: 0,
     sqlStatements: 0,
     poolAcquisitions: 0,
@@ -157,7 +151,6 @@ function logRecord(state: TelemetryState, status: "ok" | "error", error?: unknow
     durationMs: durationSince(state.startedAt),
     counts: {
       authCalls: state.authCalls,
-      mfaCalls: state.mfaCalls,
       databaseUnits: state.databaseUnits,
       sqlStatements: state.sqlStatements,
       poolAcquisitions: state.poolAcquisitions,
@@ -204,7 +197,6 @@ export function getTelemetrySnapshot() {
     durationMs: durationSince(state.startedAt),
     counts: {
       authCalls: state.authCalls,
-      mfaCalls: state.mfaCalls,
       databaseUnits: state.databaseUnits,
       sqlStatements: state.sqlStatements,
       poolAcquisitions: state.poolAcquisitions,

@@ -3,7 +3,7 @@
 import { redirect, unstable_rethrow } from "next/navigation";
 
 import { withDbTransaction } from "@/db";
-import { AuthContextError, requireAal2Context } from "@/features/auth/supabase-user";
+import { AuthContextError, requireAuthenticatedContext } from "@/features/auth/supabase-user";
 import {
   displayNameFromAuth,
   ensureAppUser,
@@ -30,7 +30,7 @@ export async function acceptWorkspaceInviteAction(formData: FormData) {
     redirectOnboardingError("This invite is no longer available.");
   }
 
-  const authUser = await requireAal2Context();
+  const authUser = await requireAuthenticatedContext();
 
   try {
     await withDbTransaction(authUser.userId, async (tx) => {
@@ -66,7 +66,7 @@ export async function declineWorkspaceInviteAction(formData: FormData) {
     redirectOnboardingError("This invite is no longer available.");
   }
 
-  const authUser = await requireAal2Context();
+  const authUser = await requireAuthenticatedContext();
 
   try {
     await withDbTransaction(authUser.userId, async (tx) => {
