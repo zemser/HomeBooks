@@ -16,7 +16,7 @@ This document holds practical project context and operating notes that are not d
 
 Implemented flows include:
 
-- hosted Supabase auth foundation with required TOTP MFA in hosted mode
+- hosted Supabase auth foundation with Google or email/password sign-in in hosted mode
 - hosted RLS foundation for workspace isolation, pending hosted-project smoke testing
 - imports + persisted history
 - review queue + classification rules

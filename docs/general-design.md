@@ -76,8 +76,8 @@ Hosted v1 target:
 ## Security and access model
 
 - use Supabase `auth.users.id` as app `users.id` for hosted users
-- require TOTP MFA in hosted mode before onboarding, app pages, or API routes are available
-- treat Supabase `aal2` as the required authenticated session level for hosted user traffic
+- accept verified Google or email/password sign-in before onboarding, app pages, or API routes are available
+- do not require an app-managed second factor; verified `aal1` and `aal2` sessions are both accepted
 - keep product authorization in app tables (`users`, `workspaces`, `workspace_members`)
 - enforce RLS on app-owned workspace tables through the SQL migration layer
 - propagate the authenticated Supabase user id into Postgres as `app.current_user_id`

@@ -6,7 +6,7 @@ import { withDbTransaction } from "@/db";
 import { workspaceMembers } from "@/db/schema";
 import {
   AuthContextError,
-  requireAal2Context,
+  requireAuthenticatedContext,
 } from "@/features/auth/supabase-user";
 import { displayNameFromAuth, ensureAppUser } from "@/features/workspaces/app-user";
 import {
@@ -30,10 +30,10 @@ async function OnboardingForm({ searchParams }: OnboardingPageProps) {
 
   let user;
   try {
-    user = await requireAal2Context();
+    user = await requireAuthenticatedContext();
   } catch (error) {
     if (error instanceof AuthContextError) {
-      redirect(error.status === 401 ? "/sign-in" : "/mfa?next=/onboarding");
+      redirect("/sign-in");
     }
     throw error;
   }

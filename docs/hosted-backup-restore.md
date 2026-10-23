@@ -194,7 +194,7 @@ Use hosted restore only for an intentional recovery event or a rehearsal against
 5. Reapply any migrations that were created after the backup timestamp.
 6. Confirm RLS policies exist and normal app traffic uses the non-bypass runtime role.
 7. Run `npm run smoke:rls` against the runtime role.
-8. Run hosted sign-in, TOTP MFA, onboarding, imports, reports, settlements, and investments smoke tests.
+8. Run hosted Google and email/password sign-in, onboarding, imports, reports, settlements, and investments smoke tests.
 9. Repoint app traffic only after the restored database passes the checks.
 
 ## Safety Rules

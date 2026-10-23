@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { withDbTransaction } from "@/db";
 import {
   AuthContextError,
-  requireAal2Context,
+  requireAuthenticatedContext,
 } from "@/features/auth/supabase-user";
 import { ensureAppUser } from "@/features/workspaces/app-user";
 import { declineWorkspaceInvite } from "@/features/workspaces/invites";
@@ -18,7 +18,7 @@ type WorkspaceInviteDeclineRouteProps = {
 export async function POST(request: Request, { params }: WorkspaceInviteDeclineRouteProps) {
   try {
     const { inviteId } = await params;
-    const authUser = await requireAal2Context();
+    const authUser = await requireAuthenticatedContext();
     const invite = await withDbTransaction(authUser.userId, async (tx) => {
       const user = await ensureAppUser(tx, authUser);
       return declineWorkspaceInvite(tx, user.email, inviteId);

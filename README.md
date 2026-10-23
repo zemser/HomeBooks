@@ -40,7 +40,7 @@ The current product loop is:
 4. validate the ledger and manual-entry flow in `/transactions/all`
 5. confirm recurring rules, amount history, and month-aware reporting behave like one connected flow in `/recurring` and `/reports`
 6. use `/investments` for saved-holdings composition and first-pass saved activity imports
-7. harden the hosted two-user path with Supabase Auth, required TOTP MFA, RLS, and temporary hosted import storage
+7. harden the hosted two-user path with Supabase Auth, RLS, and temporary hosted import storage
 
 ## Current caveats
 
@@ -48,7 +48,7 @@ The current product loop is:
 - investment composition is currently estimated from holding names when the source workbook does not expose a dedicated asset-type field
 - investment activity imports currently support the checked-in Excellence Excel export and stay local to `/investments`
 - provider action labels in that first activity pass are still mapped heuristically into buy, sell, dividend, cash, and tax-or-fee buckets
-- hosted Auth/MFA and RLS foundations are in code, but still need real Supabase project smoke testing
+- hosted Auth and RLS foundations are in code, but still need real Supabase project smoke testing
 
 ## Environment note
 
