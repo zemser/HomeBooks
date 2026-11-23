@@ -132,3 +132,19 @@ Run `npm run imports:setup-storage` once to create the private bucket if needed.
 Use the manual encrypted `pg_dump` runbook in [docs/hosted-backup-restore.md](./docs/hosted-backup-restore.md) before treating the hosted two-user setup as durable. The runbook covers encrypted backups, checksum verification, local restore drills, and hosted recovery checks.
 
 The repeatable helpers are `npm run backup:create` and `npm run backup:verify`.
+
+## Read-only MCP for personal reports
+
+The Streamable HTTP endpoint at `/api/mcp` supports one personal connection per deployment. Its bearer token grants access to reports in one workspace. Every tool call checks active membership and reads the same monthly report used by the app in a read-only Postgres transaction.
+
+1. Generate a random token locally with `openssl rand -hex 32`. Save it privately as `HOMEBOOKS_MCP_TOKEN` in the environment of your MCP client.
+2. Get its digest with `printf '%s' "$HOMEBOOKS_MCP_TOKEN" | openssl dgst -sha256`. Configure the HomeBooks server with `FINAPP_MCP_TOKEN_SHA256` (the 64 hex digits), `FINAPP_MCP_USER_ID`, and `FINAPP_MCP_WORKSPACE_ID`. Use the user_id and workspace_id from your active row in workspace_members. Keep these settings server-side.
+3. Restart the local app or deploy with those settings. Register the URL in a personal MCP client using bearer authentication. For Codex, substitute your app origin below. Use HTTPS for a hosted app or http://localhost for local development.
+
+   ```sh
+   codex mcp add homebooks --url https://YOUR-HOMEBOOKS-HOST/api/mcp --bearer-token-env-var HOMEBOOKS_MCP_TOKEN
+   ```
+
+Ask “What changed since last month? Show the transactions behind the largest spending change in both months, and flag pending reviews.” The tools default to payment-date reporting. Ask for allocated-period mode to compare allocated amounts. The current month includes its available records and is compared to the entire previous month. For two closed calendar months, name the later month explicitly. Transaction history links are available for imported rows, and the report link also covers manual entries. To revoke access, remove the digest and restart or redeploy.
+
+For hosted use, set these variables in the intended Vercel environment and run HomeBooks in Supabase auth mode with its normal restricted application database role. The MCP route checks that row security is active on workspace memberships. A Vercel-protected deployment also requires authorization at the Vercel layer before traffic can reach HomeBooks. Configure the personal MCP token only on the deployments that should serve reports. Rotating a token on a new deployment also requires retiring or protecting older deployments that still hold the old digest. [Vercel Deployment Protection](https://vercel.com/docs/deployment-protection) · [Supabase row-level security](https://supabase.com/docs/guides/database/postgres/row-level-security)

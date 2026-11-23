@@ -245,12 +245,13 @@ export function getDb(): DbExecutor {
 export async function withDbTransaction<T>(
   currentUserId: string,
   callback: (executor: DbExecutor) => Promise<T>,
+  options?: { readOnly: boolean },
 ) {
   const client = (await getPool().connect()) as WrappedPoolClient;
 
   return withTelemetrySpan("db.transaction", async () => {
     try {
-      await client.query("begin");
+      await client.query(options?.readOnly ? "begin isolation level repeatable read read only" : "begin");
       recordRlsSetup();
       await client.query(
         "select set_config('app.current_user_id', $1, true)",

@@ -1,3 +1,5 @@
+import { getCategoryLabel, reportCategoryKey, subtractMoney, type ReportingViewMode } from "./report-values";
+export { REPORTING_VIEW_MODES, type ReportingViewMode } from "./report-values";
 import { and, eq, gte, lt, ne, sql } from "drizzle-orm";
 import Big from "big.js";
 
@@ -31,9 +33,6 @@ import {
 } from "@/lib/dates/months";
 
 type ReportDirection = "income" | "expense";
-
-export const REPORTING_VIEW_MODES = ["payment_date", "allocated_period"] as const;
-export type ReportingViewMode = (typeof REPORTING_VIEW_MODES)[number];
 
 export type MonthlyReportSummary = {
   selectedMonth: string;
@@ -528,20 +527,12 @@ function normalizeImportedDirection(classificationType: ClassificationType): Rep
   return classificationType === "income" ? "income" : "expense";
 }
 
-function getCategoryLabel(value: string | null) {
-  return value?.trim() || "Uncategorized";
-}
-
 function addMoney(left: number, right: number) {
   return Number(new Big(left).plus(right).toString());
 }
 
 function sumMoney(values: number[]) {
   return Number(values.reduce((total, value) => total.plus(value), new Big(0)).toString());
-}
-
-function subtractMoney(left: number, right: number) {
-  return Number(new Big(left).minus(right).toString());
 }
 
 function divideMoney(amount: number, divisor: number) {
@@ -648,7 +639,7 @@ export function buildCategoryScopeBreakdown(
     }
 
     const category = getCategoryLabel(record.category);
-    const categoryKey = record.categoryId ?? `uncatalogued:${category}`;
+    const categoryKey = reportCategoryKey(record.categoryId, category);
     const current = breakdown.get(categoryKey) ?? {
       categoryId: record.categoryId,
       category,
