@@ -26,5 +26,9 @@ export async function runReportTool(request: ReportToolCall, userId: string, wor
     const previous = await getMonthlyReport(context, { month: months.previous, mode: request.args.mode }, db);
     const current = await getMonthlyReport(context, { month: months.current, mode: request.args.mode }, db);
     return compareReports(previous, current);
-  }, { readOnly: true });
+  }, {
+    readOnly: true,
+    connectionString: process.env.FINAPP_MCP_DATABASE_URL,
+    ca: process.env.FINAPP_MCP_DATABASE_CA,
+  });
 }

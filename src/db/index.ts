@@ -17,6 +17,7 @@ import {
 let pool: Pool | undefined;
 let database: NodePgDatabase<typeof schema> | undefined;
 let validatedConnectionString: string | undefined;
+let reportPool: Pool | undefined;
 
 const globalForDb = globalThis as typeof globalThis & {
   finappPool?: Pool;
@@ -74,11 +75,12 @@ function wrapClientForCurrentUser(client: PoolClient) {
   return scopedClient;
 }
 
-function createPool(connectionString: string) {
+function createPool(connectionString: string, ca?: string) {
   const transactionPooler = usesTransactionPooler(connectionString);
   const poolMax = getPoolMax();
   const nextPool = new Pool({
     connectionString,
+    ...(ca ? { ssl: { ca } } : {}),
     // Hosted Supabase session poolers have a small project-wide client limit.
     // Keep this configurable for deployments with a different connection budget,
     // but avoid pg's default of 10 connections per app process.
@@ -245,9 +247,12 @@ export function getDb(): DbExecutor {
 export async function withDbTransaction<T>(
   currentUserId: string,
   callback: (executor: DbExecutor) => Promise<T>,
-  options?: { readOnly: boolean },
+  options?: { readOnly: true; connectionString?: string; ca?: string },
 ) {
-  const client = (await getPool().connect()) as WrappedPoolClient;
+  const transactionPool = options?.connectionString
+    ? (reportPool ??= createPool(options.connectionString, options.ca))
+    : getPool();
+  const client = (await transactionPool.connect()) as WrappedPoolClient;
 
   return withTelemetrySpan("db.transaction", async () => {
     try {
