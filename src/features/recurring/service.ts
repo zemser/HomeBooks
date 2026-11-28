@@ -632,14 +632,6 @@ export async function materializeRecurringEntriesForRange(
         ),
       ).for("update");
 
-    if (policy === "previous-month-v1") {
-      await requestMissingFxRates(tx, desiredRows.flatMap(row =>
-        row.valuationState === "pending" && row.referenceMonth
-          ? [{baseCurrency: row.originalCurrency, quoteCurrency: row.workspaceCurrency, yearMonth: row.referenceMonth}]
-          : []
-      ));
-    }
-
     const existingByKey = new Map<string, ExistingGeneratedManualEntryRow>();
 
     for (const row of existingRows) {
@@ -650,32 +642,30 @@ export async function materializeRecurringEntriesForRange(
       existingByKey.set(recurringGeneratedKey(row.sourceId, row.eventDate), row);
     }
 
-    const payerOverrides =
+    const overrides =
       existingRows.length === 0
         ? []
         : await tx
             .select({
               manualEntryId: manualEntryOverrides.manualEntryId,
+              type: manualEntryOverrides.overrideType,
               newValueJson: manualEntryOverrides.newValueJson,
             })
             .from(manualEntryOverrides)
             .where(
-              and(
-                inArray(
-                  manualEntryOverrides.manualEntryId,
-                  existingRows.map((row) => row.id),
-                ),
-                eq(manualEntryOverrides.overrideType, "payer"),
-              ),
+              inArray(manualEntryOverrides.manualEntryId, existingRows.map((row) => row.id)),
             );
-    const payerOverrideByManualEntryId = new Map(
-      payerOverrides.flatMap((override) => {
-        const payerMemberId = payerMemberIdFromOverride(override.newValueJson);
-        return payerMemberId === undefined
-          ? []
-          : [[override.manualEntryId, payerMemberId] as const];
-      }),
-    );
+    const amountOverrides = new Set<string>();
+    const categoryOverrides = new Set<string>();
+    const payerOverrides = new Map<string, string | null>();
+    for (const override of overrides) {
+      if (override.type === "amount") amountOverrides.add(override.manualEntryId);
+      if (override.type === "category") categoryOverrides.add(override.manualEntryId);
+      if (override.type === "payer") {
+        const payer = payerMemberIdFromOverride(override.newValueJson);
+        if (payer !== undefined) payerOverrides.set(override.manualEntryId, payer);
+      }
+    }
 
     const affectedManualEntryIds = new Set<string>();
     let createdCount = 0;
@@ -688,51 +678,59 @@ export async function materializeRecurringEntriesForRange(
       if (existingRow) {
         existingByKey.delete(key);
         const payerOverride = classificationAllowsPayer(row.classificationType)
-          ? payerOverrideByManualEntryId.get(existingRow.id)
+          ? payerOverrides.get(existingRow.id)
           : undefined;
-        const effectiveRow =
-          payerOverride === undefined ? row : { ...row, payerMemberId: payerOverride };
+        if (payerOverride !== undefined) row.payerMemberId = payerOverride;
+        if (categoryOverrides.has(existingRow.id)) {
+          row.category = existingRow.category;
+          row.categoryId = existingRow.categoryId;
+        }
+        if (amountOverrides.has(existingRow.id)) {
+          row.originalAmount = existingRow.originalAmount;
+          row.originalCurrency = existingRow.originalCurrency;
+          row.workspaceCurrency = existingRow.workspaceCurrency;
+        }
 
         // Rate publication and history repair own valuation changes. Regenerating
         // an unchanged occurrence must preserve its applied snapshot and splits.
         if (existingRow.originalCurrency === row.originalCurrency &&
             existingRow.workspaceCurrency === row.workspaceCurrency &&
             existingRow.originalAmount === row.originalAmount) {
-          effectiveRow.normalizedAmount = existingRow.normalizedAmount;
-          effectiveRow.normalizationRate = existingRow.normalizationRate;
-          effectiveRow.normalizationRateSource = existingRow.normalizationRateSource;
-          effectiveRow.valuationState = existingRow.valuationState;
-          effectiveRow.valuationPolicy = existingRow.valuationPolicy;
-          effectiveRow.referenceMonth = existingRow.referenceMonth;
-          effectiveRow.exchangeRateId = existingRow.exchangeRateId;
+          row.normalizedAmount = existingRow.normalizedAmount;
+          row.normalizationRate = existingRow.normalizationRate;
+          row.normalizationRateSource = existingRow.normalizationRateSource;
+          row.valuationState = existingRow.valuationState;
+          row.valuationPolicy = existingRow.valuationPolicy;
+          row.referenceMonth = existingRow.referenceMonth;
+          row.exchangeRateId = existingRow.exchangeRateId;
         }
 
-        if (generatedManualEntryMatches(existingRow, effectiveRow)) {
+        if (generatedManualEntryMatches(existingRow, row)) {
           continue;
         }
 
         await tx
           .update(manualEntries)
           .set({
-            eventKind: effectiveRow.eventKind,
-            title: effectiveRow.title,
-            originalCurrency: effectiveRow.originalCurrency,
-            originalAmount: effectiveRow.originalAmount,
-            workspaceCurrency: effectiveRow.workspaceCurrency,
-            normalizedAmount: effectiveRow.normalizedAmount,
-            normalizationRate: effectiveRow.normalizationRate,
-            valuationState: effectiveRow.valuationState,
-            valuationPolicy: effectiveRow.valuationPolicy,
-            referenceMonth: effectiveRow.referenceMonth,
-            exchangeRateId: effectiveRow.exchangeRateId,
-            normalizationRateSource: effectiveRow.normalizationRateSource,
-            payerMemberId: effectiveRow.payerMemberId,
-            personalOwnerMemberId: effectiveRow.personalOwnerMemberId,
-            receivedByMemberId: effectiveRow.receivedByMemberId,
-            classificationType: effectiveRow.classificationType,
-            splitForSettlement: effectiveRow.splitForSettlement,
-            category: effectiveRow.category,
-            categoryId: effectiveRow.categoryId,
+            eventKind: row.eventKind,
+            title: row.title,
+            originalCurrency: row.originalCurrency,
+            originalAmount: row.originalAmount,
+            workspaceCurrency: row.workspaceCurrency,
+            normalizedAmount: row.normalizedAmount,
+            normalizationRate: row.normalizationRate,
+            valuationState: row.valuationState,
+            valuationPolicy: row.valuationPolicy,
+            referenceMonth: row.referenceMonth,
+            exchangeRateId: row.exchangeRateId,
+            normalizationRateSource: row.normalizationRateSource,
+            payerMemberId: row.payerMemberId,
+            personalOwnerMemberId: row.personalOwnerMemberId,
+            receivedByMemberId: row.receivedByMemberId,
+            classificationType: row.classificationType,
+            splitForSettlement: row.splitForSettlement,
+            category: row.category,
+            categoryId: row.categoryId,
             updatedAt: new Date(),
           })
           .where(eq(manualEntries.id, existingRow.id));
@@ -775,6 +773,14 @@ export async function materializeRecurringEntriesForRange(
 
       affectedManualEntryIds.add(createdRow.id);
       createdCount += 1;
+    }
+
+    if (policy === "previous-month-v1") {
+      await requestMissingFxRates(tx, desiredRows.flatMap(row =>
+        row.valuationState === "pending" && row.referenceMonth
+          ? [{baseCurrency: row.originalCurrency, quoteCurrency: row.workspaceCurrency, yearMonth: row.referenceMonth}]
+          : []
+      ));
     }
 
     const staleRows = Array.from(existingByKey.values());

@@ -115,6 +115,46 @@ test(
           );
           assert.deepEqual(await occurrence(), before);
 
+          // A one-off amount correction carries its own applied rate and projection.
+          await tx.update(schema.manualEntries).set({
+            category: "Housing",
+            originalAmount: "60",
+            normalizedAmount: "185.28",
+          }).where(eq(schema.manualEntries.id, before.id));
+          await tx.insert(schema.manualEntryOverrides).values([{
+            manualEntryId: before.id,
+            overrideType: "amount",
+            oldValueJson: { amount: "100" },
+            newValueJson: { amount: "60" },
+          }, {
+            manualEntryId: before.id,
+            overrideType: "category",
+            newValueJson: { category: "Housing" },
+          }]);
+          await tx.update(schema.manualRecurringExpenses).set({
+            title: "Updated rent",
+          }).where(eq(schema.manualRecurringExpenses.id, entry.id));
+          const regenerate = () => materializeRecurringEntriesForRange(
+            context, { startMonth: month, endMonth: month }, tx,
+          );
+          assert.equal((await regenerate()).updatedCount, 1);
+          const corrected = await occurrence();
+          assert.equal(corrected.title, "Updated rent");
+          assert.equal(corrected.category, "Housing");
+          assert.equal(corrected.originalAmount, "60.000000");
+          assert.equal(corrected.normalizedAmount, "185.280000");
+          assert.equal(corrected.normalizationRate, before.normalizationRate);
+          assert.equal(corrected.exchangeRateId, applied.id);
+          assert.equal(corrected.valuationPolicy, before.valuationPolicy);
+          assert.equal(corrected.referenceMonth, before.referenceMonth);
+          const [event] = await tx.select().from(schema.expenseEvents)
+            .where(eq(schema.expenseEvents.sourceId, before.id));
+          assert.equal(event.totalAmount, "185.280000");
+          const [allocation] = await tx.select().from(schema.expenseAllocations)
+            .where(eq(schema.expenseAllocations.expenseEventId, event.id));
+          assert.equal(allocation.allocatedAmount, "185.280000");
+          assert.equal((await regenerate()).updatedCount, 0);
+
           const accountLabel = "Card 1001";
           const transaction = {
             transactionDate: month,

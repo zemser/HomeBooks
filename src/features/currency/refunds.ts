@@ -1,5 +1,6 @@
 import Big from "big.js";
-import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { DbExecutor } from "@/db";
 import {
   expenseEvents,
@@ -48,9 +49,21 @@ export async function refundCandidates(
     !credit ||
     credit.direction !== "credit" ||
     !credit.settlementCurrency ||
-    !credit.settlementAmount
+    !credit.settlementAmount ||
+    credit.refundOfTransactionId ||
+    credit.valuationPolicy !== "previous-month-v1" ||
+    credit.valuationState === "recorded" ||
+    credit.settlementCurrency === credit.workspaceCurrency
   )
     return [];
+  const linked = alias(transactions, "linked_credit");
+  const alreadyReturned = db
+    .select({ amount: sql`coalesce(sum(${linked.settlementAmount}), 0)` })
+    .from(linked)
+    .where(and(
+      eq(linked.refundOfTransactionId, transactions.id),
+      eq(linked.workspaceId, transactions.workspaceId),
+    ));
   return db
     .select({
       id: transactions.id,
@@ -68,7 +81,7 @@ export async function refundCandidates(
         eq(transactions.workspaceCurrency, credit.workspaceCurrency),
         eq(transactions.direction, "debit"),
         lte(transactions.transactionDate, credit.transactionDate),
-        gte(transactions.settlementAmount, credit.settlementAmount),
+        sql`${transactions.settlementAmount} - ${alreadyReturned} >= ${credit.settlementAmount}`,
         sql`${transactions.normalizationRate} > 0
         and coalesce(${transactions.normalizationRateSource},'') not like '%placeholder%'
         and ${transactions.valuationState} <> 'pending'`,

@@ -30,7 +30,7 @@ import pg from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "../../src/db/schema";
-import { linkRefund } from "../../src/features/currency/refunds";
+import { linkRefund, refundCandidates } from "../../src/features/currency/refunds";
 import { upsertTransactionClassification } from "../../src/features/expenses/classifications";
 import { getMonthlyReport } from "../../src/features/reporting/monthly-report";
 
@@ -163,6 +163,34 @@ test(
             await linkRefund(tx, context, credit.id, purchase.id),
             { normalizedAmount: "308.800000" },
           );
+          // One older purchase remains eligible behind a full page of partially refunded ones.
+          const basePurchase = {
+            ...common, transactionDate: "2026-11-04", direction: "debit" as const,
+            normalizedAmount: "310", normalizationRate: "3.1",
+          };
+          const [eligible, ...partial] = await tx.insert(schema.transactions).values([
+            { ...basePurchase, transactionDate: "2026-11-01", dedupeHash: randomUUID() },
+            ...Array.from({ length: 100 }, () => ({ ...basePurchase, dedupeHash: randomUUID() })),
+          ]).returning();
+          const baseCredit = {
+            ...basePurchase, transactionDate: "2026-12-02", direction: "credit" as const,
+          };
+          await tx.insert(schema.transactions).values(partial.map((row) => ({
+            ...baseCredit, settlementAmount: "90", normalizedAmount: "279",
+            refundOfTransactionId: row.id, dedupeHash: randomUUID(),
+          })));
+          const [nextCredit, laterCredit] = await tx.insert(schema.transactions).values(
+            ["20", "90"].map(amount => ({
+              ...baseCredit, settlementAmount: amount, dedupeHash: randomUUID(),
+            })),
+          ).returning();
+          assert.deepEqual(
+            (await refundCandidates(tx, ws.id, nextCredit.id)).map(row => row.id),
+            [eligible.id],
+          );
+          await linkRefund(tx, context, laterCredit.id, eligible.id);
+          await assert.rejects(linkRefund(tx, context, nextCredit.id, eligible.id), /remaining/);
+          assert.deepEqual(await refundCandidates(tx, ws.id, nextCredit.id), []);
           throw rollback;
         }),
         (err) => err === rollback,
