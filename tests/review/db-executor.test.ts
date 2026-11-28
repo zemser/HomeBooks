@@ -78,12 +78,7 @@ test("transaction executor establishes RLS once and instruments its unit", async
   assert.match(source, /activeExecutor\.run\(executor, \(\) => callback\(executor\)\)/);
   assert.match(source, /export async function withDbTransaction/);
   assert.match(source, /withTelemetrySpan\("db\.transaction"/);
-  assert.match(
-    source,
-    /await client\.query\("begin"\);[\s\S]*recordRlsSetup\(\);[\s\S]*set_config\('app\.current_user_id', \$1, true\)/,
-  );
-  assert.match(source, /await client\.query\("commit"\);/);
-  assert.match(source, /await client\.query\("rollback"\)\.catch\(\(\) => undefined\)/);
+  assert.match(source, /connection\.transaction\(\s*async \(executor\) => \{[\s\S]*recordRlsSetup\(\);[\s\S]*set_config\('app\.current_user_id', \$1, true\)/);
   assert.match(source, /client\.release\(\);/);
   assert.doesNotMatch(source, /getCurrentDatabaseUserId/);
   assert.doesNotMatch(source, /transactionScopedClient/);
@@ -298,3 +293,65 @@ test("allocation and category commands use the explicit transaction executor", a
   assert.match(allocationRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
   assert.match(categoriesRouteSource, /withCurrentWorkspaceDb\((?:async )?\(context, db\)/);
 });
+
+
+test(
+  "nested service transactions preserve RLS identity and roll back with the request",
+  { skip: !process.env.TEST_DATABASE_URL },
+  async () => {
+    const { randomUUID } = await import("node:crypto");
+    const { sql } = await import("drizzle-orm");
+    const { getDb, withDbTransaction } = await import("../../src/db");
+    const { users } = await import("../../src/db/schema");
+    const priorUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL!;
+    const userId = randomUUID();
+    const rollback = new Error("roll back outer request");
+    try {
+      await assert.rejects(
+        withDbTransaction(userId, async (db) => {
+          assert.equal(getDb(), db);
+          await db.transaction((tx) =>
+            tx
+              .insert(users)
+              .values({
+                id: userId,
+                displayName: "RLS fixture",
+                email: userId + "@example.test",
+              }),
+          );
+          const [{ identity }] = (
+            await db.execute(
+              sql`select current_setting('app.current_user_id',true) as identity`,
+            )
+          ).rows;
+          assert.equal(identity, userId);
+          throw rollback;
+        }),
+        (e) => e === rollback,
+      );
+      await withDbTransaction(
+        userId,
+        async (db) => {
+          const result = await db.execute(
+            sql`select id from users where id=${userId}`,
+          );
+          assert.equal(result.rowCount, 0);
+          const [settings] = (
+            await db.execute(
+              sql`select current_setting('transaction_read_only') as mode,current_setting('transaction_isolation') as isolation`,
+            )
+          ).rows;
+          assert.deepEqual(settings, {
+            mode: "on",
+            isolation: "repeatable read",
+          });
+        },
+        { readOnly: true },
+      );
+    } finally {
+      if (priorUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = priorUrl;
+    }
+  },
+);
