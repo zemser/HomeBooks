@@ -17,8 +17,10 @@ function isApiPath(pathname: string) {
 }
 
 export async function proxy(request: NextRequest) {
-  // The MCP route verifies its own dedicated read-only bearer credential.
-  if (request.nextUrl.pathname === "/api/mcp") return NextResponse.next();
+  // These endpoints authenticate their own service credentials.
+  if (request.nextUrl.pathname === "/api/mcp" || request.nextUrl.pathname === "/api/cron/fx-rates") {
+    return NextResponse.next();
+  }
 
   if (getFinappAuthMode() !== "supabase") {
     return NextResponse.next();

@@ -1,6 +1,7 @@
 "use client";
 
 import { canSaveMerchantRule, merchantRuleAttributionNote } from "@/features/expenses/merchant-rules";
+import { RefundLink } from "./refund-link";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import {
@@ -2298,6 +2299,10 @@ export function ReviewQueueClient({
                 </div>
               ) : null}
 
+              {selectedTransaction.direction === "credit" &&
+                selectedTransaction.valuationPolicy === "previous-month-v1" && selectedTransaction.valuationState !== "recorded" &&
+                selectedTransaction.settlementCurrency && selectedTransaction.settlementCurrency !== selectedTransaction.workspaceCurrency &&
+                !selectedTransaction.refundOfTransactionId ? <RefundLink key={selectedTransaction.id} creditId={selectedTransaction.id} /> : null}
               {selectedTransaction.suggestion ? (
                 <section className={`classification-suggestion-card ${selectedTransaction.suggestion.confidence}`} aria-label="Suggested classification">
                   <div>

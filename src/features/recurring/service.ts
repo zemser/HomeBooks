@@ -1,3 +1,6 @@
+import { createMonthlyAverageNormalizer, createRateLookupFromMap, loadSeededMonthlyRates, previousMonthFromTransactionDate } from "@/features/currency/monthly-rates";
+import { requestMissingFxRates } from "@/features/currency/rate-requests";
+import type { ValuationPolicy, ValuationState } from "@/db/schema";
 import { and, asc, desc, eq, gte, inArray, lte } from "drizzle-orm";
 
 import { getDb, type DbExecutor } from "@/db";
@@ -119,6 +122,10 @@ type ExistingGeneratedManualEntryRow = {
   originalAmount: string;
   workspaceCurrency: string;
   normalizedAmount: string;
+  valuationState: ValuationState;
+  valuationPolicy: ValuationPolicy;
+  exchangeRateId: string | null;
+  referenceMonth: string | null;
   normalizationRate: string | null;
   normalizationRateSource: string | null;
   payerMemberId: string | null;
@@ -139,8 +146,12 @@ type RecurringGeneratedRowSeed = {
   originalAmount: string;
   workspaceCurrency: string;
   normalizedAmount: string;
-  normalizationRate: string;
-  normalizationRateSource: string;
+  valuationState: ValuationState;
+  valuationPolicy: ValuationPolicy;
+  exchangeRateId: string | null;
+  referenceMonth: string | null;
+  normalizationRate: string | null;
+  normalizationRateSource: string | null;
   payerMemberId: string | null;
   personalOwnerMemberId: string | null;
   receivedByMemberId: string | null;
@@ -302,25 +313,20 @@ function normalizeGeneratedAmount(input: {
   workspaceCurrency: string;
   normalizationMode: NormalizationMode;
 }) {
-  if (input.currency === input.workspaceCurrency) {
-    const normalized = normalizeAmountToWorkspaceCurrency({
+  const sameCurrency = input.currency === input.workspaceCurrency;
+  return {
+    ...normalizeAmountToWorkspaceCurrency({
       amount: input.amount,
       fromCurrency: input.currency,
       toCurrency: input.workspaceCurrency,
       monthlyAverageRate: 1,
-      rateSource: "same-currency",
-    });
-
-    return normalized;
-  }
-
-  return normalizeAmountToWorkspaceCurrency({
-    amount: input.amount,
-    fromCurrency: input.currency,
-    toCurrency: input.workspaceCurrency,
-    monthlyAverageRate: 1,
-    rateSource: `${input.normalizationMode}-placeholder-rate-1`,
-  });
+      rateSource: sameCurrency ? "same-currency" : `${input.normalizationMode}-placeholder-rate-1`,
+    }),
+    valuationState: sameCurrency ? "recorded" as const : "legacy" as const,
+    valuationPolicy: "legacy" as const,
+    referenceMonth: null,
+    exchangeRateId: null,
+  };
 }
 
 function mapVersion(row: {
@@ -532,6 +538,11 @@ export async function materializeRecurringEntriesForRange(
     }
 
     const months = listMonthStringsBetween(range.startMonth, range.endMonth);
+    const policy = context.fxPolicy ?? "legacy";
+    const rates = policy === "previous-month-v1"
+      ? await loadSeededMonthlyRates(tx, months.map(previousMonthFromTransactionDate))
+      : new Map();
+    const value = createMonthlyAverageNormalizer(context.baseCurrency, createRateLookupFromMap(rates), policy);
     const desiredRows: RecurringGeneratedRowSeed[] = [];
 
     for (const entry of activeEntries) {
@@ -547,12 +558,14 @@ export async function materializeRecurringEntriesForRange(
         }
 
         const amount = Number(version.amount);
-        const normalized = normalizeGeneratedAmount({
-          amount,
-          currency: version.currency,
-          workspaceCurrency: context.baseCurrency,
-          normalizationMode: version.normalizationMode,
-        });
+        const normalized = policy === "previous-month-v1"
+          ? value({ amount, fromCurrency: version.currency, transactionDate: month })
+          : normalizeGeneratedAmount({
+              amount,
+              currency: version.currency,
+              workspaceCurrency: context.baseCurrency,
+              normalizationMode: version.normalizationMode,
+            });
 
         desiredRows.push({
           sourceId: entry.id,
@@ -560,7 +573,11 @@ export async function materializeRecurringEntriesForRange(
           eventKind: entry.eventKind,
           title: entry.title,
           originalCurrency: version.currency,
-          originalAmount: normalized.originalAmount.toFixed(6),
+          originalAmount: amount.toFixed(6),
+          valuationState: normalized.valuationState,
+          valuationPolicy: normalized.valuationPolicy,
+          exchangeRateId: normalized.exchangeRateId,
+          referenceMonth: normalized.referenceMonth,
           workspaceCurrency: context.baseCurrency,
           normalizedAmount: normalized.normalizedAmount.toFixed(6),
           normalizationRate: normalized.normalizationRate.toFixed(8),
@@ -587,6 +604,10 @@ export async function materializeRecurringEntriesForRange(
         originalAmount: manualEntries.originalAmount,
         workspaceCurrency: manualEntries.workspaceCurrency,
         normalizedAmount: manualEntries.normalizedAmount,
+        valuationState: manualEntries.valuationState,
+        valuationPolicy: manualEntries.valuationPolicy,
+        exchangeRateId: manualEntries.exchangeRateId,
+        referenceMonth: manualEntries.referenceMonth,
         normalizationRate: manualEntries.normalizationRate,
         normalizationRateSource: manualEntries.normalizationRateSource,
         payerMemberId: manualEntries.payerMemberId,
@@ -609,7 +630,15 @@ export async function materializeRecurringEntriesForRange(
             activeEntries.map((entry) => entry.id),
           ),
         ),
-      );
+      ).for("update");
+
+    if (policy === "previous-month-v1") {
+      await requestMissingFxRates(tx, desiredRows.flatMap(row =>
+        row.valuationState === "pending" && row.referenceMonth
+          ? [{baseCurrency: row.originalCurrency, quoteCurrency: row.workspaceCurrency, yearMonth: row.referenceMonth}]
+          : []
+      ));
+    }
 
     const existingByKey = new Map<string, ExistingGeneratedManualEntryRow>();
 
@@ -664,6 +693,20 @@ export async function materializeRecurringEntriesForRange(
         const effectiveRow =
           payerOverride === undefined ? row : { ...row, payerMemberId: payerOverride };
 
+        // Rate publication and history repair own valuation changes. Regenerating
+        // an unchanged occurrence must preserve its applied snapshot and splits.
+        if (existingRow.originalCurrency === row.originalCurrency &&
+            existingRow.workspaceCurrency === row.workspaceCurrency &&
+            existingRow.originalAmount === row.originalAmount) {
+          effectiveRow.normalizedAmount = existingRow.normalizedAmount;
+          effectiveRow.normalizationRate = existingRow.normalizationRate;
+          effectiveRow.normalizationRateSource = existingRow.normalizationRateSource;
+          effectiveRow.valuationState = existingRow.valuationState;
+          effectiveRow.valuationPolicy = existingRow.valuationPolicy;
+          effectiveRow.referenceMonth = existingRow.referenceMonth;
+          effectiveRow.exchangeRateId = existingRow.exchangeRateId;
+        }
+
         if (generatedManualEntryMatches(existingRow, effectiveRow)) {
           continue;
         }
@@ -678,6 +721,10 @@ export async function materializeRecurringEntriesForRange(
             workspaceCurrency: effectiveRow.workspaceCurrency,
             normalizedAmount: effectiveRow.normalizedAmount,
             normalizationRate: effectiveRow.normalizationRate,
+            valuationState: effectiveRow.valuationState,
+            valuationPolicy: effectiveRow.valuationPolicy,
+            referenceMonth: effectiveRow.referenceMonth,
+            exchangeRateId: effectiveRow.exchangeRateId,
             normalizationRateSource: effectiveRow.normalizationRateSource,
             payerMemberId: effectiveRow.payerMemberId,
             personalOwnerMemberId: effectiveRow.personalOwnerMemberId,
@@ -708,6 +755,10 @@ export async function materializeRecurringEntriesForRange(
           workspaceCurrency: row.workspaceCurrency,
           normalizedAmount: row.normalizedAmount,
           normalizationRate: row.normalizationRate,
+          valuationState: row.valuationState,
+          valuationPolicy: row.valuationPolicy,
+          referenceMonth: row.referenceMonth,
+          exchangeRateId: row.exchangeRateId,
           normalizationRateSource: row.normalizationRateSource,
           payerMemberId: row.payerMemberId,
           personalOwnerMemberId: row.personalOwnerMemberId,
@@ -905,6 +956,7 @@ export async function listGeneratedManualEntries(
       originalAmount: manualEntries.originalAmount,
       originalCurrency: manualEntries.originalCurrency,
       normalizedAmount: manualEntries.normalizedAmount,
+      valuationState: manualEntries.valuationState,
       workspaceCurrency: manualEntries.workspaceCurrency,
       payerMemberId: manualEntries.payerMemberId,
       personalOwnerMemberId: manualEntries.personalOwnerMemberId,
@@ -934,6 +986,7 @@ export async function listGeneratedManualEntries(
     originalAmount: entry.originalAmount,
     originalCurrency: entry.originalCurrency,
     normalizedAmount: entry.normalizedAmount,
+    valuationState: entry.valuationState,
     workspaceCurrency: entry.workspaceCurrency,
     payerMemberId: entry.payerMemberId,
     payerMemberName: entry.payerMemberId ? memberNames.get(entry.payerMemberId) ?? null : null,
@@ -970,7 +1023,7 @@ export async function createRecurringEntry(
   const effectiveStartMonth = normalizeMonthString(input.effectiveStartMonth);
   const currency = normalizeCurrencyCode(input.currency);
   const normalizationMode = getEffectiveNormalizationMode({
-    mode: input.normalizationMode,
+    mode: context.fxPolicy === "previous-month-v1" ? "monthly_average" : input.normalizationMode,
     currency,
     workspaceCurrency: context.baseCurrency,
   });
@@ -1217,7 +1270,7 @@ export async function createRecurringEntryVersion(
   const notes = normalizeOptionalText(input.notes);
   const currency = normalizeCurrencyCode(input.currency);
   const normalizationMode = getEffectiveNormalizationMode({
-    mode: input.normalizationMode,
+    mode: context.fxPolicy === "previous-month-v1" ? "monthly_average" : input.normalizationMode,
     currency,
     workspaceCurrency: context.baseCurrency,
   });
@@ -1309,7 +1362,7 @@ export async function updateRecurringEntryVersion(
 
   const currency = normalizeCurrencyCode(input.currency);
   const normalizationMode = getEffectiveNormalizationMode({
-    mode: input.normalizationMode,
+    mode: context.fxPolicy === "previous-month-v1" ? "monthly_average" : input.normalizationMode,
     currency,
     workspaceCurrency: context.baseCurrency,
   });
@@ -1444,6 +1497,7 @@ export async function getRecurringPageData(
 
   return {
     workspaceCurrency: context.baseCurrency,
+    fxPolicy: context.fxPolicy,
     members,
     categories: categoryCatalog.map((category) => category.name),
     categoryCatalog,

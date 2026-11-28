@@ -3,7 +3,7 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 
 import { withCurrentWorkspaceDb, resolveCurrentWorkspaceContext } from "@/features/workspaces/current-context";
-import { listSavedImports, persistBankImport } from "@/features/imports/persistence";
+import { ImportRowReviewError, listSavedImports, persistBankImport } from "@/features/imports/persistence";
 import { errorResponse } from "@/lib/logging/server";
 import { readTabularFileFromBuffer } from "@/lib/tabular/read-tabular-file";
 
@@ -45,6 +45,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Choose who owns this account, or Joint or unknown." }, { status: 400 });
   }
   try {
+    const rawDecisions = formData.get("rowDecisions");
+    let decisions: unknown = {};
+    if (rawDecisions !== null) {
+      try { decisions = JSON.parse(String(rawDecisions)); }
+      catch { return NextResponse.json({ error: "Invalid matching-row decisions." }, { status: 400 }); }
+    }
+    const rowDecisions = z.record(z.string().regex(/^[a-f0-9]{64}$/), z.enum(["keep", "skip"])).safeParse(decisions);
+    if (!rowDecisions.success) return NextResponse.json({ error: "Invalid matching-row decisions." }, { status: 400 });
     const arrayBuffer = await file.arrayBuffer();
     const workbook = readTabularFileFromBuffer({
       buffer: arrayBuffer,
@@ -57,6 +65,7 @@ export async function POST(request: Request) {
       fileBuffer: Buffer.from(arrayBuffer),
       context,
       accountOwnerMemberId: owner.data,
+      rowDecisions: rowDecisions.data,
     });
     const savedImports = await withCurrentWorkspaceDb((currentContext, db) =>
       listSavedImports(currentContext, { type: "bank" }, db),
@@ -82,6 +91,10 @@ export async function POST(request: Request) {
       },
     );
   } catch (error) {
+    if (error instanceof ImportRowReviewError) {
+      return NextResponse.json({ error: error.message, status: "review_required" }, { status: 409 });
+    }
+
     return errorResponse({
       error,
       request,

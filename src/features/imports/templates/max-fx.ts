@@ -24,7 +24,7 @@ export function inferMaxSectionCurrency(sectionLabel: string | undefined | null)
     return "GBP";
   }
 
-  return "ILS";
+  return /שקל|ש"ח|ש״ח|ILS/i.test(sectionLabel) ? "ILS" : "";
 }
 
 export function isMaxInstallmentType(value?: string | null) {

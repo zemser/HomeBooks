@@ -948,6 +948,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
 
             {createUsesForeignCurrency ? (
               <NormalizationModeSelect
+                policy={data?.fxPolicy}
                 value={createState.normalizationMode}
                 onChange={(normalizationMode) =>
                   setCreateState((current) => ({ ...current, normalizationMode }))
@@ -995,7 +996,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                           <td>{entry.title}</td>
                           <td>{entry.eventKind}</td>
                           <td>
-                            {formatMoneyDisplay(
+                            {entry.valuationState === "pending" ? `${formatMoneyDisplay(entry.originalAmount, entry.originalCurrency)} awaiting conversion` : formatMoneyDisplay(
                               entry.normalizedAmount,
                               entry.workspaceCurrency,
                             )}
@@ -1296,6 +1297,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                 </div>
                 {editUsesForeignCurrency ? (
                   <NormalizationModeSelect
+                policy={data?.fxPolicy}
                     value={editState.normalizationMode}
                     onChange={(normalizationMode) =>
                       setEditState((current) =>
@@ -1389,6 +1391,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
 
                 {versionUsesForeignCurrency ? (
                   <NormalizationModeSelect
+                policy={data?.fxPolicy}
                     value={versionState.normalizationMode}
                     onChange={(normalizationMode) =>
                       setVersionState((current) => ({ ...current, normalizationMode }))
@@ -1460,6 +1463,7 @@ export function RecurringPageClient({ initialData }: { initialData: RecurringPag
                         </label>
                         {versionEditUsesForeignCurrency ? (
                           <NormalizationModeSelect
+                policy={data?.fxPolicy}
                             value={versionEditState.normalizationMode}
                             onChange={(normalizationMode) =>
                               setVersionEditState((current) =>

@@ -55,6 +55,7 @@ export async function createFirstWorkspaceAction(formData: FormData) {
           id: workspaceId,
           name: workspaceName,
           baseCurrency,
+          fxPolicy: baseCurrency === "ILS" && process.env.FX_WORKER_DATABASE_URL ? "previous-month-v1" : "legacy",
         });
 
       await seedStarterWorkspaceCategories(workspaceId, tx);

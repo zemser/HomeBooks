@@ -106,9 +106,10 @@ export function isMissingMonthlyRateSource(value?: string | null) {
 }
 
 export function isReportableFxNormalizedSpend(input: {
+  valuationState?: string | null;
   normalizationRateSource?: string | null;
 }) {
-  return !isMissingMonthlyRateSource(input.normalizationRateSource);
+  return input.valuationState !== "pending" && !isMissingMonthlyRateSource(input.normalizationRateSource);
 }
 
 export function collectBackfillYearMonths(rows: Array<{ transactionDate: string }>) {

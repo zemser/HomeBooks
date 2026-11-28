@@ -5,13 +5,18 @@ import {
 
 type NormalizationModeSelectProps = {
   value: NormalizationMode;
+  policy?: import("@/db/schema").ValuationPolicy;
   onChange: (mode: NormalizationMode) => void;
 };
 
 export function NormalizationModeSelect({
   value,
+  policy,
   onChange,
 }: NormalizationModeSelectProps) {
+  if (policy === "previous-month-v1") {
+    return <p className="helper-text">Each payment uses the previous month’s average exchange rate.</p>;
+  }
   const selectedOption = NORMALIZATION_MODE_OPTIONS.find((option) => option.value === value);
 
   return (

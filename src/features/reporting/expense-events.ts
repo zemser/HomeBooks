@@ -1,3 +1,4 @@
+import { reportedTransactionAmount } from "./transaction-amount";
 import { and, asc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 
 import { getDb } from "@/db";
@@ -410,7 +411,7 @@ export async function syncTransactionExpenseEvents(
         id: transactions.id,
         description: transactions.description,
         merchantRaw: transactions.merchantRaw,
-        normalizedAmount: transactions.normalizedAmount,
+        normalizedAmount: reportedTransactionAmount(transactionClassifications.classificationType),
         workspaceCurrency: transactions.workspaceCurrency,
         classificationType: transactionClassifications.classificationType,
         splitForSettlement: transactionClassifications.splitForSettlement,
@@ -420,6 +421,7 @@ export async function syncTransactionExpenseEvents(
         category: transactionClassifications.category,
         categoryId: transactionClassifications.categoryId,
         transactionDate: transactions.transactionDate,
+        valuationState: transactions.valuationState,
         normalizationRateSource: transactions.normalizationRateSource,
       })
       .from(transactions)

@@ -1,9 +1,10 @@
+import { transactionIdentity } from "./identity";
 import { canAutoApplyMerchantRule, merchantRuleAttribution } from "@/features/expenses/merchant-rules";
 import { createHash, randomUUID } from "node:crypto";
 
 import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 
-import { getDb, withDbTransaction, type DbExecutor } from "@/db";
+import { getDb, withDbTransaction as runDbTransaction, type DbExecutor } from "@/db";
 import {
   classificationRules,
   financialAccounts,
@@ -21,12 +22,7 @@ import {
   compatibilityMemberOwnerId,
 } from "@/features/expenses/payer";
 import { getSupportedBankImportCatalog } from "@/features/imports/catalog";
-import { parseBankWorkbookToPreview, collectWorkbookRateMonths } from "@/features/imports/parse-bank-workbook";
-import {
-  createMonthlyAverageNormalizer,
-  createRateLookupFromMap,
-  loadSeededMonthlyRates,
-} from "@/features/currency/monthly-rates";
+import { parseBankWorkbookWithMonthlyRates } from "@/features/imports/parse-bank-workbook";
 import { backfillImportedFxForWorkspace } from "@/features/currency/backfill-imported-fx";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import type {
@@ -46,6 +42,7 @@ type CurrentImportContext = {
   userId: string;
   memberId: string;
   baseCurrency: string;
+  fxPolicy?: import("@/db/schema").ValuationPolicy;
 };
 
 type ActiveExactClassificationRule = {
@@ -105,6 +102,7 @@ export type SavedImportSummary = {
 export type SaveImportResult =
   | {
       status: "saved";
+      pendingFxCount: number;
       importId: string;
       transactionCount: number;
       duplicateTransactionCount: number;
@@ -159,38 +157,15 @@ export async function findExistingBankFileImport(
   };
 }
 
-function buildTransactionDedupeHash(input: {
-  workspaceId: string;
-  sourceId: string;
-  accountLabel: string;
-  transaction: ParsedBankTransaction;
-}) {
-  const { transaction } = input;
+export class ImportRowReviewError extends Error {}
 
-  return createHash("sha256")
-    .update(
-      JSON.stringify({
-        workspaceId: input.workspaceId,
-        sourceId: input.sourceId,
-        accountLabel: input.accountLabel,
-        transactionDate: transaction.transactionDate,
-        bookingDate: transaction.bookingDate ?? null,
-        merchantRaw: transaction.merchantRaw,
-        description: transaction.description,
-        originalAmount: transaction.originalAmount,
-        originalCurrency: transaction.originalCurrency,
-        settlementAmount: transaction.settlementAmount ?? null,
-        settlementCurrency: transaction.settlementCurrency ?? null,
-        statementSection: transaction.statementSection ?? null,
-        direction: transaction.direction,
-      }),
-    )
-    .digest("hex");
-}
+export type ImportRowDecisions = Record<string, "keep" | "skip">;
 
 export async function analyzeParsedBankImport(input: {
   context: CurrentImportContext;
   parsed: ParsedBankStatement;
+  fileChecksum?: string;
+  rowDecisions?: ImportRowDecisions;
   accountOwnerMemberId?: string | null;
   db?: DbExecutor;
 }) {
@@ -216,23 +191,25 @@ export async function analyzeParsedBankImport(input: {
     hasExistingAccount: Boolean(existingAccount),
     currentMemberId: input.context.memberId,
   });
-  const transactionDedupeHashes = input.parsed.transactions.map((transaction) =>
-    buildTransactionDedupeHash({
+  const identities = input.parsed.transactions.map((transaction) =>
+    transactionIdentity({
       workspaceId: input.context.workspaceId,
       sourceId: templateRecord.sourceId,
       accountLabel,
       transaction,
-    }),
+    }, input.parsed.templateId),
   );
+  const transactionDedupeHashes = [...new Set(identities.flatMap(({ hash, aliases }) => [hash, ...aliases]))];
   const [existingHashRows, activeRuleRows] = await Promise.all([
     transactionDedupeHashes.length > 0
       ? db
-          .select({ dedupeHash: transactions.dedupeHash })
+          .select({ id: transactions.id, dedupeHash: transactions.dedupeHash })
           .from(transactions)
           .where(
             and(
               eq(transactions.workspaceId, input.context.workspaceId),
-              inArray(transactions.dedupeHash, transactionDedupeHashes),
+              inArray(transactions.transactionDate, [...new Set(input.parsed.transactions.map(row => row.transactionDate))]),
+              sql`split_part(${transactions.dedupeHash}, '@', 1) = any(${sql.param(transactionDedupeHashes)}::text[])`,
             ),
           )
       : Promise.resolve([]),
@@ -257,7 +234,21 @@ export async function analyzeParsedBankImport(input: {
       )
       .orderBy(asc(classificationRules.priority), asc(classificationRules.createdAt)),
   ]);
-  const seenHashes = new Set(existingHashRows.map((row) => row.dedupeHash));
+  const existingIds = new Map<string, string[]>();
+  for (const { id, dedupeHash } of existingHashRows) {
+    const [baseHash] = dedupeHash.split("@");
+    const ids = existingIds.get(baseHash) ?? [];
+    ids.push(id);
+    existingIds.set(baseHash, ids);
+  }
+  const incomingCounts = new Map<string, number>();
+  const claims = new Map<string, number>();
+  const matchesByRow = identities.map(({ hash, aliases }) => {
+    incomingCounts.set(hash, (incomingCounts.get(hash) ?? 0) + 1);
+    const ids = [hash, ...aliases].flatMap(alias => existingIds.get(alias) ?? []).sort();
+    for (const id of ids) claims.set(id, (claims.get(id) ?? 0) + 1);
+    return ids;
+  });
   const activeRuleByMatch = new Map<string, ActiveExactClassificationRule>();
 
   for (const rule of activeRuleRows) {
@@ -267,28 +258,58 @@ export async function analyzeParsedBankImport(input: {
   }
 
   const transactionPlans = input.parsed.transactions.map((transaction, index) => {
-    const dedupeHash = transactionDedupeHashes[index];
-    const duplicate = seenHashes.has(dedupeHash);
-    if (!duplicate) seenHashes.add(dedupeHash);
+    const { hash } = identities[index];
+    const matches = matchesByRow[index];
+    const ambiguous = (incomingCounts.get(hash) ?? 0) > 1 || matches.length > 1 ||
+      matches.some(id => (claims.get(id) ?? 0) > 1);
+    const reviewKey = ambiguous ? createHash("sha256").update(JSON.stringify([
+      input.fileChecksum ?? null, hash, transaction.sourceSheetName, transaction.sourceRowIndex, matches,
+    ])).digest("hex") : null;
+    const decision = reviewKey ? input.rowDecisions?.[reviewKey] : undefined;
+    const duplicate = ambiguous ? decision === "skip" : matches.length === 1;
+    const dedupeHash = decision === "keep" ? `${hash}@${reviewKey}` : hash;
     const merchantValue = transaction.merchantRaw?.trim();
     const matchedRule = !duplicate && merchantValue
       ? activeRuleByMatch.get(normalizeMerchantRuleValue(merchantValue)) ?? null
       : null;
 
-    return { transaction, index, dedupeHash, duplicate, matchedRule };
+    return { transaction, index, dedupeHash, duplicate, ambiguous, matchedRule, decision, reviewKey, existingMatchCount: matches.length };
   });
+
+  const ambiguousRows = transactionPlans.flatMap(({ transaction, reviewKey, existingMatchCount, matchedRule }) =>
+    reviewKey ? [{
+      key: reviewKey,
+      sheet: transaction.sourceSheetName,
+      row: transaction.sourceRowIndex + 1,
+      merchant: transaction.merchantRaw,
+      date: transaction.transactionDate,
+      amount: transaction.settlementAmount ?? transaction.originalAmount,
+      currency: transaction.settlementCurrency ?? transaction.originalCurrency,
+      existingMatchCount,
+      autoWithOwner: Boolean(matchedRule && canAutoApplyMerchantRule(matchedRule, "confirmed-owner")),
+      autoWithoutOwner: Boolean(matchedRule && canAutoApplyMerchantRule(matchedRule, null)),
+    }] : []
+  );
+  if (input.rowDecisions !== undefined) {
+    const validKeys = new Set(ambiguousRows.map(row => row.key));
+    if (Object.keys(input.rowDecisions).some(key => !validKeys.has(key)) ||
+        ambiguousRows.some(row => !["keep", "skip"].includes(input.rowDecisions![row.key]))) {
+      throw new ImportRowReviewError("Matching purchases changed or still need a decision. Preview the statement again and review each matching row.");
+    }
+  }
 
   return {
     templateRecord,
     accountLabel,
     transactionPlans,
     transactionCount: transactionPlans.length,
-    newTransactionCount: transactionPlans.filter((item) => !item.duplicate).length,
+    ambiguousRows,
+    newTransactionCount: transactionPlans.filter((item) => !item.duplicate && (!item.ambiguous || item.decision === "keep")).length,
     duplicateTransactionCount: transactionPlans.filter((item) => item.duplicate).length,
     accountOwnerMemberId,
-    automaticRuleCount: transactionPlans.filter((item) => item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, accountOwnerMemberId)).length,
-    automaticRuleCountWithOwner: transactionPlans.filter((item) => item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, "confirmed-owner")).length,
-    automaticRuleCountWithoutOwner: transactionPlans.filter((item) => item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, null)).length,
+    automaticRuleCount: transactionPlans.filter((item) => (!item.ambiguous || item.decision === "keep") && item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, accountOwnerMemberId)).length,
+    automaticRuleCountWithOwner: transactionPlans.filter((item) => (!item.ambiguous || item.decision === "keep") && item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, "confirmed-owner")).length,
+    automaticRuleCountWithoutOwner: transactionPlans.filter((item) => (!item.ambiguous || item.decision === "keep") && item.matchedRule && canAutoApplyMerchantRule(item.matchedRule, null)).length,
   };
 }
 
@@ -356,6 +377,8 @@ async function findOrCreateFinancialAccount(input: {
   db: DbExecutor;
 }) {
   const displayName = input.accountLabel.trim() || "Imported account";
+  const lockKey = JSON.stringify([input.workspaceId, input.sourceId, displayName]);
+  await input.db.execute(sql`select pg_advisory_xact_lock(hashtext('bank_import_account'), hashtext(${lockKey}))`);
   const existing = await input.db.query.financialAccounts.findFirst({
     where: and(
       eq(financialAccounts.workspaceId, input.workspaceId),
@@ -542,9 +565,10 @@ export async function persistBankImport(input: {
   workbook: WorkbookData;
   originalFilename: string;
   fileBuffer: Buffer;
+  rowDecisions?: ImportRowDecisions;
   accountOwnerMemberId?: string | null;
   context: CurrentImportContext;
-}) {
+}, withDbTransaction: typeof runDbTransaction = runDbTransaction) {
   const checksum = hashBuffer(input.fileBuffer);
   const duplicateCheck = await withDbTransaction(input.context.userId, async (db) => {
     const existingImport = await db.query.imports.findFirst({
@@ -586,30 +610,27 @@ export async function persistBankImport(input: {
   });
 
   if (duplicateCheck?.duplicate) {
-    const fxRepair = await withDbTransaction(input.context.userId, (db) =>
-      backfillImportedFxForWorkspace(input.context, db),
-    );
+    const fxRepair = input.context.fxPolicy === "previous-month-v1" ? { updatedCount: 0 }
+      : await withDbTransaction(input.context.userId, db => backfillImportedFxForWorkspace(input.context, db));
     return { ...duplicateCheck.duplicate, updatedCount: fxRepair.updatedCount };
   }
   const retryImport = duplicateCheck?.retryImport ?? null;
 
-  const yearMonths = collectWorkbookRateMonths(input.workbook);
-  const { fxRepair, rateMap } = await withDbTransaction(input.context.userId, async (db) => {
-    const fxRepair = await backfillImportedFxForWorkspace(input.context, db);
-    const rateMap = await loadSeededMonthlyRates(db, yearMonths);
-    return { fxRepair, rateMap };
+  const { fxRepair, initialPreview } = await withDbTransaction(input.context.userId, async db => {
+    const fxRepair = input.context.fxPolicy === "previous-month-v1" ? { updatedCount: 0 }
+      : await backfillImportedFxForWorkspace(input.context, db);
+    const preview = await parseBankWorkbookWithMonthlyRates({
+      workbook: input.workbook, workspaceCurrency: input.context.baseCurrency, policy: input.context.fxPolicy, db,
+    });
+    return { fxRepair, initialPreview: preview };
   });
-  const rates = createRateLookupFromMap(rateMap);
-  const preview = parseBankWorkbookToPreview({
-    workbook: input.workbook,
-    workspaceCurrency: input.context.baseCurrency,
-    rates,
-    currencyNormalizer: createMonthlyAverageNormalizer(input.context.baseCurrency, rates),
-  });
-  const importPlan = await withDbTransaction(input.context.userId, (db) =>
+  let preview = initialPreview;
+  let importPlan = await withDbTransaction(input.context.userId, (db) =>
     analyzeParsedBankImport({
       context: input.context,
       parsed: preview.parsed,
+      fileChecksum: checksum,
+      rowDecisions: input.rowDecisions ?? {},
       accountOwnerMemberId: input.accountOwnerMemberId ?? null,
       db,
     }),
@@ -698,6 +719,19 @@ export async function persistBankImport(input: {
       await tx.update(financialAccounts)
         .set({ ownerMemberId: account.ownerMemberId, updatedAt: new Date() })
         .where(and(eq(financialAccounts.id, account.id), eq(financialAccounts.workspaceId, input.context.workspaceId)));
+      // The account update above serializes overlapping saves. Re-evaluate identity
+      // under the lock so two concurrent exports cannot create the same charge.
+      preview = await parseBankWorkbookWithMonthlyRates({
+        workbook: input.workbook, workspaceCurrency: input.context.baseCurrency, policy: input.context.fxPolicy, db: tx,
+      });
+      importPlan = await analyzeParsedBankImport({
+        context: input.context, parsed: preview.parsed, accountOwnerMemberId: account.ownerMemberId, db: tx,
+        fileChecksum: checksum, rowDecisions: input.rowDecisions ?? {},
+      });
+      const reviews = new Map(importPlan.transactionPlans.filter(item => item.decision).map(item => [
+        JSON.stringify([item.transaction.sourceSheetName, item.transaction.sourceRowIndex]),
+        { key: item.reviewKey, action: item.decision },
+      ]));
       if (stagingRows.length > 0) {
         await tx.insert(importRows).values(
           stagingRows.map((row) => ({
@@ -705,7 +739,7 @@ export async function persistBankImport(input: {
             rowIndex: row.rowIndex,
             sheetName: row.sheetName,
             sectionName: row.sectionName,
-            rawDataJson: row.rawDataJson,
+            rawDataJson: { ...row.rawDataJson, duplicateReview: reviews.get(JSON.stringify([row.sheetName, row.rowIndex])) },
             parseStatus: row.parseStatus,
             parseError: row.parseError,
           })),
@@ -741,6 +775,10 @@ export async function persistBankImport(input: {
                 normalizedAmount: normalizedPreview.normalizedAmount.toFixed(6),
                 normalizationRate: normalizedPreview.normalizationRate.toFixed(8),
                 normalizationRateSource: normalizedPreview.normalizationRateSource,
+                valuationState: normalizedPreview.valuationState,
+                valuationPolicy: normalizedPreview.valuationPolicy,
+                referenceMonth: normalizedPreview.referenceMonth,
+                exchangeRateId: normalizedPreview.exchangeRateId,
                 direction: transaction.direction,
                 externalReference: null,
                 dedupeHash,
@@ -824,6 +862,7 @@ export async function persistBankImport(input: {
 
     return {
       status: "saved" as const,
+      pendingFxCount: preview.previewTransactions.filter(row => row.valuationState === "pending").length,
       importId,
       transactionCount: importPlan.newTransactionCount,
       duplicateTransactionCount: importPlan.duplicateTransactionCount,

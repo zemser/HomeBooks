@@ -1,8 +1,9 @@
+import { reportedTransactionAmount } from "./transaction-amount";
 import { getCategoryLabel, reportCategoryKey, subtractMoney, type ReportingViewMode } from "./report-values";
 export { REPORTING_VIEW_MODES, type ReportingViewMode } from "./report-values";
 import { and, eq, gte, lt, ne, sql } from "drizzle-orm";
 import Big from "big.js";
-import { pendingFxByMonth, type PendingFxAmount } from "./pending-fx";
+import { combinePendingFx, pendingFxByMonth, type PendingFxAmount } from "./pending-fx";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -19,6 +20,7 @@ import {
   type MemberAttribution,
 } from "@/features/expenses/payer";
 import {
+  type ReportingWindow,
   buildRollingTwelveWindow,
   buildYearToDateWindow,
 } from "@/features/reporting/periods";
@@ -207,6 +209,7 @@ export type YearReportSource = {
 };
 
 export type ReportingMonthBucket = {
+  pendingFx?: PendingFxAmount[];
   month: string;
   incomeTotal: number;
   expenseTotal: number;
@@ -217,6 +220,7 @@ export type ReportingMonthBucket = {
 };
 
 export type ReportingPeriodSummary = {
+  pendingFx?: PendingFxAmount[];
   selectedMonth: string;
   reportingMode: ReportingViewMode;
   periodStartMonth: string;
@@ -384,11 +388,11 @@ export async function getMonthCompleteness(
       .select({
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
         reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
-        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit' and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%'), 0)::text`,
+        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit' and (${transactions.valuationState} <> 'pending' and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%')), 0)::text`,
         unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
-        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%')::int`,
-        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore') or (${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%'))::int`,
-        placeholderFxTransactionCount: sql<number>`count(*) filter (where coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%' or coalesce(${transactions.normalizationRateSource}, '') like '%placeholder%')::int`,
+        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and (${transactions.valuationState} <> 'pending' and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%'))::int`,
+        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore') or (${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and (${transactions.valuationState} = 'pending' or coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%')))::int`,
+        placeholderFxTransactionCount: sql<number>`count(*) filter (where (${transactions.valuationState} = 'pending' or coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%') or coalesce(${transactions.normalizationRateSource}, '') like '%placeholder%')::int`,
       })
       .from(transactions)
       .leftJoin(
@@ -470,11 +474,11 @@ async function getMonthCompletenessForMonths(
         month: transactionMonth,
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
         reviewedTransactionCount: sql<number>`count(${transactionClassifications.id})::int`,
-        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit' and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%'), 0)::text`,
+        pendingOutflowTotal: sql<string>`coalesce(sum(abs(${transactions.normalizedAmount})) filter (where ${transactionClassifications.id} is null and ${transactions.direction} = 'debit' and (${transactions.valuationState} <> 'pending' and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%')), 0)::text`,
         unresolvedAttributionCount: sql<number>`count(*) filter (where (${transactionClassifications.classificationType} in ('personal', 'shared') and ${transactionClassifications.paidByMemberId} is null) or (${transactionClassifications.classificationType} = 'income' and ${transactionClassifications.receivedByMemberId} is null))::int`,
-        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%')::int`,
-        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore') or (${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%'))::int`,
-        placeholderFxTransactionCount: sql<number>`count(*) filter (where coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%' or coalesce(${transactions.normalizationRateSource}, '') like '%placeholder%')::int`,
+        reportableTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and (${transactions.valuationState} <> 'pending' and coalesce(${transactions.normalizationRateSource}, '') not like '%missing-monthly-rate%'))::int`,
+        excludedTransactionCount: sql<number>`count(*) filter (where ${transactionClassifications.classificationType} in ('transfer', 'ignore') or (${transactionClassifications.classificationType} in ('personal', 'shared', 'income') and (${transactions.valuationState} = 'pending' or coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%')))::int`,
+        placeholderFxTransactionCount: sql<number>`count(*) filter (where (${transactions.valuationState} = 'pending' or coalesce(${transactions.normalizationRateSource}, '') like '%missing-monthly-rate%') or coalesce(${transactions.normalizationRateSource}, '') like '%placeholder%')::int`,
       })
       .from(transactions)
       .leftJoin(
@@ -1013,7 +1017,8 @@ async function listPaymentDateReportRecordsForRange(
         originalCurrency: transactions.originalCurrency,
         settlementAmount: transactions.settlementAmount,
         settlementCurrency: transactions.settlementCurrency,
-        normalizedAmount: transactions.normalizedAmount,
+        normalizedAmount: reportedTransactionAmount(transactionClassifications.classificationType),
+        valuationState: transactions.valuationState,
         referenceMonth: transactions.referenceMonth,
         normalizationRateSource: transactions.normalizationRateSource,
         classificationType: transactionClassifications.classificationType,
@@ -1042,6 +1047,10 @@ async function listPaymentDateReportRecordsForRange(
         id: manualEntries.id,
         sourceType: manualEntries.sourceType,
         title: manualEntries.title,
+        referenceMonth: manualEntries.referenceMonth,
+        originalAmount: manualEntries.originalAmount,
+        originalCurrency: manualEntries.originalCurrency,
+        normalizationRateSource: manualEntries.normalizationRateSource,
         eventDate: manualEntries.eventDate,
         normalizedAmount: manualEntries.normalizedAmount,
         eventKind: manualEntries.eventKind,
@@ -1130,7 +1139,11 @@ async function listPaymentDateReportRecordsForRange(
       personalOwnerMemberId: attribution.personalOwnerMemberId,
       paidByMemberId: attribution.paidByMemberId,
       receivedByMemberId: attribution.receivedByMemberId,
-      fxDetails: null,
+      fxDetails: entry.referenceMonth ? {
+        originalAmount: toNumber(entry.originalAmount), originalCurrency: entry.originalCurrency,
+        settlementAmount: toNumber(entry.originalAmount), settlementCurrency: entry.originalCurrency,
+        referenceMonth: entry.referenceMonth, normalizationRateSource: entry.normalizationRateSource,
+      } : null,
     };
   });
 
@@ -1158,10 +1171,14 @@ async function listAllocatedPeriodReportRecordsForRange(
       sourceType: expenseEvents.sourceType,
       reportMonth: expenseAllocations.reportMonth,
       transactionDate: transactions.transactionDate,
-      transactionAmount: transactions.normalizedAmount,
+      transactionAmount: reportedTransactionAmount(expenseEvents.classificationType),
       manualEventDate: manualEntries.eventDate,
       manualAmount: manualEntries.normalizedAmount,
       manualValuationState: manualEntries.valuationState,
+      manualReferenceMonth: manualEntries.referenceMonth,
+      manualOriginalAmount: manualEntries.originalAmount,
+      manualCurrency: manualEntries.originalCurrency,
+      manualRateSource: manualEntries.normalizationRateSource,
       allocatedAmount: expenseAllocations.allocatedAmount,
       eventKind: expenseEvents.eventKind,
       title: expenseEvents.title,
@@ -1175,8 +1192,9 @@ async function listAllocatedPeriodReportRecordsForRange(
       originalCurrency: transactions.originalCurrency,
       settlementAmount: transactions.settlementAmount,
       settlementCurrency: transactions.settlementCurrency,
+      valuationState: transactions.valuationState,
       referenceMonth: transactions.referenceMonth,
-        normalizationRateSource: transactions.normalizationRateSource,
+      normalizationRateSource: transactions.normalizationRateSource,
     })
     .from(expenseAllocations)
     .innerJoin(expenseEvents, eq(expenseEvents.id, expenseAllocations.expenseEventId))
@@ -1244,7 +1262,11 @@ async function listAllocatedPeriodReportRecordsForRange(
               referenceMonth: row.referenceMonth,
               normalizationRateSource: row.normalizationRateSource,
             }
-          : null,
+          : row.manualReferenceMonth ? {
+              originalAmount: toNumber(row.manualOriginalAmount), originalCurrency: row.manualCurrency,
+              settlementAmount: toNumber(row.manualOriginalAmount), settlementCurrency: row.manualCurrency,
+              referenceMonth: row.manualReferenceMonth, normalizationRateSource: row.manualRateSource,
+            } : null,
     };
     })
     .sort((left, right) => {
@@ -1399,29 +1421,35 @@ export async function getYearReport(
   return buildYearReportData(await loadYearReportSource(context, input, db));
 }
 
+async function getPeriodReport(
+  context: CurrentWorkspaceContext,
+  input: { throughMonth?: string; mode?: ReportingViewMode | string } | undefined,
+  db: DbExecutor,
+  makeWindow: (referenceMonth: Date) => ReportingWindow,
+) {
+  const selectedMonth = normalizeMonthInput(input?.throughMonth);
+  const reportingMode = normalizeReportingModeInput(input?.mode);
+  const window = makeWindow(new Date(`${selectedMonth}T00:00:00.000Z`));
+  const [records, pending] = await Promise.all([
+    listReportRecordsForRange(context, window.periodStart, window.periodEnd, reportingMode, db),
+    pendingFxByMonth(db, context.workspaceId, window.periodStart, buildMonthWindow(window.periodEnd).nextMonthStart),
+  ]);
+  const months = buildMonthBuckets(records, window.includedMonths).map(month => ({
+    ...month, pendingFx: pending.get(month.month) ?? [],
+  }));
+  return {
+    summary: {...summarizeBuckets(selectedMonth, reportingMode, context.baseCurrency, months),
+      pendingFx: combinePendingFx(pending.values())},
+    months,
+  };
+}
+
 export async function getYearToDateReport(
   context: CurrentWorkspaceContext,
   input?: { throughMonth?: string; mode?: ReportingViewMode | string },
   db: DbExecutor = getDb(),
 ): Promise<YearToDateReportData> {
-  const selectedMonth = normalizeMonthInput(input?.throughMonth);
-  const reportingMode = normalizeReportingModeInput(input?.mode);
-  const selectedMonthDate = new Date(`${selectedMonth}T00:00:00.000Z`);
-  const window = buildYearToDateWindow(selectedMonthDate);
-
-  const records = await listReportRecordsForRange(
-    context,
-    window.periodStart,
-    window.periodEnd,
-    reportingMode,
-    db,
-  );
-  const months = buildMonthBuckets(records, window.includedMonths);
-
-  return {
-    summary: summarizeBuckets(selectedMonth, reportingMode, context.baseCurrency, months),
-    months,
-  };
+  return getPeriodReport(context, input, db, buildYearToDateWindow);
 }
 
 export async function getRollingTwelveReport(
@@ -1429,24 +1457,7 @@ export async function getRollingTwelveReport(
   input?: { throughMonth?: string; mode?: ReportingViewMode | string },
   db: DbExecutor = getDb(),
 ): Promise<RollingTwelveReportData> {
-  const selectedMonth = normalizeMonthInput(input?.throughMonth);
-  const reportingMode = normalizeReportingModeInput(input?.mode);
-  const selectedMonthDate = new Date(`${selectedMonth}T00:00:00.000Z`);
-  const window = buildRollingTwelveWindow(selectedMonthDate);
-
-  const records = await listReportRecordsForRange(
-    context,
-    window.periodStart,
-    window.periodEnd,
-    reportingMode,
-    db,
-  );
-  const months = buildMonthBuckets(records, window.includedMonths);
-
-  return {
-    summary: summarizeBuckets(selectedMonth, reportingMode, context.baseCurrency, months),
-    months,
-  };
+  return getPeriodReport(context, input, db, buildRollingTwelveWindow);
 }
 
 export async function getDashboardSnapshot(

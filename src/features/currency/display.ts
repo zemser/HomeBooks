@@ -91,6 +91,12 @@ export function getCurrencyNormalizationDisplayState(
     };
   }
 
+  if (source === "linked-purchase-refund") {
+    const description = "This refund uses the workspace value of the linked purchase.";
+    return { isForeignCurrency, usesPlaceholderRate: false, label: "Linked refund", tone: "neutral",
+      shortDescription: description, fullDescription: description };
+  }
+
   if (usesPlaceholderRate) {
     return {
       isForeignCurrency,

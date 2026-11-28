@@ -1,3 +1,5 @@
+import Big from "big.js";
+
 export type NormalizationInput = {
   amount: number;
   fromCurrency: string;
@@ -35,12 +37,14 @@ export function normalizeAmountToWorkspaceCurrency(
     throw new Error("Monthly average rate must be positive");
   }
 
+  // The stored rate and the rate used to value the charge must agree.
+  const appliedRate = new Big(monthlyAverageRate).round(8, Big.roundHalfUp);
   return {
     originalAmount: amount,
     originalCurrency: fromCurrency,
-    normalizedAmount: Number((amount * monthlyAverageRate).toFixed(2)),
+    normalizedAmount: new Big(amount).times(appliedRate).round(2, Big.roundHalfUp).toNumber(),
     workspaceCurrency: toCurrency,
-    normalizationRate: monthlyAverageRate,
+    normalizationRate: appliedRate.toNumber(),
     normalizationRateSource: rateSource,
   };
 }

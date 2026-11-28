@@ -18,6 +18,8 @@ type PreviewTransaction = {
   settlementAmount?: number;
   settlementCurrency?: string;
   normalizedAmount: number;
+  valuationState?: string;
+  referenceMonth?: string | null;
   workspaceCurrency: string;
   statementSection?: string;
   normalizationRateSource: string;
@@ -42,6 +44,8 @@ type PreviewResponse = {
   automaticRuleCount: number;
   previewTransactions: PreviewTransaction[];
   warnings: string[];
+  ambiguousRows?: { key: string; sheet: string; row: number; merchant: string; date: string; amount: number; currency: string | null; existingMatchCount: number; autoWithOwner: boolean; autoWithoutOwner: boolean }[];
+  pendingFxCount?: number;
   existingImport?: {
     id: string;
     originalFilename: string;
@@ -86,6 +90,7 @@ type SaveOutcome = {
   duplicateTransactionCount: number;
   automaticRuleCount: number;
   updatedCount: number;
+  newlyValuedCount: number;
 };
 
 type PendingSave = {
@@ -193,7 +198,7 @@ function PreviewRows({ rows }: { rows: PreviewTransaction[] }) {
                   )}
                 </td>
                 <td>
-                  {transaction.settlementAmount
+                  {transaction.settlementAmount !== undefined
                     ? formatMoneyDisplay(
                         transaction.settlementAmount,
                         transaction.settlementCurrency ?? transaction.originalCurrency,
@@ -204,7 +209,7 @@ function PreviewRows({ rows }: { rows: PreviewTransaction[] }) {
                 <td>
                   <div className="stack compact">
                     <span>
-                      {formatMoneyDisplay(
+                      {transaction.valuationState === "pending" ? "Awaiting valuation" : formatMoneyDisplay(
                         transaction.normalizedAmount,
                         transaction.workspaceCurrency,
                       )}
@@ -247,6 +252,7 @@ export function ImportPreviewClient({
   const [result, setResult] = useState<PreviewResponse | null>(null);
   const [accountOwner, setAccountOwner] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [rowDecisions, setRowDecisions] = useState<Record<string, "keep" | "skip">>({});
   const [pendingSave, setPendingSave] = useState<PendingSave | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [saveOutcome, setSaveOutcome] = useState<SaveOutcome | null>(null);
@@ -309,6 +315,7 @@ export function ImportPreviewClient({
     setError(null);
     setResult(null);
     setPendingSave(null);
+    setRowDecisions({});
     setSaveState("idle");
     setSaveOutcome(null);
 
@@ -353,6 +360,7 @@ export function ImportPreviewClient({
 
     const formData = new FormData();
     formData.append("file", pendingSave.file);
+    formData.append("rowDecisions", JSON.stringify(rowDecisions));
     formData.append("workspaceCurrency", pendingSave.workspaceCurrency);
     formData.append("importType", "bank");
     formData.append("accountOwnerMemberId", accountOwner);
@@ -379,6 +387,7 @@ export function ImportPreviewClient({
         duplicateTransactionCount?: number;
         automaticRuleCount?: number;
         updatedCount?: number;
+        pendingFxCount?: number;
         message?: string;
         error?: string;
         import?: SavedImportSummary | null;
@@ -390,6 +399,7 @@ export function ImportPreviewClient({
         duplicateTransactionCount: data.duplicateTransactionCount ?? 0,
         automaticRuleCount: data.automaticRuleCount ?? 0,
         updatedCount: data.updatedCount ?? 0,
+        newlyValuedCount: Math.max(0, (pendingSave.preview.pendingFxCount ?? 0) - (data.pendingFxCount ?? pendingSave.preview.pendingFxCount ?? 0)),
       });
 
       if (savedImport) {
@@ -409,6 +419,12 @@ export function ImportPreviewClient({
           return;
         }
 
+        if (data.status === "review_required") {
+          await handleSubmit(formData);
+          setAccountOwner(accountOwner);
+          setError("The saved purchases changed. Review the refreshed matches before saving.");
+          return;
+        }
         if (response.status === 409 || data.duplicate || data.status === "duplicate") {
           setSaveState("duplicate");
           return;
@@ -436,6 +452,7 @@ export function ImportPreviewClient({
     setError(null);
     setResult(null);
     setPendingSave(null);
+    setRowDecisions({});
     setSaveState("idle");
     setSaveOutcome(null);
     setSelectedFileName(null);
@@ -448,6 +465,14 @@ export function ImportPreviewClient({
   );
   const highlightedImport =
     savedImportList.find((item) => item.id === lastSavedImportId) ?? savedImportList[0] ?? null;
+  const matchingRows = result?.ambiguousRows ?? [];
+  const hasImportableRows = Boolean(result?.newTransactionCount || matchingRows.length);
+  const keepRows = matchingRows.filter(row => rowDecisions[row.key] === "keep");
+  const newCount = (result?.newTransactionCount ?? 0) + keepRows.length;
+  const skipCount = (result?.duplicateTransactionCount ?? 0) + matchingRows.filter(row => rowDecisions[row.key] === "skip").length;
+  const handledCount = accountOwner && accountOwner !== "joint"
+    ? (result?.automaticRuleCountWithOwner ?? 0) + keepRows.filter(row => row.autoWithOwner).length
+    : (result?.automaticRuleCountWithoutOwner ?? 0) + keepRows.filter(row => row.autoWithoutOwner).length;
   const hasSavedOutcome = saveState === "saved" || saveState === "duplicate";
   const savedTransactionCount = saveOutcome?.transactionCount ?? highlightedImport?.transactionCount ?? 0;
   const savedReviewPendingCount = highlightedImport?.reviewPendingCount ?? 0;
@@ -460,6 +485,8 @@ export function ImportPreviewClient({
   const savedOutcomeNextStep =
     saveState === "duplicate"
       ? "Nothing new was added."
+      : saveOutcome?.newlyValuedCount
+      ? `Monthly rates arrived for ${saveOutcome.newlyValuedCount} charges after preview. Saved totals include their workspace values.`
       : savedUpdatedCount > 0
       ? `Updated ${savedUpdatedCount} older foreign charges with monthly rates.`
       : savedReviewPendingCount > 0
@@ -552,7 +579,7 @@ export function ImportPreviewClient({
               <span aria-live="polite">
                 {isPending
                   ? "Reading the file…"
-                  : result?.existingImport || result?.newTransactionCount === 0
+                  : result?.existingImport || (result && !hasImportableRows)
                     ? "This file is already imported."
                     : selectedFileName
                       ? "Review the rows below before saving."
@@ -588,7 +615,7 @@ export function ImportPreviewClient({
               </div>
             </div>
 
-            {!hasSavedOutcome && !result.existingImport && result.newTransactionCount > 0 ? (
+            {!hasSavedOutcome && !result.existingImport && hasImportableRows ? (
               <label className="field">
                 <span>This account belongs to</span>
                 <select className="input" aria-label="This account belongs to" value={accountOwner} onChange={(event) => setAccountOwner(event.target.value)} disabled={saveState === "saving"}>
@@ -600,7 +627,7 @@ export function ImportPreviewClient({
               </label>
             ) : null}
 
-            {result.existingImport || result.newTransactionCount === 0 ? (
+            {result.existingImport || !hasImportableRows ? (
               <section className="import-check" aria-labelledby="import-blocked-title">
                 <div>
                   <span className="eyebrow">Already imported</span>
@@ -638,19 +665,19 @@ export function ImportPreviewClient({
               </div>
               <div className="import-check-grid">
                 <div>
-                  <strong>{result.newTransactionCount}</strong>
+                  <strong>{newCount}</strong>
                   <span>New transactions</span>
                 </div>
                 <div>
-                  <strong>{result.duplicateTransactionCount}</strong>
-                  <span>Already imported · skipped</span>
+                  <strong>{skipCount}</strong>
+                  <span>Rows to skip</span>
                 </div>
                 <div>
-                  <strong>{accountOwner && accountOwner !== "joint" ? result.automaticRuleCountWithOwner : result.automaticRuleCountWithoutOwner}</strong>
+                  <strong>{handledCount}</strong>
                   <span>Handled by saved rules</span>
                 </div>
                 <div>
-                  <strong>{Math.max(result.newTransactionCount - (accountOwner && accountOwner !== "joint" ? result.automaticRuleCountWithOwner : result.automaticRuleCountWithoutOwner), 0)}</strong>
+                  <strong>{Math.max(newCount - handledCount, 0)}</strong>
                   <span>Will need review</span>
                 </div>
               </div>
@@ -660,7 +687,26 @@ export function ImportPreviewClient({
             </section>
             )}
 
-            {result.warnings.length > 0 && !result.existingImport && result.newTransactionCount > 0 ? (
+            {Boolean(result.ambiguousRows?.length) && !result.existingImport && !hasSavedOutcome && (
+              <fieldset className="stack compact">
+                <legend>Review matching purchases</legend>
+                {result.ambiguousRows?.map(row => (
+                  <label key={row.key} className="field">
+                    <span>{row.sheet}, row {row.row} · {row.date} · {row.merchant} · {formatMoneyDisplay(row.amount, row.currency)}</span>
+                    <span className="helper-text">{row.existingMatchCount} matching saved purchases</span>
+                    <select className="input" value={rowDecisions[row.key] ?? ""} onChange={event => {
+                      const action = event.target.value;
+                      if (action === "keep" || action === "skip") setRowDecisions(current => ({...current, [row.key]: action}));
+                    }}>
+                      <option value="" disabled>Choose an action</option>
+                      <option value="keep">Import as a separate purchase</option>
+                      <option value="skip">Skip this row</option>
+                    </select>
+                  </label>
+                ))}
+              </fieldset>
+            )}
+            {result.warnings.length > 0 && !result.existingImport ? (
               <div className="stack">
                 {result.warnings.map((warning) => (
                   <p className="status warning" key={warning}>
@@ -670,7 +716,7 @@ export function ImportPreviewClient({
               </div>
             ) : null}
 
-            {result.existingImport || result.newTransactionCount === 0 ? null : (
+            {result.existingImport || !hasImportableRows ? null : (
             <div className="stack">
               {hasSavedOutcome ? (
                 <div className="home-focus-card">
@@ -717,14 +763,14 @@ export function ImportPreviewClient({
                   className="button"
                   type="button"
                   onClick={() => void handleSaveImport()}
-                  disabled={saveState === "saving" || !accountOwner}
+                  disabled={saveState === "saving" || !accountOwner || Boolean(result.ambiguousRows?.some(row => !rowDecisions[row.key]))}
                   aria-busy={saveState === "saving"}
                 >
                   {saveState === "saving"
                     ? "Importing…"
                     : !accountOwner
                       ? "Choose who this account belongs to"
-                      : `Import ${result.newTransactionCount} new transaction${result.newTransactionCount === 1 ? "" : "s"}`}
+                      : `Import ${newCount} new transaction${newCount === 1 ? "" : "s"}`}
                 </button>
               )}
             </div>

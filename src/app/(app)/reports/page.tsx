@@ -81,6 +81,7 @@ function PeriodSummarySection({
       <div>
         <h2>{title}</h2>
         <p className="muted-text">{description}</p>
+        {summary.pendingFx?.length ? <p>{describePendingFx(summary.pendingFx)}</p> : null}
       </div>
 
       <div className="summary-strip">

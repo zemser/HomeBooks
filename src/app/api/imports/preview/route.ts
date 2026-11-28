@@ -24,7 +24,7 @@ function buildPreviewWarnings(input: {
     )
   ) {
     return [
-      "Some rows are flagged Placeholder FX because a monthly average rate is missing. Those amounts are excluded from ILS totals until a rate exists.",
+      "Some charges are awaiting valuation. Workspace totals include only charges with a known workspace value.",
     ];
   }
 
@@ -69,13 +69,14 @@ export async function POST(request: Request) {
     const { importPlan, members, result, existingImport } = await withCurrentWorkspaceDb(async (context, db) => {
       const result = await parseBankWorkbookWithMonthlyRates({
         workbook,
-        workspaceCurrency: parsedInput.data.workspaceCurrency.toUpperCase(),
+        workspaceCurrency: context.baseCurrency,
+        policy: context.fxPolicy,
         db,
       });
 
       return {
         result,
-        importPlan: await analyzeParsedBankImport({ context, parsed: result.parsed, db }),
+        importPlan: await analyzeParsedBankImport({ context, parsed: result.parsed, fileChecksum: checksum, db }),
         members: await listWorkspaceMembersForSettings(context, db),
         existingImport: await findExistingBankFileImport(context.workspaceId, checksum, db),
       };
@@ -95,9 +96,9 @@ export async function POST(request: Request) {
       existingImport,
       members: members.filter((member) => member.isActive).map((member) => ({ id: member.id, displayName: member.displayName })),
       previewTransactions: result.previewTransactions.slice(0, 50),
-      warnings: buildPreviewWarnings({
-        previewTransactions: result.previewTransactions,
-      }),
+      ambiguousRows: importPlan.ambiguousRows,
+      pendingFxCount: result.previewTransactions.filter(row => row.valuationState === "pending").length,
+      warnings: buildPreviewWarnings({ previewTransactions: result.previewTransactions }),
     });
   } catch (error) {
     return errorResponse({
