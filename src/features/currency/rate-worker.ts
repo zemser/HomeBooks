@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import type { DbExecutor } from "@/db";
+import { withDbTransaction, type DbExecutor } from "@/db";
 import * as schema from "@/db/schema";
 import { fetchBoiMonthlyRates } from "./boi-provider";
 import {
@@ -12,16 +12,22 @@ import {
 } from "./rate-keys";
 import { SEED_BOI_MONTHLY_AVERAGE_SOURCE } from "./seed-boi-monthly-averages";
 
+import {
+  drainWorkspaceRepairPage,
+  enqueueWorkspaceRepairs,
+  type RepairPage,
+} from "./workspace-repair-queue";
+
 type Claim = FxRateKey & {
   id: string;
   phase: "fetch" | "refresh" | "repair";
   attempts: number;
   cached: boolean;
 };
-type Repair = (db: DbExecutor, key: FxRateKey) => Promise<unknown>;
+
 type WorkerOptions = {
   fetchRates: typeof fetchBoiMonthlyRates;
-  repair: Repair;
+  repairPage: RepairPage;
 };
 
 function groupAdjacent(claims: Claim[]) {
@@ -79,15 +85,10 @@ export async function drainFxRateRequests(
       available_at=now()+ interval '1 minute' * power(2,least(attempts,10)),last_error=${message}, failed_at=now()
       where id=${id} and lease=${lease}`);
   }
-  let repaired = 0;
-  async function repair(row: Claim) {
+  async function queueRepairs(row: Claim) {
     try {
-      await options.repair(db, {
-        baseCurrency: row.baseCurrency,
-        quoteCurrency: row.quoteCurrency,
-        yearMonth: row.yearMonth,
-      });
       await db.transaction(async (tx) => {
+        await enqueueWorkspaceRepairs(tx, row);
         // Lock before clearing: a competing enqueue either marks this claim or inserts the next one.
         const deleted =
           await tx.execute(sql`delete from public.fx_rate_requests where id=${row.id} and lease=${lease}
@@ -97,7 +98,6 @@ export async function drainFxRateRequests(
             attempts=0,last_error=null,failed_at=null,available_at=now() where id=${row.id} and lease=${lease}`);
         }
       });
-      repaired++;
     } catch (error) {
       await retry(row.id, error);
     }
@@ -141,7 +141,7 @@ export async function drainFxRateRequests(
             .onConflictDoNothing();
         }
       });
-      for (const row of group) await repair(row);
+      for (const row of group) await queueRepairs(row);
     } catch (error) {
       for (const row of group) await retry(row.id, error);
     }
@@ -154,14 +154,24 @@ export async function drainFxRateRequests(
         sql`update public.fx_rate_requests set phase='repair', attempts=0 where id=${row.id} and lease=${lease}`,
       );
     }
-    await repair(row);
+    await queueRepairs(row);
   }
+  const page = await drainWorkspaceRepairPage(db, options.repairPage);
   const [status] = (
-    await db.execute<{pending: number; oldestMonth: string | null; lastFailure: string | null}>(sql`select count(*)::int as pending, min(year_month)::text as "oldestMonth",
+    await db.execute<{
+      pending: number;
+      oldestMonth: string | null;
+      lastFailure: string | null;
+    }>(sql`select count(*)::int as pending, min(year_month)::text as "oldestMonth",
     (array_agg(last_error order by failed_at desc) filter (where last_error is not null))[1] as "lastFailure"
-    from public.fx_rate_requests`)
+    from (select year_month,last_error,failed_at from public.fx_rate_requests union all
+      select year_month,last_error,failed_at from app.fx_workspace_repairs) pending_work`)
   ).rows;
-  return { claimed: rows.length, repaired, ...status };
+  return {
+    claimed: rows.length + page.claimed,
+    repaired: page.completed,
+    ...status,
+  };
 }
 
 let workerPool: Pool | undefined;
@@ -186,10 +196,15 @@ export async function runFxWorker(refresh?: FxRateKey) {
       values (${key.baseCurrency},${key.quoteCurrency},${key.yearMonth},'refresh')
       on conflict (base_currency,quote_currency,year_month) do nothing`);
   }
-  const { reconcilePendingFxForRate } = await import("./backfill-imported-fx");
-  const options = {
+  const { reconcilePendingFxForWorkspace } =
+    await import("./backfill-imported-fx");
+  const options: WorkerOptions = {
     fetchRates: fetchBoiMonthlyRates,
-    repair: reconcilePendingFxForRate,
+    repairPage: (context, key, cursor) =>
+      withDbTransaction(context.userId, async (tx) => {
+        await tx.execute(sql`set local lock_timeout='2s'`);
+        return reconcilePendingFxForWorkspace(context, tx, key, cursor);
+      }),
   };
   const deadline = Date.now() + 60_000;
   let claimed = 0;
@@ -199,6 +214,6 @@ export async function runFxWorker(refresh?: FxRateKey) {
     status = await drainFxRateRequests(db, options);
     claimed += status.claimed;
     repaired += status.repaired;
-  } while (status.claimed === 8 && Date.now() < deadline);
+  } while (status.claimed > 0 && Date.now() < deadline);
   return { ...status, claimed, repaired };
 }

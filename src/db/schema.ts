@@ -354,6 +354,9 @@ export const transactions = pgTable(
     ...timestamps,
   },
   (table) => ({
+    pendingFxIdx: index("transactions_pending_fx_idx")
+      .on(table.workspaceId, table.referenceMonth, table.id)
+      .where(sql`${table.valuationState} = 'pending'`),
     workspaceTransactionDateIdx: index("transactions_workspace_date_idx").on(
       table.workspaceId,
       table.transactionDate,
@@ -764,6 +767,9 @@ export const manualEntries = pgTable(
     ...timestamps,
   },
   (table) => ({
+    pendingFxIdx: index("manual_entries_pending_fx_idx")
+      .on(table.workspaceId, table.referenceMonth, table.id)
+      .where(sql`${table.valuationState} = 'pending'`),
     workspaceEventDateIdx: index("manual_entries_workspace_event_date_idx").on(
       table.workspaceId,
       table.eventDate,

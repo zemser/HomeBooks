@@ -162,6 +162,13 @@
       "when": 1795857300003,
       "tag": "0023_linked_fx_refunds",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795857300004,
+      "tag": "0024_workspace_fx_repairs",
+      "breakpoints": true
     }
   ]
 }

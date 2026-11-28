@@ -85,7 +85,7 @@ test("key canonicalization converges inverse demands and rejects invalid dates a
 });
 
 test(
-  "durable cache retries an outage then retries repair independently with the restricted worker",
+  "the restricted worker retries an outage and caches the result",
   { skip: !process.env.TEST_DATABASE_URL },
   async () => {
     const { Pool } = await import("pg");
@@ -116,15 +116,13 @@ test(
           ]);
           await tx.execute(sql`set local role homebooks_fx_worker`);
           let fetchCalls = 0;
-          let repairCalls = 0;
           const options = {
             fetchRates: async () => {
               if (++fetchCalls === 1) throw new Error("offline");
               return fetchBoiMonthlyRates("JPY", months, provider(row));
             },
-            repair: async () => {
-              if (++repairCalls === 1)
-                throw new Error("household write interrupted");
+            repairPage: async () => {
+              throw new Error("unexpected workspace in cache fixture");
             },
           };
           const run = () => drainFxRateRequests(tx, options);
@@ -135,15 +133,10 @@ test(
           assert.equal((await run()).lastFailure, "offline");
           assert.equal((await run()).claimed, 0);
           await due();
-          assert.equal(
-            (await run()).lastFailure,
-            "household write interrupted",
-          );
-          await due();
           assert.equal((await run()).pending, 0);
           assert.equal((await run()).claimed, 0);
           assert.equal(fetchCalls, 2);
-          assert.equal(repairCalls, 2);
+
           const saved = (
             await tx.execute(
               sql`select average_rate,observation_count from exchange_rate_monthly where base_currency='JPY' and year_month='2025-01-01'`,

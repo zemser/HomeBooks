@@ -3,7 +3,7 @@ import Big from "big.js";
 import { inferMaxSectionCurrency } from "@/features/imports/templates/max-fx";
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
-import { withDbTransaction, type DbExecutor } from "@/db";
+import type { DbExecutor } from "@/db";
 import {
   fxHistoryAudit,
   manualEntries,
@@ -456,45 +456,60 @@ export async function reverseFxHistoryItem(
   return "applied";
 }
 
+export type FxRepairCursor = { id: string; kind: Kind };
+export const FX_REPAIR_PAGE_SIZE = 20;
+
 export async function reconcilePendingFxForWorkspace(
   context: CurrentWorkspaceContext,
   db: DbExecutor,
   key?: RateKey,
+  cursor: FxRepairCursor | null = null,
 ) {
   const [workspace] = await db
     .select({ policy: workspaces.fxPolicy })
     .from(workspaces)
     .where(eq(workspaces.id, context.workspaceId));
-  if (workspace?.policy !== "previous-month-v1") return { updatedCount: 0 };
-  const rows = await inventoryFxHistory(db, context.workspaceId, false, {
-    pending: key ?? true,
-  });
+  if (!workspace)
+    throw new Error("FX repair workspace is no longer accessible");
+  if (workspace.policy !== "previous-month-v1")
+    return { updatedCount: 0, nextCursor: null };
+  const after = cursor
+    ? sql`(id,kind) > (${cursor.id}::uuid,${cursor.kind})`
+    : sql`true`;
+  // Select identifiers before loading the expensive projection and audit evidence.
+  // The cursor advances even past protected records that intentionally remain pending.
+  const pending = await db.execute<FxRepairCursor>(sql`
+    select id,kind from (
+      select id,'transaction' as kind from transactions s where workspace_id=${context.workspaceId}
+        and ${pendingPredicate(sql`s.settlement_currency`, key ?? true)}
+      union all
+      select id,case when source_type='recurring_generated' then 'recurring' else 'manual' end
+        from manual_entries s where workspace_id=${context.workspaceId}
+        and ${pendingPredicate(sql`s.original_currency`, key ?? true)}
+    ) sources where ${after} order by id,kind limit ${FX_REPAIR_PAGE_SIZE + 1}`);
+  const page = pending.rows.slice(0, FX_REPAIR_PAGE_SIZE);
   let updatedCount = 0;
   const runId = randomUUID();
-  for (const row of rows) {
+  const effectiveDate = new Date().toISOString().slice(0, 10);
+  let processed = 0;
+  const deadline = Date.now() + 5_000;
+  for (const source of page) {
+    const [row] = await inventoryFxHistory(db, context.workspaceId, false, {
+      ...source,
+      pending: key ?? true,
+    });
     if (
-      (await applyFxHistoryItem(
-        context,
-        db,
-        row,
-        runId,
-        new Date().toISOString().slice(0, 10),
-      )) === "applied"
+      row &&
+      (await applyFxHistoryItem(context, db, row, runId, effectiveDate)) ===
+        "applied"
     )
       updatedCount++;
+    processed++;
+    if (Date.now() >= deadline) break;
   }
-  return { updatedCount };
-}
-
-export async function reconcilePendingFxForRate(db: DbExecutor, key: RateKey) {
-  const contexts = await db.execute(
-    sql`select * from public.fx_repair_workspaces(${key.baseCurrency},${key.quoteCurrency},${key.yearMonth}::date)`,
-  );
-  for (const context of contexts.rows as unknown as CurrentWorkspaceContext[]) {
-    await withDbTransaction(context.userId, (tx) =>
-      reconcilePendingFxForWorkspace(context, tx, key),
-    );
-  }
+  const nextCursor =
+    processed < pending.rows.length ? page[processed - 1] : null;
+  return { updatedCount, nextCursor };
 }
 
 // While a workspace uses the original policy, an import may still repair an

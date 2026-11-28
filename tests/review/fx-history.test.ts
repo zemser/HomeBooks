@@ -343,11 +343,11 @@ test(
           };
           assert.deepEqual(
             await reconcilePendingFxForWorkspace(context, tx, key),
-            { updatedCount: 1 },
+            { updatedCount: 1, nextCursor: null },
           );
           assert.deepEqual(
             await reconcilePendingFxForWorkspace(context, tx, key),
-            { updatedCount: 0 },
+            { updatedCount: 0, nextCursor: null },
           );
           const [converted] = await tx
             .select()

@@ -200,10 +200,10 @@ test(
                   },
                 ];
               },
-              repair: async (db, key) => {
-                writes += (
-                  await reconcilePendingFxForWorkspace(context, db, key)
-                ).updatedCount;
+              repairPage: async (household, key, cursor) => {
+                const result = await reconcilePendingFxForWorkspace(household, tx, key, cursor);
+                writes += result.updatedCount;
+                return result;
               },
             });
           assert.equal((await drain()).repaired, 0);
