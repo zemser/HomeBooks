@@ -18,29 +18,17 @@ const requestSchema = z.object({
 function buildPreviewWarnings(input: {
   previewTransactions: Array<{ normalizationRateSource: string }>;
 }): string[] {
-  const warnings: string[] = [];
-
   if (
     input.previewTransactions.some((transaction) =>
       transaction.normalizationRateSource.includes("missing-monthly-rate"),
     )
   ) {
-    warnings.push(
+    return [
       "Some rows are flagged Placeholder FX because a monthly average rate is missing. Those amounts are excluded from ILS totals until a rate exists.",
-    );
+    ];
   }
 
-  if (
-    input.previewTransactions.some((transaction) =>
-      transaction.normalizationRateSource.startsWith("provisional-monthly-rate:"),
-    )
-  ) {
-    warnings.push(
-      "Some rows use the latest available monthly average as an Estimated FX because this month's rate is not seeded yet. They are included in ILS totals and corrected automatically once the rate is added.",
-    );
-  }
-
-  return warnings;
+  return [];
 }
 
 export async function POST(request: Request) {

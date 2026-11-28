@@ -9,23 +9,9 @@ import {
 } from "@/features/currency/seed-boi-monthly-averages";
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
 import type { CurrencyNormalizer } from "@/features/imports/types";
-import { monthKey, startOfMonth, addMonths } from "@/lib/dates/months";
+import { monthKey, startOfMonth } from "@/lib/dates/months";
 
 export const MISSING_MONTHLY_RATE_SOURCE = "missing-monthly-rate";
-
-/**
- * Source recorded when a foreign-settled charge is converted with the latest
- * available monthly average because its own month has no seeded rate yet
- * (the month is still running, or the seed has not been updated).
- * The month the rate comes from is appended, e.g.
- * `provisional-monthly-rate:2026-10-01`. The row is an estimate: it is
- * included in workspace totals and repaired by the backfill once the real
- * rate for its month is seeded.
- */
-export const PROVISIONAL_MONTHLY_RATE_SOURCE_PREFIX = "provisional-monthly-rate";
-
-/** How far back the provisional fallback looks for a usable monthly rate. */
-export const PROVISIONAL_RATE_MAX_MONTHS_BACK = 12;
 
 export type CurrencyRateLookup = (
   baseCurrency: string,
@@ -139,45 +125,22 @@ export function createMonthlyAverageNormalizer(
 
     const rate = rates(from, toCurrency, yearMonthFromTransactionDate(transactionDate));
 
-    if (rate !== null && rate > 0) {
-      return normalizeAmountToWorkspaceCurrency({
-        amount,
-        fromCurrency: from,
-        toCurrency,
-        monthlyAverageRate: rate,
-        rateSource: `exchange-rate-monthly:${SEED_BOI_MONTHLY_AVERAGE_SOURCE}`,
-      });
+    if (rate === null || rate <= 0) {
+      return {
+        normalizedAmount: 0,
+        workspaceCurrency: toCurrency,
+        normalizationRate: 0,
+        normalizationRateSource: MISSING_MONTHLY_RATE_SOURCE,
+      };
     }
 
-    // No rate for the transaction's own month yet. Fall back to the latest
-    // available monthly average (at most 12 months back) instead of
-    // storing 0: the amount is an estimate, clearly labeled by its source,
-    // and the backfill repairs it once the real rate is seeded.
-    const transactionMonth = startOfMonth(
-      new Date(`${transactionDate.slice(0, 10)}T00:00:00.000Z`),
-    );
-
-    for (let monthsBack = 1; monthsBack <= PROVISIONAL_RATE_MAX_MONTHS_BACK; monthsBack += 1) {
-      const fallbackMonth = monthKey(addMonths(transactionMonth, -monthsBack));
-      const fallbackRate = rates(from, toCurrency, fallbackMonth);
-
-      if (fallbackRate !== null && fallbackRate > 0) {
-        return normalizeAmountToWorkspaceCurrency({
-          amount,
-          fromCurrency: from,
-          toCurrency,
-          monthlyAverageRate: fallbackRate,
-          rateSource: `${PROVISIONAL_MONTHLY_RATE_SOURCE_PREFIX}:${fallbackMonth}`,
-        });
-      }
-    }
-
-    return {
-      normalizedAmount: 0,
-      workspaceCurrency: toCurrency,
-      normalizationRate: 0,
-      normalizationRateSource: MISSING_MONTHLY_RATE_SOURCE,
-    };
+    return normalizeAmountToWorkspaceCurrency({
+      amount,
+      fromCurrency: from,
+      toCurrency,
+      monthlyAverageRate: rate,
+      rateSource: `exchange-rate-monthly:${SEED_BOI_MONTHLY_AVERAGE_SOURCE}`,
+    });
   };
 }
 
@@ -207,32 +170,6 @@ export async function loadSeededMonthlyRates(
         inArray(exchangeRateMonthly.yearMonth, uniqueMonths),
       ),
     );
-
-  return createMonthlyRateMap(
-    rows.map((row) => ({
-      ...row,
-      yearMonth: row.yearMonth.slice(0, 10),
-    })),
-  );
-}
-
-/**
- * Load every seeded monthly average. The provisional fallback in
- * `createMonthlyAverageNormalizer` walks back to earlier months when the
- * transaction's own month has no rate yet, so import preview/save and the
- * backfill must have the full history in the map, not just the months in
- * the file being imported. The table is small (5 currencies x ~2 years).
- */
-export async function loadAllSeededMonthlyRates(db: DbExecutor): Promise<MonthlyRateMap> {
-  const rows = await db
-    .select({
-      baseCurrency: exchangeRateMonthly.baseCurrency,
-      quoteCurrency: exchangeRateMonthly.quoteCurrency,
-      yearMonth: exchangeRateMonthly.yearMonth,
-      averageRate: exchangeRateMonthly.averageRate,
-    })
-    .from(exchangeRateMonthly)
-    .where(eq(exchangeRateMonthly.sourceName, SEED_BOI_MONTHLY_AVERAGE_SOURCE));
 
   return createMonthlyRateMap(
     rows.map((row) => ({

@@ -250,18 +250,6 @@ Commit the numbers as a JSON or TypeScript fixture and load them with a **SQL mi
 
 Do not call the network during preview or save. Missing seed row → `missing-monthly-rate` behavior above.
 
-**Provisional rate (added 2026-11-28):** when the transaction's own month has no
-seeded rate, the normalizer falls back to the latest available monthly average
-for that pair, looking back at most 12 months, and records the source as
-`provisional-monthly-rate:<month-used>` (e.g. `provisional-monthly-rate:2026-10-01`).
-The row is an *estimate*: it is included in workspace totals, shown with the
-"Estimated FX" badge naming the month the rate comes from, and the backfill
-repairs it to the exact rate once that month is seeded. Only when no rate
-exists within 12 months does the row stay `missing-monthly-rate` with amount 0.
-Import preview/save and the backfill therefore prefetch **all** seeded rates,
-not just the months in the file. Original-currency inference still uses the
-exact month only (a stale rate must not mislabel a currency).
-
 `exchange_rate_monthly` already has RLS. App code **SELECT only**. Do not use `exchange_rates_write_authenticated` to seed; any logged-in user could rewrite global rates. No `security definer` helper in `public`.
 
 Approximate check values for tests (tests should read the seed, not hard-code 3.3):
