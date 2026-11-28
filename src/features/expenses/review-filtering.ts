@@ -1,3 +1,4 @@
+import { isReportableFxNormalizedSpend } from "@/features/currency/valuation-status";
 import type { ExpenseTransactionItem } from "@/features/expenses/types";
 import { getTransactionMerchant } from "@/features/expenses/presentation";
 
@@ -131,7 +132,9 @@ export function filterAndSortReviewQueue(
   const minimum = state.minimumAmount.trim() ? Number(state.minimumAmount) : null;
   const maximum = state.maximumAmount.trim() ? Number(state.maximumAmount) : null;
   const filtered = queue.filter((transaction) => {
-    const amount = Math.abs(Number(transaction.normalizedAmount));
+    const amount = isReportableFxNormalizedSpend(transaction)
+      ? Math.abs(Number(transaction.normalizedAmount))
+      : null;
     const matchesSearch =
       !normalizedSearch ||
       [
@@ -149,15 +152,15 @@ export function filterAndSortReviewQueue(
       (state.view === "suggested" && Boolean(transaction.suggestion)) ||
       (state.view === "no_suggestion" && !transaction.suggestion) ||
       (state.view === "repeated" && transaction.similarQueueCount > 0) ||
-      (state.view === "high_value" && amount >= 500);
+      (state.view === "high_value" && amount !== null && amount >= 500);
 
     return (
       matchesSearch &&
       (state.month === "all" || transaction.transactionDate.startsWith(state.month)) &&
       (reviewImportIsUnscoped(state.importId) || transaction.importId === state.importId) &&
       (state.accountId === "all" || transaction.accountId === state.accountId) &&
-      (minimum === null || Number.isNaN(minimum) || amount >= minimum) &&
-      (maximum === null || Number.isNaN(maximum) || amount <= maximum) &&
+      (minimum === null || Number.isNaN(minimum) || (amount !== null && amount >= minimum)) &&
+      (maximum === null || Number.isNaN(maximum) || (amount !== null && amount <= maximum)) &&
       matchesView
     );
   });
@@ -166,11 +169,12 @@ export function filterAndSortReviewQueue(
     if (state.sort === "oldest") {
       return left.transactionDate.localeCompare(right.transactionDate);
     }
-    if (state.sort === "amount_desc") {
-      return Math.abs(Number(right.normalizedAmount)) - Math.abs(Number(left.normalizedAmount));
-    }
-    if (state.sort === "amount_asc") {
-      return Math.abs(Number(left.normalizedAmount)) - Math.abs(Number(right.normalizedAmount));
+    if (state.sort === "amount_desc" || state.sort === "amount_asc") {
+      const leftValued = isReportableFxNormalizedSpend(left);
+      const rightValued = isReportableFxNormalizedSpend(right);
+      if (!leftValued || !rightValued) return Number(rightValued) - Number(leftValued);
+      const difference = Math.abs(Number(left.normalizedAmount)) - Math.abs(Number(right.normalizedAmount));
+      return state.sort === "amount_asc" ? difference : -difference;
     }
     if (state.sort === "merchant") {
       return getTransactionMerchant(left).localeCompare(getTransactionMerchant(right));

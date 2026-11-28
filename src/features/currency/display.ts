@@ -1,6 +1,9 @@
 import { formatMoneyNumber } from "@/lib/money/format";
 
+import { isReportableFxNormalizedSpend } from "./valuation-status";
+
 export type CurrencyNormalizationDisplayInput = {
+  valuationState?: string | null;
   referenceMonth?: string | null;
   originalCurrency?: string | null;
   settlementCurrency?: string | null;
@@ -48,6 +51,12 @@ export function getCurrencyNormalizationDisplayState(
     Number.isFinite(numericSettlementAmount)
       ? formatMoneyNumber(numericSettlementAmount)
       : null;
+
+  if (!isReportableFxNormalizedSpend(input)) {
+    const description = `This row awaits conversion to ${currencyFallback} and is excluded from workspace totals.`;
+    return { isForeignCurrency, usesPlaceholderRate, label: "Awaiting conversion", tone: "warning",
+      shortDescription: description, fullDescription: description };
+  }
 
   if (
     originalCurrency &&

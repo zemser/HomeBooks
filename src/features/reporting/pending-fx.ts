@@ -51,7 +51,7 @@ export async function pendingFxByMonth(
       from transactions t left join transaction_classifications c on c.transaction_id = t.id
       where t.workspace_id = ${workspaceId} and t.transaction_date >= ${start} and t.transaction_date < ${end}
         and coalesce(c.classification_type::text, '') not in ('ignore','transfer')
-        and (t.valuation_state = 'pending' or t.normalization_rate_source = 'missing-monthly-rate')
+        and (t.valuation_state = 'pending' or t.normalization_rate_source like '%missing-monthly-rate%')
       union all
       select event_date, original_currency, case when event_kind = 'income' then 'credit' else 'debit' end, original_amount from manual_entries
       where workspace_id = ${workspaceId} and event_date >= ${start} and event_date < ${end}

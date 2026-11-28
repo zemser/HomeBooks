@@ -16,7 +16,8 @@ import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normaliz
 import type { CurrencyNormalizer } from "@/features/imports/types";
 import { addMonths, monthKey, startOfMonth } from "@/lib/dates/months";
 
-export const MISSING_MONTHLY_RATE_SOURCE = "missing-monthly-rate";
+import { MISSING_MONTHLY_RATE_SOURCE } from "./valuation-status";
+export { MISSING_MONTHLY_RATE_SOURCE } from "./valuation-status";
 
 type RateSnapshot = { rate: number; id?: string; source?: string };
 

@@ -127,7 +127,10 @@ function PeriodSummarySection({
           <tbody>
             {months.map((month) => (
               <tr key={month.month}>
-                <td>{formatReportMonthLabel(month.month)}</td>
+                <td>
+                  {formatReportMonthLabel(month.month)}
+                  {month.pendingFx?.length ? <div className="table-note">{describePendingFx(month.pendingFx)}</div> : null}
+                </td>
                 <td>{formatReportMoney(month.incomeTotal, summary.workspaceCurrency)}</td>
                 <td>{formatReportMoney(month.expenseTotal, summary.workspaceCurrency)}</td>
                 <td>{formatReportMoney(month.savingsTotal, summary.workspaceCurrency)}</td>
@@ -238,6 +241,7 @@ function YearReportView({
       <section className="card stack compact">
         <div>
           <h2>Year totals</h2>
+          {report.totals.pendingFx.length > 0 && <p>{describePendingFx(report.totals.pendingFx)}</p>}
           <p className="muted-text">Displayed months reconcile exactly to these totals.</p>
         </div>
         <div className="summary-strip">
@@ -326,7 +330,7 @@ function YearReportView({
                       {statusPresentation.label}
                     </span>
                     {month.pendingFx?.length ? <div className="table-note">{describePendingFx(month.pendingFx)}</div> : null}
-          {month.totalTransactionCount > 0 ? (
+                    {month.totalTransactionCount > 0 ? (
                       <div className="table-note">
                         {month.reviewedTransactionCount}/{month.totalTransactionCount} reviewed
                       </div>

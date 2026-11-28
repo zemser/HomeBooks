@@ -184,6 +184,7 @@ export type YearReportData = {
   workspaceCurrency: string;
   months: YearMonthSummary[];
   totals: {
+    pendingFx: PendingFxAmount[];
     incomeTotal: number;
     expenseTotal: number;
     savingsTotal: number;
@@ -806,6 +807,7 @@ export function buildYearReportData(input: {
     workspaceCurrency: input.workspaceCurrency,
     months,
     totals: {
+      pendingFx: combinePendingFx(months.map((month) => month.pendingFx ?? [])),
       incomeTotal,
       expenseTotal,
       savingsTotal,

@@ -11,6 +11,7 @@ export type OneTimeManualEntryItem = {
   originalAmount: string;
   originalCurrency: string;
   normalizedAmount: string;
+  valuationState: string;
   workspaceCurrency: string;
   payerMemberId: string | null;
   payerMemberName: string | null;

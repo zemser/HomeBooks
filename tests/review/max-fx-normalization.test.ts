@@ -243,7 +243,7 @@ test("missing monthly rates store 0 and are excluded from spend", () => {
 
   assert.equal(row.normalizationRateSource, "missing-monthly-rate");
   assert.equal(row.normalizedAmount, 0);
-  assert.equal(getCurrencyNormalizationDisplayState(row).label, "Placeholder FX");
+  assert.equal(getCurrencyNormalizationDisplayState(row).label, "Awaiting conversion");
   assert.equal(isReportableFxNormalizedSpend(row), false);
 });
 
@@ -276,7 +276,7 @@ test("display copy covers ChatGPT, converted, missing-rate, and null original", 
       workspaceCurrency: "ILS",
       normalizationRateSource: "missing-monthly-rate",
     }).label,
-    "Placeholder FX",
+    "Awaiting conversion",
   );
   assert.equal(
     getCurrencyNormalizationDisplayState({

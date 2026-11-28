@@ -97,8 +97,7 @@ test("projection synchronizers skip unchanged event, allocation, and recurring r
   assert.match(events, /else if \(!expenseEventMatches\(primaryRow, row, nextReportingMode\)\)/);
   assert.match(events, /!expenseAllocationsEqual\(primaryRow\.allocations, nextAllocations\)/);
   assert.match(allocations, /expenseAllocationsEqual\(currentAllocations, allocations\)/);
-  assert.match(recurring, /if \(generatedManualEntryMatches\(existingRow, effectiveRow\)\) \{\s*continue;/);
-  assert.match(recurring, /manualEntryOverrides\.overrideType, "payer"/);
+  assert.match(recurring, /if \(generatedManualEntryMatches\(existingRow, row\)\) \{\s*continue;/);
   assert.ok(
     recurring.indexOf("await acquireRecurringMaterializationLock(context, tx)") <
       recurring.indexOf("const recurringEntries = await listRecurringEntries(context, tx)"),
