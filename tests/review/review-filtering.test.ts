@@ -10,6 +10,7 @@ import {
   REVIEW_IMPORT_UNRESOLVED,
   serializeReviewFilterState,
 } from "../../src/features/expenses/review-filtering";
+import { formatExpenseAmount, formatMoneyDisplay } from "../../src/features/expenses/presentation";
 import type { ExpenseTransactionItem } from "../../src/features/expenses/types";
 
 function transaction(
@@ -170,4 +171,28 @@ test("review filtering remains fast for 5,000 queue rows", () => {
   assert.equal(result.length, 900);
   assert.equal(result[0]?.normalizedAmount, "4995");
   assert.ok(durationMs < 500, `Filtering took ${durationMs.toFixed(1)}ms`);
+});
+
+test("pending FX has a source amount and sorts after every valued amount", () => {
+  const pending = transaction("pending", {
+    originalAmount: "900", originalCurrency: "JPY", settlementAmount: "7",
+    settlementCurrency: "USD", normalizedAmount: "0", valuationState: "pending",
+  });
+  const legacy = transaction("legacy", {
+    originalAmount: "20", originalCurrency: "EUR", normalizedAmount: "999",
+    normalizationRateSource: "import:missing-monthly-rate",
+  });
+  const queue = [pending, transaction("zero", { normalizedAmount: "0" }), legacy, transaction("valued")];
+  const ids = (filters: Partial<typeof defaultReviewFilterState>) =>
+    filterAndSortReviewQueue(queue, { ...defaultReviewFilterState, ...filters }).map((row) => row.id);
+
+  assert.deepEqual(ids({ sort: "amount_asc" }), ["zero", "valued", "pending", "legacy"]);
+  assert.deepEqual(ids({ sort: "amount_desc" }), ["valued", "zero", "pending", "legacy"]);
+  assert.deepEqual(ids({ maximumAmount: "0" }), ["zero"]);
+  assert.deepEqual(ids({ minimumAmount: "0" }), ["zero", "valued"]);
+  assert.deepEqual(ids({ view: "high_value" }), []);
+  assert.equal(formatExpenseAmount(pending), `${formatMoneyDisplay("7", "USD")} · Awaiting conversion`);
+  assert.equal(formatExpenseAmount(legacy), `${formatMoneyDisplay("20", "EUR")} · Awaiting conversion`);
+  assert.equal(formatExpenseAmount({ ...pending, settlementCurrency: null }), "7.00 · Currency unconfirmed");
+  assert.equal(formatExpenseAmount(queue[1]), formatMoneyDisplay("0", "ILS"));
 });

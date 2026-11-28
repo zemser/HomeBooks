@@ -51,12 +51,12 @@ function parseRecentTransactionRow(
   row: TabularRow,
   sourceSheetName: string,
   sourceRowIndex: number,
+  hasEuroColumn: boolean,
 ): ParsedBankTransaction | undefined {
   const normalized = normalizeRow(row);
   const transactionDate = parseDate(row[0]);
   const merchantRaw = normalized[1];
   const amountIls = parseNumber(row[2]);
-  const hasEuroColumn = normalized.includes("סכום\nביורו") || row.length >= 8;
   const amountEuro = hasEuroColumn ? parseNumber(row[3]) : undefined;
   const bookingDate = parseDate(row[hasEuroColumn ? 4 : 3]);
   const notes = normalized[hasEuroColumn ? 7 : 6] || undefined;
@@ -87,6 +87,7 @@ function parseRecentTransactionRow(
     originalCurrency,
     settlementAmount: Math.abs(settlementAmount),
     settlementCurrency,
+    postedAmounts: { ILS: amountIls === undefined ? undefined : Math.abs(amountIls), EUR: amountEuro === undefined ? undefined : Math.abs(amountEuro) },
     notes,
     sourceSheetName,
     sourceRowIndex,
@@ -104,6 +105,7 @@ export function parseCalRecentTransactionsWorkbook(workbook: WorkbookData): Pars
   }
 
   const transactions: ParsedBankTransaction[] = [];
+  const hasEuroColumn = normalizeRow(sheet.rows[headerRowIndex]).includes("סכום\nביורו");
 
   for (let i = headerRowIndex + 1; i < sheet.rows.length; i += 1) {
     const row = sheet.rows[i];
@@ -112,7 +114,7 @@ export function parseCalRecentTransactionsWorkbook(workbook: WorkbookData): Pars
       continue;
     }
 
-    const parsed = parseRecentTransactionRow(row, sheet.name, i);
+    const parsed = parseRecentTransactionRow(row, sheet.name, i, hasEuroColumn);
     if (parsed) {
       transactions.push(parsed);
     }

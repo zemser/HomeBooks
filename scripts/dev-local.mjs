@@ -1,17 +1,21 @@
-import fs from "node:fs";
-import path from "node:path";
+import { prepareLocalDatabase } from "./local-database.mjs";
 import process from "node:process";
 import { spawn, spawnSync } from "node:child_process";
 import pg from "pg";
 
 const projectRoot = process.cwd();
 const productionMode = process.argv.includes("--production");
-const forwardedArgs = process.argv.slice(2).filter((arg) => arg !== "--production");
-const localDatabaseUrl = "postgres://postgres:postgres@127.0.0.1:54322/postgres";
+const forwardedArgs = process.argv
+  .slice(2)
+  .filter((arg) => arg !== "--production");
+const localDatabaseUrl =
+  "postgres://postgres:postgres@127.0.0.1:54322/postgres";
 const localEnv = {
   ...process.env,
   DATABASE_URL: localDatabaseUrl,
   DIRECT_DATABASE_URL: localDatabaseUrl,
+  FX_WORKER_DATABASE_URL:
+    "postgres://homebooks_fx_local:homebooks-local-only@127.0.0.1:54322/postgres",
   FINAPP_AUTH_MODE: "dev",
   FINAPP_IMPORT_STORAGE: "local",
 };
@@ -66,34 +70,22 @@ async function waitForDatabase() {
     }
   }
 
-  throw new Error("Local Supabase Postgres did not become ready in 30 seconds.");
-}
-
-async function ensureSchemaAndSeeds() {
-  const client = new pg.Client({ connectionString: localDatabaseUrl });
-  await client.connect();
-
-  try {
-    const result = await client.query("select to_regclass('public.workspaces') as table_name");
-
-    if (!result.rows[0].table_name) {
-      await client.end();
-      run("npm", ["exec", "--", "drizzle-kit", "push", "--url", localDatabaseUrl, "--force"]);
-      await client.connect();
-    }
-
-    const seedPath = path.join(projectRoot, "src/db/migrations/0005_seed_import_catalog.sql");
-    await client.query(fs.readFileSync(seedPath, "utf8"));
-  } finally {
-    await client.end();
-  }
+  throw new Error(
+    "Local Supabase Postgres did not become ready in 30 seconds.",
+  );
 }
 
 if (!(await databaseIsReady())) {
   run("supabase", ["start", "--exclude", "logflare,vector"]);
 }
 await waitForDatabase();
-await ensureSchemaAndSeeds();
+const admin = new pg.Client({ connectionString: localDatabaseUrl });
+await admin.connect();
+try {
+  await prepareLocalDatabase(admin, projectRoot);
+} finally {
+  await admin.end();
+}
 
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const child = spawn(
@@ -106,7 +98,22 @@ const child = spawn(
   },
 );
 
-const forwardSignal = (signal) => child.kill(signal);
+const fxWorker = spawn(
+  process.execPath,
+  ["--import", "tsx", "scripts/drain-fx-rates.ts", "--watch"],
+  {
+    cwd: projectRoot,
+    env: localEnv,
+    stdio: "inherit",
+  },
+);
+const forwardSignal = (signal) => {
+  fxWorker.kill(signal);
+  child.kill(signal);
+};
 process.on("SIGINT", () => forwardSignal("SIGINT"));
 process.on("SIGTERM", () => forwardSignal("SIGTERM"));
-child.on("exit", (code, signal) => process.exit(code ?? (signal ? 1 : 0)));
+child.on("exit", (code, signal) => {
+  fxWorker.kill();
+  process.exit(code ?? (signal ? 1 : 0));
+});

@@ -256,20 +256,22 @@ export async function withDbTransaction<T>(
 
   return withTelemetrySpan("db.transaction", async () => {
     try {
-      await client.query(options?.readOnly ? "begin isolation level repeatable read read only" : "begin");
-      recordRlsSetup();
-      await client.query(
-        "select set_config('app.current_user_id', $1, true)",
-        [currentUserId],
+      const connection = drizzle(client, { schema });
+      // Pass Drizzle's transaction object to services. Their nested transactions
+      // must use savepoints so only this boundary commits the transaction-local identity.
+      return await connection.transaction(
+        async (executor) => {
+          recordRlsSetup();
+          await client.query(
+            "select set_config('app.current_user_id', $1, true)",
+            [currentUserId],
+          );
+          return activeExecutor.run(executor, () => callback(executor));
+        },
+        options?.readOnly
+          ? { isolationLevel: "repeatable read", accessMode: "read only" }
+          : undefined,
       );
-
-      const executor = drizzle(client, { schema });
-      const result = await activeExecutor.run(executor, () => callback(executor));
-      await client.query("commit");
-      return result;
-    } catch (error) {
-      await client.query("rollback").catch(() => undefined);
-      throw error;
     } finally {
       client.release();
     }

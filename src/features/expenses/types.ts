@@ -34,6 +34,10 @@ export type ExpenseTransactionItem = {
   settlementCurrency: string | null;
   normalizedAmount: string;
   workspaceCurrency: string;
+  referenceMonth?: string | null;
+  valuationPolicy?: string;
+  valuationState?: string;
+  refundOfTransactionId?: string | null;
   normalizationRateSource: string | null;
   direction: string;
   accountDisplayName: string;

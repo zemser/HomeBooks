@@ -1,3 +1,4 @@
+import { isReportableFxNormalizedSpend } from "@/features/currency/valuation-status";
 import type { ClassificationType } from "@/features/expenses/constants";
 import type { ExpenseAllocationState } from "@/features/expenses/allocation";
 import type {
@@ -155,6 +156,27 @@ export function formatMoneyDisplay(
   }
 
   return formatMoneyWithCurrency(signedAmount, currencyCode);
+}
+
+export function formatExpenseAmount(item: {
+  normalizedAmount: string;
+  workspaceCurrency: string;
+  originalAmount: string;
+  originalCurrency: string | null;
+  settlementAmount?: string | null;
+  settlementCurrency?: string | null;
+  valuationState?: string;
+  normalizationRateSource?: string | null;
+  direction?: string;
+}) {
+  if (isReportableFxNormalizedSpend(item)) {
+    return formatMoneyDisplay(item.normalizedAmount, item.workspaceCurrency, item.direction);
+  }
+  const amount = item.settlementAmount ?? item.originalAmount;
+  const currency = item.settlementAmount != null ? item.settlementCurrency : item.originalCurrency;
+  return currency
+    ? `${formatMoneyDisplay(amount, currency, item.direction)} · Awaiting conversion`
+    : `${formatMoneyDisplay(amount, null, item.direction)} · Currency unconfirmed`;
 }
 
 export function getTransactionMerchant(item: ExpenseTransactionItem) {

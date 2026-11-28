@@ -1,6 +1,7 @@
 "use client";
 
 import { canSaveMerchantRule, merchantRuleAttributionNote } from "@/features/expenses/merchant-rules";
+import { RefundLink } from "./refund-link";
 import Link from "next/link";
 import { createPortal } from "react-dom";
 import {
@@ -33,6 +34,7 @@ import {
   type MemberAttributionFormValue,
 } from "@/components/expenses/member-attribution-fields";
 import { CategoryCombobox } from "@/components/workspaces/category-combobox";
+import { isReportableFxNormalizedSpend } from "@/features/currency/valuation-status";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { CLASSIFICATION_TYPES, type ClassificationType } from "@/features/expenses/constants";
 import {
@@ -42,6 +44,7 @@ import {
   formatClassificationSummary,
   formatDecisionSourceLabel,
   formatMerchantRulePreview,
+  formatExpenseAmount,
   formatMoneyDisplay,
   formatTransactionDateLabel,
   getTransactionMerchant,
@@ -2145,13 +2148,9 @@ export function ReviewQueueClient({
                         <td data-label="Amount">
                           <div className="stack compact">
                             <span>
-                              {formatMoneyDisplay(
-                                transaction.normalizedAmount,
-                                transaction.workspaceCurrency,
-                                transaction.direction,
-                              )}
+                              {formatExpenseAmount(transaction)}
                             </span>
-                            {transactionCurrencyState.label ? (
+                            {transactionCurrencyState.label && isReportableFxNormalizedSpend(transaction) ? (
                               <span
                                 className={`badge ${
                                   transactionCurrencyState.tone === "warning"
@@ -2231,11 +2230,7 @@ export function ReviewQueueClient({
                 {selectedTransaction ? (
                   <div className="review-detail-facts">
                     <strong>
-                      {formatMoneyDisplay(
-                        selectedTransaction.normalizedAmount,
-                        selectedTransaction.workspaceCurrency,
-                        selectedTransaction.direction,
-                      )}
+                      {formatExpenseAmount(selectedTransaction)}
                     </strong>
                     <time dateTime={selectedTransaction.transactionDate}>
                       {formatTransactionDateLabel(selectedTransaction.transactionDate)}
@@ -2255,11 +2250,7 @@ export function ReviewQueueClient({
                     <li key={transaction.id}>
                       <span>{getTransactionMerchant(transaction)}</span>
                       <span>
-                        {formatMoneyDisplay(
-                          transaction.normalizedAmount,
-                          transaction.workspaceCurrency,
-                          transaction.direction,
-                        )}
+                        {formatExpenseAmount(transaction)}
                       </span>
                     </li>
                   ))}
@@ -2298,6 +2289,10 @@ export function ReviewQueueClient({
                 </div>
               ) : null}
 
+              {selectedTransaction.direction === "credit" &&
+                selectedTransaction.valuationPolicy === "previous-month-v1" && selectedTransaction.valuationState !== "recorded" &&
+                selectedTransaction.settlementCurrency && selectedTransaction.settlementCurrency !== selectedTransaction.workspaceCurrency &&
+                !selectedTransaction.refundOfTransactionId ? <RefundLink key={selectedTransaction.id} creditId={selectedTransaction.id} /> : null}
               {selectedTransaction.suggestion ? (
                 <section className={`classification-suggestion-card ${selectedTransaction.suggestion.confidence}`} aria-label="Suggested classification">
                   <div>
@@ -2460,13 +2455,9 @@ export function ReviewQueueClient({
                     </p>
                   </div>
                   <div>
-                    <strong>Normalized</strong>
+                    <strong>Workspace amount</strong>
                     <p>
-                      {formatMoneyDisplay(
-                        selectedTransaction.normalizedAmount,
-                        selectedTransaction.workspaceCurrency,
-                        selectedTransaction.direction,
-                      )}
+                      {isReportableFxNormalizedSpend(selectedTransaction) ? formatExpenseAmount(selectedTransaction) : "Awaiting conversion"}
                     </p>
                   </div>
                   <div>
@@ -2508,7 +2499,9 @@ export function ReviewQueueClient({
                     original payment date stays unchanged.
                   </p>
 
-                  {!allocationEditable ? (
+                  {!isReportableFxNormalizedSpend(selectedTransaction) ? (
+                    <p className="helper-text">Allocation becomes available after conversion.</p>
+                  ) : !allocationEditable ? (
                     <p className="helper-text">
                       Save a reportable classification first to enable allocation editing.
                     </p>

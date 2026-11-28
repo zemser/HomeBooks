@@ -134,6 +134,41 @@
       "when": 1789900000000,
       "tag": "0018_seed_bank_investment_source",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1795857300000,
+      "tag": "0020_household_valuation",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795857300001,
+      "tag": "0021_fx_history_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795857300002,
+      "tag": "0022_fx_rate_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1795857300003,
+      "tag": "0023_linked_fx_refunds",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795857300004,
+      "tag": "0024_workspace_fx_repairs",
+      "breakpoints": true
     }
   ]
 }

@@ -110,3 +110,20 @@ test("a reviewed zero-spend month remains distinct from an empty month", () => {
   assert.equal(report.months[0].expenseTotal, 0);
   assert.equal(report.months[1].status, "empty");
 });
+
+test("annual pending totals group displayed months by source currency and flow", () => {
+  const usd = { currency: "USD", amount: "4.50", count: 1, flow: "debit" as const };
+  const credit = { ...usd, flow: "credit" as const };
+  const eur = { ...usd, currency: "EUR" };
+  const report = buildYearReportData({
+    year: 2026, workspaceCurrency: "ILS", includedMonths: ["2026-01-01", "2026-02-01"],
+    members, records: [record("2026-01-10", "shared", 20)],
+    completeness: [
+      { ...completeness("2026-01-01", 3, 3), pendingFx: [usd, credit] },
+      { ...completeness("2026-02-01", 2, 2), pendingFx: [usd, eur] },
+      { ...completeness("2026-03-01", 1, 1), pendingFx: [eur] },
+    ],
+  });
+  assert.equal(report.totals.expenseTotal, 20);
+  assert.deepEqual(report.totals.pendingFx, [{ ...usd, amount: "9", count: 2 }, credit, eur]);
+});

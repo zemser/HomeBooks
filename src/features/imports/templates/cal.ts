@@ -27,9 +27,11 @@ function parseCalRow(
   const category = normalized[2] || undefined;
   const cardLastFour = normalized[3] || undefined;
   const settlementAmount = parseNumber(row[5]);
-  const settlementCurrency = mapCurrencySymbol(normalized[6]);
+  const currency = normalized[6] && mapCurrencySymbol(normalized[6]);
+  const settlementCurrency = /^[A-Z]{3}$/.test(currency) ? currency : undefined;
   const originalAmount = parseNumber(row[7]);
-  const originalCurrency = mapCurrencySymbol(normalized[8] || normalized[6]);
+  const original = normalized[8] ? mapCurrencySymbol(normalized[8]) : settlementCurrency;
+  const originalCurrency = original && /^[A-Z]{3}$/.test(original) ? original : null;
   const bookingDate = parseDate(row[9]);
   const notes = normalized[10] || undefined;
 

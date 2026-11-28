@@ -49,6 +49,12 @@ test("hosted proxy accepts ordinary sign-in while keeping anonymous requests blo
     }
   }
 
+  await t.test("scheduled FX drain reaches its bearer-authenticated handler without a household session", async () => {
+    const request = new NextRequest("http://localhost/api/cron/fx-rates");
+    assert.equal((await proxy(request)).headers.get("x-middleware-next"), "1");
+    const { GET } = await import("../../src/app/api/cron/fx-rates/route");
+    assert.equal((await GET(request)).status, 401);
+  });
   await t.test("anonymous pages go to sign-in and preserve their destination", async () => {
     const response = await proxy(new NextRequest("http://localhost/reports?month=2026-10"));
     const destination = new URL(response.headers.get("location")!);

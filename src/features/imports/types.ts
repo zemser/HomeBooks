@@ -1,3 +1,12 @@
+import type { ValuationState, ValuationPolicy } from "@/db/schema";
+
+export type ValuationMetadata = {
+  valuationState?: ValuationState;
+  valuationPolicy?: ValuationPolicy;
+  exchangeRateId?: string | null;
+  referenceMonth?: string | null;
+};
+
 export type ImportFileKind = "csv" | "xlsx";
 
 export type TabularCell = string | number | boolean | Date | null | undefined;
@@ -43,6 +52,7 @@ export type NormalizedBankTransaction = {
 };
 
 export type ParsedBankTransaction = NormalizedBankTransaction & {
+  postedAmounts?: Partial<Record<string, number>>;
   sourceSheetName: string;
   sourceRowIndex: number;
   rawValues: string[];
@@ -59,14 +69,14 @@ export type CurrencyNormalizer = (input: {
   amount: number;
   fromCurrency: string;
   transactionDate: string;
-}) => {
+}) => ValuationMetadata & {
   normalizedAmount: number;
   workspaceCurrency: string;
   normalizationRate: number;
   normalizationRateSource: string;
 };
 
-export type NormalizedTransactionPreview = NormalizedBankTransaction & {
+export type NormalizedTransactionPreview = NormalizedBankTransaction & ValuationMetadata & {
   normalizedAmount: number;
   workspaceCurrency: string;
   normalizationRate: number;

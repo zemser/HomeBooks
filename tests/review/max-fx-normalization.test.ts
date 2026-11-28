@@ -243,7 +243,7 @@ test("missing monthly rates store 0 and are excluded from spend", () => {
 
   assert.equal(row.normalizationRateSource, "missing-monthly-rate");
   assert.equal(row.normalizedAmount, 0);
-  assert.equal(getCurrencyNormalizationDisplayState(row).label, "Placeholder FX");
+  assert.equal(getCurrencyNormalizationDisplayState(row).label, "Awaiting conversion");
   assert.equal(isReportableFxNormalizedSpend(row), false);
 });
 
@@ -276,7 +276,7 @@ test("display copy covers ChatGPT, converted, missing-rate, and null original", 
       workspaceCurrency: "ILS",
       normalizationRateSource: "missing-monthly-rate",
     }).label,
-    "Placeholder FX",
+    "Awaiting conversion",
   );
   assert.equal(
     getCurrencyNormalizationDisplayState({
@@ -342,4 +342,55 @@ test("recomputeImportedFx is idempotent once rows already match", () => {
   assert.equal(next.originalCurrency, "USD");
   assert.equal(next.normalizedAmount, 67.89);
   assert.equal(next.normalizationRateSource, "same-currency");
+});
+
+test("household valuation locks the previous calendar month for a foreign charge", () => {
+  const rates = createRateLookupFromMap(new Map([
+    ["USD|ILS|2026-10-01", 3.088],
+    ["USD|ILS|2026-11-01", 9],
+    ["USD|ILS|2025-12-01", 4],
+  ]));
+  const value = createMonthlyAverageNormalizer("ILS", rates, "previous-month-v1");
+  const november = value({ amount: 100, fromCurrency: "USD", transactionDate: "2026-11-29" });
+  assert.equal(november.normalizedAmount, 308.8);
+  assert.equal(november.referenceMonth, "2026-10-01");
+  assert.equal(november.valuationState, "converted");
+  assert.equal(value({ amount: 100, fromCurrency: "USD", transactionDate: "2026-01-01" }).normalizedAmount, 400);
+  assert.equal(value({ amount: 0, fromCurrency: "ILS", transactionDate: "2026-11-01" }).valuationState, "recorded");
+  assert.equal(value({ amount: 0, fromCurrency: "EUR", transactionDate: "2026-11-01" }).valuationState, "recorded");
+  assert.equal(value({ amount: 7, fromCurrency: "EUR", transactionDate: "2026-11-01" }).valuationState, "pending");
+  assert.equal(value({ amount: 62.05, fromCurrency: "ILS", transactionDate: "2026-11-01" }).normalizedAmount, 62.05);
+  const inverse = createMonthlyAverageNormalizer("USD", rates, "previous-month-v1");
+  assert.equal(inverse({ amount: 308.8, fromCurrency: "ILS", transactionDate: "2026-11-01" }).normalizedAmount, 100);
+});
+
+test("FX identity survives Max original-currency inference while preserving explicit Cal currency", async () => {
+  const { transactionIdentity } = await import("../../src/features/imports/identity");
+  const [row] = previewWithRates([["25-07-2025", "CURSOR", 20, 62.05, "", "", ""]], () => null).parsed.transactions;
+  const key = { workspaceId: "household", sourceId: "source", accountLabel: "card", transaction: row };
+  const unknown = transactionIdentity(key, "max_credit_statement");
+  const known = { ...key, transaction: { ...row, originalCurrency: "USD" } };
+  assert.equal(transactionIdentity(known, "max_credit_statement").hash, unknown.hash);
+  assert.deepEqual(transactionIdentity(known, "max_credit_statement").aliases, unknown.aliases);
+  assert.notEqual(transactionIdentity(key, "cal_card_export").hash, transactionIdentity(known, "cal_card_export").hash);
+});
+
+test("unknown Max settlement sections stay pending while the initial ILS section is recorded", () => {
+  const workbook = maxWorkbook([["25-11-2026","LOCAL",62.05,62.05],["עסקאות שחויבו במטבע אחר"],["25-11-2026","OTHER",100,100]]);
+  const { previewTransactions: [local, other] } = parseBankWorkbookToPreview({ workbook, workspaceCurrency: "ILS", policy: "previous-month-v1" });
+  assert.equal(local.valuationState, "recorded");
+  assert.equal(other.valuationState, "pending");
+  assert.equal(other.settlementCurrency, undefined);
+});
+
+test("Cal recent uses both posted columns and selects the workspace amount when available", () => {
+  const workbook: WorkbookData = { fileKind: "xlsx", filename: "cal.xlsx", sheets: [{ name: "recent", rows: [
+    ["card"], ["תאריך\nעסקה","שם בית עסק",'סכום\nבש"ח',"סכום\nביורו","מועד\nחיוב"],
+    ["25-11-2026","BISTRO",82.30,20,"26-11-2026"],
+  ]}] };
+  const [row] = parseBankWorkbookToPreview({ workbook, workspaceCurrency: "ILS", policy: "previous-month-v1" }).previewTransactions;
+  assert.equal(row.normalizedAmount, 82.30);
+  assert.equal(row.valuationState, "recorded");
+  assert.equal(row.settlementCurrency, "EUR");
+  assert.equal(row.settlementAmount, 20);
 });

@@ -23,6 +23,18 @@ const timestamps = {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 };
 
+export type ValuationPolicy = "legacy" | "previous-month-v1";
+export type ValuationState = "legacy" | "recorded" | "converted" | "pending";
+
+function valuationColumns() {
+  return {
+    valuationState: text("valuation_state").$type<ValuationState>().notNull().default("legacy"),
+    valuationPolicy: text("valuation_policy").$type<ValuationPolicy>().notNull().default("legacy"),
+    referenceMonth: date("reference_month"),
+    exchangeRateId: uuid("exchange_rate_id").references((): AnyPgColumn => exchangeRateMonthly.id),
+  };
+}
+
 export const importTypeEnum = pgEnum("import_type", ["bank", "investment"]);
 export const fileKindEnum = pgEnum("file_kind", ["csv", "xlsx"]);
 export const importStatusEnum = pgEnum("import_status", [
@@ -106,7 +118,8 @@ export const users = pgTable("users", {
 export const workspaces = pgTable("workspaces", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: text("name").notNull(),
-  baseCurrency: char("base_currency", { length: 3 }).notNull(),
+  fxPolicy: text("fx_policy").$type<ValuationPolicy>().notNull().default("legacy"),
+    baseCurrency: char("base_currency", { length: 3 }).notNull(),
   countryCode: char("country_code", { length: 2 }),
   ...timestamps,
 });
@@ -332,17 +345,23 @@ export const transactions = pgTable(
     workspaceCurrency: char("workspace_currency", { length: 3 }).notNull(),
     normalizedAmount: numeric("normalized_amount", { precision: 18, scale: 6 }).notNull(),
     normalizationRate: numeric("normalization_rate", { precision: 18, scale: 8 }),
+    ...valuationColumns(),
     normalizationRateSource: text("normalization_rate_source"),
     direction: text("direction").notNull(),
     externalReference: text("external_reference"),
+    refundOfTransactionId: uuid("refund_of_transaction_id").references((): AnyPgColumn => transactions.id),
     dedupeHash: text("dedupe_hash").notNull(),
     ...timestamps,
   },
   (table) => ({
+    pendingFxIdx: index("transactions_pending_fx_idx")
+      .on(table.workspaceId, table.referenceMonth, table.id)
+      .where(sql`${table.valuationState} = 'pending'`),
     workspaceTransactionDateIdx: index("transactions_workspace_date_idx").on(
       table.workspaceId,
       table.transactionDate,
     ),
+    refundPurchaseIdx: index("transactions_refund_purchase_idx").on(table.refundOfTransactionId).where(sql`${table.refundOfTransactionId} is not null`),
     workspaceDedupeIdx: index("transactions_workspace_dedupe_idx").on(
       table.workspaceId,
       table.dedupeHash,
@@ -733,6 +752,7 @@ export const manualEntries = pgTable(
     workspaceCurrency: char("workspace_currency", { length: 3 }).notNull(),
     normalizedAmount: numeric("normalized_amount", { precision: 18, scale: 6 }).notNull(),
     normalizationRate: numeric("normalization_rate", { precision: 18, scale: 8 }),
+    ...valuationColumns(),
     normalizationRateSource: text("normalization_rate_source"),
     payerMemberId: uuid("payer_member_id").references(() => workspaceMembers.id),
     personalOwnerMemberId: uuid("personal_owner_member_id").references(() => workspaceMembers.id),
@@ -747,6 +767,9 @@ export const manualEntries = pgTable(
     ...timestamps,
   },
   (table) => ({
+    pendingFxIdx: index("manual_entries_pending_fx_idx")
+      .on(table.workspaceId, table.referenceMonth, table.id)
+      .where(sql`${table.valuationState} = 'pending'`),
     workspaceEventDateIdx: index("manual_entries_workspace_event_date_idx").on(
       table.workspaceId,
       table.eventDate,
@@ -919,6 +942,10 @@ export const exchangeRateMonthly = pgTable(
     yearMonth: date("year_month").notNull(),
     averageRate: numeric("average_rate", { precision: 18, scale: 8 }).notNull(),
     sourceName: text("source_name").notNull(),
+    provider: text("provider"),
+    seriesCode: text("series_code"),
+    calculationVersion: text("calculation_version"),
+    observationCount: integer("observation_count"),
     fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -930,6 +957,23 @@ export const exchangeRateMonthly = pgTable(
     ),
   }),
 );
+
+export const fxRateRequests = pgTable("fx_rate_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  baseCurrency: char("base_currency", { length: 3 }).notNull(),
+  quoteCurrency: char("quote_currency", { length: 3 }).notNull(),
+  yearMonth: date("year_month").notNull(),
+  phase: text("phase").notNull().default("fetch"),
+  attempts: integer("attempts").notNull().default(0),
+  availableAt: timestamp("available_at", { withTimezone: true }).notNull().defaultNow(),
+  lease: uuid("lease"),
+  requestedDuringRepair: boolean("requested_during_repair").notNull().default(false),
+  lastError: text("last_error"),
+  failedAt: timestamp("failed_at", { withTimezone: true }),
+}, table => ({
+  pairMonthUnique: unique().on(table.baseCurrency, table.quoteCurrency, table.yearMonth),
+  availableIdx: index("fx_rate_requests_available_idx").on(table.availableAt),
+}));
 
 export const periodSummaries = pgTable(
   "period_summaries",
@@ -974,3 +1018,19 @@ export const jobs = pgTable(
     statusAvailableIdx: index("jobs_status_available_idx").on(table.status, table.availableAt),
   }),
 );
+
+export const fxHistoryAudit = pgTable("fx_history_audit", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  workspaceId: uuid("workspace_id").notNull().references(() => workspaces.id),
+  runId: uuid("run_id").notNull(),
+  sourceKind: text("source_kind").notNull(),
+  sourceId: uuid("source_id").notNull(),
+  reason: text("reason").notNull(),
+  effectiveDate: date("effective_date").notNull(),
+  beforeValue: jsonb("before_value").notNull(),
+  afterValue: jsonb("after_value").notNull(),
+  afterVersion: text("after_version").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  runSource: unique().on(table.workspaceId, table.runId, table.sourceKind, table.sourceId),
+}));

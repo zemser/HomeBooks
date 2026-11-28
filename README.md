@@ -72,18 +72,7 @@ npm run test:e2e
 
 The first run may take a few minutes while Docker images and Playwright browsers download.
 
-Use this checkpoint when you want to run the app against a real PostgreSQL database instead of only relying on lint/build.
-
-1. Start a local PostgreSQL instance and create an empty database.
-2. Export `DATABASE_URL`, for example:
-   `export DATABASE_URL=postgres://postgres:postgres@localhost:5432/finapp`
-3. Install dependencies if needed:
-   `npm ci`
-4. Push the current schema into the database:
-   `npm run db:push`
-5. Start the app:
-   `npm run dev`
-6. Open [http://localhost:3000](http://localhost:3000).
+Install dependencies with `npm ci`, then use `npm run dev:local` for both new and existing local households. The command applies versioned SQL migrations, including the functions, policies and seed records the app uses. It also adopts supported databases previously initialized with `db:push` and preserves their household data. Open [http://localhost:3000](http://localhost:3000) once the app starts.
 
 Notes:
 

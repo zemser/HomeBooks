@@ -1,3 +1,4 @@
+import { describePendingFx } from "@/features/reporting/pending-fx";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -80,6 +81,7 @@ function PeriodSummarySection({
       <div>
         <h2>{title}</h2>
         <p className="muted-text">{description}</p>
+        {summary.pendingFx?.length ? <p>{describePendingFx(summary.pendingFx)}</p> : null}
       </div>
 
       <div className="summary-strip">
@@ -125,7 +127,10 @@ function PeriodSummarySection({
           <tbody>
             {months.map((month) => (
               <tr key={month.month}>
-                <td>{formatReportMonthLabel(month.month)}</td>
+                <td>
+                  {formatReportMonthLabel(month.month)}
+                  {month.pendingFx?.length ? <div className="table-note">{describePendingFx(month.pendingFx)}</div> : null}
+                </td>
                 <td>{formatReportMoney(month.incomeTotal, summary.workspaceCurrency)}</td>
                 <td>{formatReportMoney(month.expenseTotal, summary.workspaceCurrency)}</td>
                 <td>{formatReportMoney(month.savingsTotal, summary.workspaceCurrency)}</td>
@@ -236,6 +241,7 @@ function YearReportView({
       <section className="card stack compact">
         <div>
           <h2>Year totals</h2>
+          {report.totals.pendingFx.length > 0 && <p>{describePendingFx(report.totals.pendingFx)}</p>}
           <p className="muted-text">Displayed months reconcile exactly to these totals.</p>
         </div>
         <div className="summary-strip">
@@ -323,6 +329,7 @@ function YearReportView({
                     <span className={`badge badge-${statusPresentation.tone}`}>
                       {statusPresentation.label}
                     </span>
+                    {month.pendingFx?.length ? <div className="table-note">{describePendingFx(month.pendingFx)}</div> : null}
                     {month.totalTransactionCount > 0 ? (
                       <div className="table-note">
                         {month.reviewedTransactionCount}/{month.totalTransactionCount} reviewed
@@ -444,6 +451,7 @@ async function ReportsData({ searchParams }: ReportsPageProps) {
                 : `${reportMonthLabel} is complete.`}
           </strong>{" "}
           {getMonthCompletenessProgressCopy(completeness)}
+          {completeness.pendingFx?.length ? <p>{describePendingFx(completeness.pendingFx)}</p> : null}
           {(completeness.pendingOutflowTotal ?? 0) > 0 ? <p>Unreviewed account outflows: {formatReportMoney(completeness.pendingOutflowTotal ?? 0, report.summary.workspaceCurrency)}. These still need classification before they can count as spending or be assigned to a person.</p> : null}
           {(completeness.unresolvedAttributionCount ?? 0) > 0 ? <p>{completeness.unresolvedAttributionCount} classified transactions still need payer or income-recipient confirmation. Spending totals include classified expenses; member attribution is incomplete. <Link href={`/transactions/all?month=${report.summary.selectedMonth.slice(0, 7)}`}>Confirm people in History</Link></p> : null}
           {report.summary.reportingMode === "allocated_period" ? (

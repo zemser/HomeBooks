@@ -61,6 +61,10 @@ type RawTransactionRow = {
   settlementCurrency: string | null;
   normalizedAmount: string;
   workspaceCurrency: string;
+  referenceMonth?: string | null;
+  valuationPolicy?: string;
+  valuationState?: string;
+  refundOfTransactionId?: string | null;
   normalizationRateSource: string | null;
   direction: string;
   accountDisplayName: string;
@@ -174,6 +178,10 @@ async function mapTransactionRows(
     settlementCurrency: row.settlementCurrency,
     normalizedAmount: row.normalizedAmount,
     workspaceCurrency: row.workspaceCurrency,
+    referenceMonth: row.referenceMonth,
+    valuationPolicy: row.valuationPolicy,
+    valuationState: row.valuationState,
+    refundOfTransactionId: row.refundOfTransactionId,
     normalizationRateSource: row.normalizationRateSource,
     direction: row.direction,
     accountDisplayName: row.accountDisplayName,
@@ -310,6 +318,10 @@ async function listTransactionsByWorkspace(input: {
       settlementCurrency: transactions.settlementCurrency,
       normalizedAmount: transactions.normalizedAmount,
       workspaceCurrency: transactions.workspaceCurrency,
+      referenceMonth: transactions.referenceMonth,
+      valuationPolicy: transactions.valuationPolicy,
+      valuationState: transactions.valuationState,
+      refundOfTransactionId: transactions.refundOfTransactionId,
       normalizationRateSource: transactions.normalizationRateSource,
       direction: transactions.direction,
       accountDisplayName: financialAccounts.displayName,

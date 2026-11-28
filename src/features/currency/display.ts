@@ -1,6 +1,10 @@
 import { formatMoneyNumber } from "@/lib/money/format";
 
+import { isReportableFxNormalizedSpend } from "./valuation-status";
+
 export type CurrencyNormalizationDisplayInput = {
+  valuationState?: string | null;
+  referenceMonth?: string | null;
   originalCurrency?: string | null;
   settlementCurrency?: string | null;
   settlementAmount?: number | string | null;
@@ -48,6 +52,12 @@ export function getCurrencyNormalizationDisplayState(
       ? formatMoneyNumber(numericSettlementAmount)
       : null;
 
+  if (!isReportableFxNormalizedSpend(input)) {
+    const description = `This row awaits conversion to ${currencyFallback} and is excluded from workspace totals.`;
+    return { isForeignCurrency, usesPlaceholderRate, label: "Awaiting conversion", tone: "warning",
+      shortDescription: description, fullDescription: description };
+  }
+
   if (
     originalCurrency &&
     workspaceCurrency &&
@@ -79,14 +89,21 @@ export function getCurrencyNormalizationDisplayState(
       ? `${settlementAmountLabel} ${settlementCurrency}`
       : settlementCurrency;
 
+    const average = input.referenceMonth ? "the " + input.referenceMonth.slice(0, 7) + " average" : "monthly average";
     return {
       isForeignCurrency,
       usesPlaceholderRate: false,
       label: "Converted",
       tone: "neutral",
-      shortDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at monthly average.`,
-      fullDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at monthly average.`,
+      shortDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at ${average}.`,
+      fullDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at ${average}.`,
     };
+  }
+
+  if (source === "linked-purchase-refund") {
+    const description = "This refund uses the workspace value of the linked purchase.";
+    return { isForeignCurrency, usesPlaceholderRate: false, label: "Linked refund", tone: "neutral",
+      shortDescription: description, fullDescription: description };
   }
 
   if (usesPlaceholderRate) {

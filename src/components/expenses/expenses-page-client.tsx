@@ -21,6 +21,7 @@ import { Modal } from "@/components/shared/modal";
 import { ImportSourceCell } from "@/components/shared/import-source-cell";
 import { HistoryMonthNav } from "@/components/expenses/history-month-nav";
 import { CategorySelect } from "@/components/workspaces/category-select";
+import { isReportableFxNormalizedSpend } from "@/features/currency/valuation-status";
 import { getCurrencyNormalizationDisplayState } from "@/features/currency/display";
 import { type ClassificationType } from "@/features/expenses/constants";
 import {
@@ -32,6 +33,7 @@ import {
   formatClassificationSummary,
   formatDecisionSourceLabel,
   formatManualEntryClassificationSummary,
+  formatExpenseAmount,
   formatMoneyDisplay,
   getTransactionMerchant,
 } from "@/features/expenses/presentation";
@@ -1223,6 +1225,8 @@ export function ExpensesPageClient({
                 Create a manual entry first, or select one from the saved list to adjust
                 its allocation.
               </p>
+            ) : !isReportableFxNormalizedSpend(selectedManualEntry) ? (
+              <p className="helper-text">Allocation becomes available after conversion.</p>
             ) : manualEntryAllocationSourceDirty ? (
               <p className="status warning">
                 Save amount or date changes before editing allocation so reporting totals
@@ -1354,7 +1358,7 @@ export function ExpensesPageClient({
                         <div className="table-note">{entry.payerMemberName ?? "Unassigned"}</div>
                       </td>
                       <td>{entry.eventKind}</td>
-                      <td>{formatMoneyDisplay(entry.normalizedAmount, entry.workspaceCurrency)}</td>
+                      <td>{formatExpenseAmount(entry)}</td>
                       <td>
                         <span className="badge badge-neutral">
                           {formatManualEntryClassificationSummary(entry)}
@@ -1540,13 +1544,9 @@ export function ExpensesPageClient({
                       <td>
                         <div className="stack compact">
                           <span>
-                            {formatMoneyDisplay(
-                              transaction.normalizedAmount,
-                              transaction.workspaceCurrency,
-                              transaction.direction,
-                            )}
+                            {formatExpenseAmount(transaction)}
                           </span>
-                          {transactionCurrencyState.label ? (
+                          {transactionCurrencyState.label && isReportableFxNormalizedSpend(transaction) ? (
                             <span
                               className={`badge ${
                                 transactionCurrencyState.tone === "warning"
@@ -1667,11 +1667,7 @@ export function ExpensesPageClient({
             <div className="transaction-modal-summary">
               <strong>{getTransactionMerchant(selectedTransaction)}</strong>
               <span className="table-note">
-                {selectedTransaction.transactionDate} · {formatMoneyDisplay(
-                  selectedTransaction.normalizedAmount,
-                  selectedTransaction.workspaceCurrency,
-                  selectedTransaction.direction,
-                )}
+                {selectedTransaction.transactionDate} · {formatExpenseAmount(selectedTransaction)}
               </span>
             </div>
 
@@ -1747,14 +1743,12 @@ export function ExpensesPageClient({
             <div className="transaction-modal-summary">
               <strong>{getTransactionMerchant(selectedTransaction)}</strong>
               <span className="table-note">
-                {selectedTransaction.transactionDate} · {formatMoneyDisplay(
-                  selectedTransaction.normalizedAmount,
-                  selectedTransaction.workspaceCurrency,
-                  selectedTransaction.direction,
-                )}
+                {selectedTransaction.transactionDate} · {formatExpenseAmount(selectedTransaction)}
               </span>
             </div>
-            {!transactionAllocationEditable ? (
+            {!isReportableFxNormalizedSpend(selectedTransaction) ? (
+              <p className="helper-text">Allocation becomes available after conversion.</p>
+            ) : !transactionAllocationEditable ? (
               <p className="helper-text">
                 Save a reportable classification in the review queue before editing this
                 transaction&apos;s allocation.

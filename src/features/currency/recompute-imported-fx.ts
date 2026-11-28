@@ -2,7 +2,6 @@ import { inferOriginalCurrency } from "@/features/currency/infer-original-curren
 import {
   createMonthlyAverageNormalizer,
   type CurrencyRateLookup,
-  MISSING_MONTHLY_RATE_SOURCE,
   yearMonthFromTransactionDate,
 } from "@/features/currency/monthly-rates";
 import {
@@ -101,15 +100,7 @@ export function recomputeImportedFxRows(rows: ImportedFxRow[], rates: CurrencyRa
   return { rows: nextRows, updatedCount };
 }
 
-export function isMissingMonthlyRateSource(value?: string | null) {
-  return value?.includes(MISSING_MONTHLY_RATE_SOURCE) ?? false;
-}
-
-export function isReportableFxNormalizedSpend(input: {
-  normalizationRateSource?: string | null;
-}) {
-  return !isMissingMonthlyRateSource(input.normalizationRateSource);
-}
+export { isMissingMonthlyRateSource, isReportableFxNormalizedSpend } from "./valuation-status";
 
 export function collectBackfillYearMonths(rows: Array<{ transactionDate: string }>) {
   return Array.from(

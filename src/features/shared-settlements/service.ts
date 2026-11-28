@@ -370,13 +370,41 @@ function buildFixedShareMicros(shares: FixedSplitDefinition["shares"]) {
   }));
 }
 
+function usesAgoraRounding(definition: unknown) {
+  return !!definition && typeof definition === "object" &&
+    "rounding" in definition && definition.rounding === "agora-v1";
+}
+
+// Retain the split convention saved at agreement time. A workspace rollout
+// must never re-round repayments that were agreed under the legacy policy.
+export function allocateAgorot(totalMicros: bigint, weights: Array<{memberId: string; percentageBps: number}>) {
+  const unit = 10_000n;
+  const sign = totalMicros < 0n ? -1n : 1n;
+  const agorot = totalMicros * sign / unit;
+  const rows = weights.map(({memberId, percentageBps}) => {
+    const scaled = agorot * BigInt(percentageBps);
+    return {memberId, units: scaled / PERCENTAGE_SCALE, remainder: scaled % PERCENTAGE_SCALE};
+  });
+  const remaining = agorot - rows.reduce((sum, row) => sum + row.units, 0n);
+  const ordered = [...rows].sort((a,b) => Number(b.remainder - a.remainder) || a.memberId.localeCompare(b.memberId));
+  for (const row of ordered.slice(0, Number(remaining))) row.units++;
+  return rows.map(row => ({memberId: row.memberId, amountMicros: row.units * unit * sign}));
+}
+
 function resolveShareMicros(input: {
   pair: [WorkspaceMemberSummary, WorkspaceMemberSummary];
   totalAmount: string;
   splitState: SharedExpenseSplitState;
+  roundToAgora: boolean;
 }) {
   const memberIds = input.pair.map((member) => member.id) as [string, string];
 
+  if (input.roundToAgora && input.splitState.splitMode !== "fixed") {
+    const weights = input.splitState.splitMode === "percentage"
+      ? input.splitState.splitDefinition.shares
+      : memberIds.map(memberId => ({memberId, percentageBps: 5000}));
+    return allocateAgorot(amountStringToMicros(input.totalAmount), weights);
+  }
   switch (input.splitState.splitMode) {
     case "equal":
       return buildEqualShareMicros(input.totalAmount, memberIds);
@@ -408,6 +436,7 @@ function buildSettlementItem(input: {
   const shareBreakdown = splitState
     ? resolveShareMicros({
         pair: input.pair,
+        roundToAgora: usesAgoraRounding(input.row.splitDefinitionJson),
         totalAmount: input.row.totalAmount,
         splitState,
       }).map((share) => ({
@@ -427,12 +456,14 @@ function buildSettlementItem(input: {
             return null;
           }
 
+          const owed = amountStringToMicros(otherShare.amount);
+          const [from, to] = owed < 0n ? [payer, otherMember] : [otherMember, payer];
           return {
-            fromMemberId: otherMember.id,
-            fromMemberName: otherMember.displayName,
-            toMemberId: payer.id,
-            toMemberName: payer.displayName,
-            amount: otherShare.amount,
+            fromMemberId: from.id,
+            fromMemberName: from.displayName,
+            toMemberId: to.id,
+            toMemberName: to.displayName,
+            amount: microsToAmountString(owed < 0n ? -owed : owed),
           };
         })()
       : null;
@@ -674,12 +705,14 @@ export async function upsertSharedSettlement(
     const expenseEvent = await tx
       .select({
         id: expenseEvents.id,
+        existingDefinition: sharedExpenseSplits.splitDefinitionJson,
         totalAmount: expenseEvents.totalAmount,
         payerMemberId: expenseEvents.payerMemberId,
         sourceType: expenseEvents.sourceType,
         sourceId: expenseEvents.sourceId,
       })
       .from(expenseEvents)
+      .leftJoin(sharedExpenseSplits, eq(sharedExpenseSplits.expenseEventId, expenseEvents.id))
       .where(
         and(
           eq(expenseEvents.id, input.expenseEventId),
@@ -703,6 +736,16 @@ export async function upsertSharedSettlement(
       settlementStatus: input.settlementStatus,
       totalAmount: expenseEvent.totalAmount,
     });
+
+    const roundToAgora = expenseEvent.existingDefinition
+      ? usesAgoraRounding(expenseEvent.existingDefinition)
+      : context.fxPolicy === "previous-month-v1" && context.baseCurrency === "ILS" &&
+        amountStringToMicros(expenseEvent.totalAmount) % 10_000n === 0n;
+    if (roundToAgora && splitState.splitMode === "fixed" &&
+        splitState.splitDefinition.shares.some(share => amountStringToMicros(share.amount) % 10_000n !== 0n)) {
+      throw new Error("Enter fixed shekel shares in whole agorot.");
+    }
+    const definition = roundToAgora ? {...splitState.splitDefinition, rounding: "agora-v1"} : splitState.splitDefinition;
 
     if (expenseEvent.sourceType === "transaction") {
       await tx
@@ -766,14 +809,14 @@ export async function upsertSharedSettlement(
       .values({
         expenseEventId: expenseEvent.id,
         splitMode: splitState.splitMode,
-        splitDefinitionJson: splitState.splitDefinition,
+        splitDefinitionJson: definition,
         settlementStatus: splitState.settlementStatus,
       })
       .onConflictDoUpdate({
         target: sharedExpenseSplits.expenseEventId,
         set: {
           splitMode: splitState.splitMode,
-          splitDefinitionJson: splitState.splitDefinition,
+          splitDefinitionJson: definition,
           settlementStatus: splitState.settlementStatus,
           updatedAt: new Date(),
         },

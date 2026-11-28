@@ -31,6 +31,7 @@ export type CurrentWorkspaceContext = {
   workspaceName?: string;
   memberId: string;
   baseCurrency: string;
+  fxPolicy?: import("@/db/schema").ValuationPolicy;
 };
 
 export type AuthenticatedRequestContext = CurrentWorkspaceContext & {
@@ -172,6 +173,7 @@ async function resolveSeededDevWorkspaceContext(): Promise<AuthenticatedRequestC
         .values({
           name: DEFAULT_WORKSPACE_NAME,
           baseCurrency: DEFAULT_BASE_CURRENCY,
+          fxPolicy: process.env.FX_WORKER_DATABASE_URL ? "previous-month-v1" : "legacy",
         })
         .returning();
 
@@ -271,6 +273,7 @@ function createAuthenticatedRequestContext(
     workspaceName: workspace.name,
     memberId: membership.id,
     baseCurrency: workspace.baseCurrency,
+    fxPolicy: workspace.fxPolicy,
   };
 }
 

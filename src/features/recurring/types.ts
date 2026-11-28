@@ -44,6 +44,7 @@ export type GeneratedManualEntryItem = {
   originalAmount: string;
   originalCurrency: string;
   normalizedAmount: string;
+  valuationState: import("@/db/schema").ValuationState;
   workspaceCurrency: string;
   payerMemberId: string | null;
   payerMemberName: string | null;
@@ -59,6 +60,7 @@ export type GeneratedManualEntryItem = {
 };
 
 export type RecurringPageData = {
+  fxPolicy?: import("@/db/schema").ValuationPolicy;
   workspaceCurrency: string;
   members: Array<{
     id: string;

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted for implementation. This document is the source of truth for the next currency slice.
+The statement formats and original-currency inference below remain applicable. Workspaces using the legacy policy value foreign charges using the transaction month. Workspaces enrolled in the previous-month policy use the bank-posted workspace amount first, then the prior calendar month’s Bank of Israel average for foreign-settled purchases. January uses the preceding December. A later publication never reprices an agreed repayment. See the [rollout and history procedure](fx-worker.md).
 
 Do not start other product work in this change. Do not redesign Transactions IA, reporting layout, recurring UX, investments, or live FX APIs.
 
