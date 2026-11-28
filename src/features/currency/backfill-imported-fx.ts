@@ -41,7 +41,8 @@ export type HistoryRow = {
   currency: string | null;
   amount: string | null;
   workspaceCurrency: string;
-  statementSection?: string | null;
+  importTemplate?: string | null;
+  maxStatementSection?: string | null;
   classification?: string | null;
   attributedMemberId?: string | null;
   linkedRefund?: boolean;
@@ -101,26 +102,32 @@ async function loadRows(
       select s.id, 'transaction' as kind, s.transaction_date as date, s.settlement_amount as amount,
         s.settlement_currency as currency, s.workspace_currency, to_jsonb(s) as data,
         (select to_jsonb(c) from transaction_classifications c where c.transaction_id=s.id) as classification,
-        exists(select from transactions d where d.workspace_id=s.workspace_id and d.account_id=s.account_id
+        -- v2 rows have already gone through statement identity matching and explicit adjudication.
+        (not starts_with(s.dedupe_hash,'v2:') and exists(select from transactions d where d.workspace_id=s.workspace_id and d.account_id=s.account_id
+          and not (starts_with(d.dedupe_hash,'v2:') and strpos(d.dedupe_hash,'@') > 0)
           and d.transaction_date=s.transaction_date and d.description=s.description
           and d.settlement_amount is not distinct from s.settlement_amount
           and d.settlement_currency is not distinct from s.settlement_currency
-          and d.external_reference is not distinct from s.external_reference and d.id<>s.id) as duplicate,
+          and d.external_reference is not distinct from s.external_reference and d.id<>s.id)) as duplicate,
         null::jsonb as overrides,
-        (s.refund_of_transaction_id is not null or exists(select from transactions f where f.workspace_id=s.workspace_id and f.refund_of_transaction_id=s.id)) as linked_refund
-      from transactions s where s.workspace_id=${workspaceId} and ${id} and ${scope.kind == null || scope.kind === "transaction"}
+        (s.refund_of_transaction_id is not null or exists(select from transactions f where f.workspace_id=s.workspace_id and f.refund_of_transaction_id=s.id)) as linked_refund,
+        case when tpl.template_name='max_credit_statement' then s.statement_section end as max_section, tpl.template_name as import_template
+      from transactions s
+      left join imports i on i.id=s.import_id and i.workspace_id=s.workspace_id
+      left join import_templates tpl on tpl.id=i.import_template_id
+      where s.workspace_id=${workspaceId} and ${id} and ${scope.kind == null || scope.kind === "transaction"}
         and ${scope.legacy ? sql`s.valuation_policy='legacy' and (s.valuation_state='pending' or s.normalization_rate_source like '%placeholder-rate-1' or s.normalization_rate_source like '%missing-monthly-rate%')` : sql`true`}
         and ${pendingPredicate(sql`s.settlement_currency`, scope.pending)}
       union all
       select s.id, case when s.source_type='recurring_generated' then 'recurring' else 'manual' end,
         s.event_date,s.original_amount,s.original_currency,s.workspace_currency,to_jsonb(s),null,false,
-        (select jsonb_agg(to_jsonb(o) order by o.id) from manual_entry_overrides o where o.manual_entry_id=s.id),false
+        (select jsonb_agg(to_jsonb(o) order by o.id) from manual_entry_overrides o where o.manual_entry_id=s.id),false,null,null
       from manual_entries s where s.workspace_id=${workspaceId} and ${id} and ${scope.kind !== "transaction" && !scope.legacy}
         and ${pendingPredicate(sql`s.original_currency`, scope.pending)}
     )
     select s.id,s.kind,s.date::text as "sourceDate",s.amount::text,s.currency,s.workspace_currency as "workspaceCurrency",
       ${scope.id ? sql`coalesce(related.events,'[]'::jsonb)::text` : sql`null`} as projection,
-      s.data->>'statement_section' as "statementSection",
+      s.max_section as "maxStatementSection", s.import_template as "importTemplate",
       coalesce(s.classification,s.data)->>'classification_type' as classification,
       case coalesce(s.classification,s.data)->>'classification_type'
         when 'shared' then coalesce(s.classification->>'paid_by_member_id',s.data->>'payer_member_id')
@@ -171,9 +178,18 @@ export function planHistoryRow(
   ): HistoryItem => ({ ...row, category, proposed, rateKey: key });
   if (row.duplicate) return item("duplicate");
   if (!row.currency || row.amount === null) return item("review");
-  const sectionCurrency = inferMaxSectionCurrency(row.statementSection);
-  if (sectionCurrency !== "ILS" && sectionCurrency !== row.currency)
+  const sectionCurrency =
+    row.maxStatementSection && inferMaxSectionCurrency(row.maxStatementSection);
+  if (sectionCurrency && sectionCurrency !== row.currency)
     return item("review");
+  // Old Cal recent imports stored the EUR settlement even when the same statement
+  // supplied an ILS amount. Transactions have no direct reference to the raw row.
+  if (
+    row.before.valuationPolicy === "legacy" &&
+    row.importTemplate === "cal_recent_transactions_report" &&
+    row.currency === "EUR" &&
+    row.workspaceCurrency === "ILS"
+  ) return item("review");
   const previous = row.before;
   if (
     previous.valuationPolicy === "previous-month-v1" &&

@@ -79,6 +79,11 @@ test("history selection relies on recorded provenance and protects established b
   });
   assert.equal(next.proposed?.normalizedAmount, "308.800000");
   assert.equal(next.rateKey?.yearMonth, "2026-10-01");
+  assert.equal(plan({
+    ...legacy,
+    currency: "EUR",
+    importTemplate: "cal_recent_transactions_report",
+  }, true).category, "review");
 });
 
 test(

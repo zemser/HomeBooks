@@ -57,14 +57,12 @@ test(
           await tx.execute(
             sql`delete from public.exchange_rate_monthly where base_currency='USD' and quote_currency='ILS' and year_month='2001-10-01'`,
           );
-          await tx
-            .insert(schema.workspaces)
-            .values({
-              id: workspaceId,
-              name: "FX lifecycle",
-              baseCurrency: "ILS",
-              fxPolicy: "previous-month-v1",
-            });
+          await tx.insert(schema.workspaces).values({
+            id: workspaceId,
+            name: "FX lifecycle",
+            baseCurrency: "ILS",
+            fxPolicy: "previous-month-v1",
+          });
           const users = await tx
             .insert(schema.users)
             .values(
@@ -316,6 +314,88 @@ test(
           );
           assert.equal(coffees.length, 2);
           assert.equal(new Set(coffees.map((row) => row.dedupeHash)).size, 2);
+          // Cal sheet names are arbitrary, including names that resemble Max currency sections.
+          // Both identical purchases were explicitly accepted before their rate was available.
+          workbook.sheets = [
+            {
+              name: "Transactions אירו",
+              rows: [
+                [],
+                ["Cal card"],
+                ["November"],
+                [
+                  "תאריך עסקה",
+                  "שם בית העסק",
+                  "קטגוריה",
+                  "4 ספרות אחרונות של כרטיס האשראי",
+                  "סוג עסקה",
+                  "סכום חיוב",
+                ],
+                ...Array.from({ length: 2 }, () => [
+                  "23-11-2001",
+                  "CAL COFFEE",
+                  "",
+                  "1234",
+                  "",
+                  7,
+                  "GBP",
+                  7,
+                  "GBP",
+                ]),
+              ],
+            },
+          ];
+          await tx.execute(
+            sql`delete from exchange_rate_monthly where base_currency='GBP' and quote_currency='ILS' and year_month='2001-10-01'`,
+          );
+          const decisions = Object.fromEntries(
+            (await review("cal twins")).map((key) => [key, "keep" as const]),
+          );
+          assert.equal(
+            (await save("cal twins", decisions)).transactionCount,
+            2,
+          );
+          const calRows = (await transactions()).filter(
+            (row) => row.merchantRaw === "CAL COFFEE",
+          );
+          assert.equal(calRows.length, 2);
+          for (const row of calRows) {
+            assert.equal(row.valuationState, "pending");
+            await upsertTransactionClassification(
+              context,
+              {
+                transactionId: row.id,
+                classificationType: "shared",
+                paidByMemberId: payer.id,
+              },
+              tx,
+            );
+          }
+          await tx
+            .insert(schema.exchangeRateMonthly)
+            .values({
+              baseCurrency: "GBP",
+              quoteCurrency: "ILS",
+              averageRate: "3.5",
+              yearMonth: "2001-10-01",
+              sourceName: "boi-monthly-v1:cal-fixture",
+            });
+          const calKey = {
+            baseCurrency: "GBP",
+            quoteCurrency: "ILS",
+            yearMonth: "2001-10-01",
+          };
+          assert.equal(
+            (await reconcilePendingFxForWorkspace(context, tx, calKey))
+              .updatedCount,
+            2,
+          );
+          assert.equal(
+            (await reconcilePendingFxForWorkspace(context, tx, calKey))
+              .updatedCount,
+            0,
+          );
+          assert.equal((await report()).summary.expenseTotal, 308.8 + 49);
           throw rollback;
         }),
         (e) => {
@@ -361,21 +441,17 @@ test(
     try {
       // Independent connections must see the fixture to exercise the account lock.
       await db.transaction(async (tx) => {
-        await tx
-          .insert(schema.workspaces)
-          .values({
-            id: workspaceId,
-            name: "Concurrent FX import",
-            baseCurrency: "ILS",
-            fxPolicy: context.fxPolicy,
-          });
-        await tx
-          .insert(schema.users)
-          .values({
-            id: userId,
-            displayName: "Alex",
-            email: userId + "@example.test",
-          });
+        await tx.insert(schema.workspaces).values({
+          id: workspaceId,
+          name: "Concurrent FX import",
+          baseCurrency: "ILS",
+          fxPolicy: context.fxPolicy,
+        });
+        await tx.insert(schema.users).values({
+          id: userId,
+          displayName: "Alex",
+          email: userId + "@example.test",
+        });
         await tx
           .insert(schema.workspaceMembers)
           .values({ id: memberId, workspaceId, userId, role: "owner" });
