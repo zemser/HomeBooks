@@ -1,8 +1,8 @@
-CREATE TABLE public.fx_history_audit (
+CREATE TABLE IF NOT EXISTS public.fx_history_audit (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   workspace_id uuid NOT NULL REFERENCES public.workspaces(id),
   run_id uuid NOT NULL,
-  source_kind text NOT NULL CHECK (source_kind IN ('transaction', 'manual', 'recurring')),
+  source_kind text NOT NULL,
   source_id uuid NOT NULL,
   reason text NOT NULL,
   effective_date date NOT NULL,
@@ -12,6 +12,9 @@ CREATE TABLE public.fx_history_audit (
   created_at timestamptz NOT NULL DEFAULT now(),
   UNIQUE (workspace_id, run_id, source_kind, source_id)
 );
+--> statement-breakpoint
+ALTER TABLE public.fx_history_audit ADD CONSTRAINT fx_history_audit_source_kind_check
+  CHECK (source_kind IN ('transaction', 'manual', 'recurring'));
 --> statement-breakpoint
 ALTER TABLE public.fx_history_audit ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint

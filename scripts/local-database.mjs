@@ -3,8 +3,8 @@ import path from "node:path";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
 // dev:local used db:push before the FX worker. Those databases have tables but
-// no migration ledger or SQL-only identity helpers. Adopt only the identifiable
-// pre-FX local baseline; never replay historical destructive data migrations.
+// no migration ledger or SQL-only identity helpers. Adopt the shared 0016 baseline;
+// later migrations install missing SQL objects even if db:push already created the FX columns.
 async function adoptLocalPush(client, folder, migrations) {
   const {
     rows: [state],

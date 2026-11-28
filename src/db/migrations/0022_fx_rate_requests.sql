@@ -7,11 +7,14 @@ ALTER TABLE public.exchange_rate_monthly
 CREATE TABLE IF NOT EXISTS public.fx_rate_requests (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), base_currency char(3) NOT NULL,
   quote_currency char(3) NOT NULL, year_month date NOT NULL,
-  phase text NOT NULL DEFAULT 'fetch' CHECK (phase IN ('fetch','refresh','repair')),
+  phase text NOT NULL DEFAULT 'fetch',
   attempts integer NOT NULL DEFAULT 0, available_at timestamptz NOT NULL DEFAULT now(),
   lease uuid, requested_during_repair boolean NOT NULL DEFAULT false, last_error text, failed_at timestamptz,
   UNIQUE (base_currency,quote_currency,year_month)
 );
+--> statement-breakpoint
+ALTER TABLE public.fx_rate_requests ADD CONSTRAINT fx_rate_requests_phase_check
+  CHECK (phase IN ('fetch','refresh','repair'));
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS fx_rate_requests_available_idx ON public.fx_rate_requests(available_at);
 --> statement-breakpoint
