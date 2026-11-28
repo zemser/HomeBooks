@@ -29,7 +29,7 @@ export function describePendingFx(amounts?: PendingFxAmount[]) {
     amounts
       ?.map(({ currency, amount, count, flow }) =>
         currency
-          ? `${currency} ${amount} awaiting conversion (${count} ${flow === "credit" ? "incoming" : "outgoing"})`
+          ? `${currency} ${Big(amount).toFixed()} awaiting conversion (${count} ${flow === "credit" ? "incoming" : "outgoing"})`
           : `${count} awaiting currency confirmation`,
       )
       .join(" · ") ?? ""
