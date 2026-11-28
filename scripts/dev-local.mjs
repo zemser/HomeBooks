@@ -84,6 +84,19 @@ async function ensureSchemaAndSeeds() {
 
     const seedPath = path.join(projectRoot, "src/db/migrations/0005_seed_import_catalog.sql");
     await client.query(fs.readFileSync(seedPath, "utf8"));
+
+    // Bank of Israel monthly averages power foreign-currency imports. They are
+    // idempotent (ON CONFLICT DO UPDATE), so re-apply them on every start:
+    // without them, USD/EUR charges in months past the last seed normalize
+    // to 0 and show as Placeholder FX.
+    for (const seedFile of [
+      "0017_seed_boi_monthly_averages.sql",
+      "0019_seed_boi_monthly_averages_2026_09_10.sql",
+    ]) {
+      await client.query(
+        fs.readFileSync(path.join(projectRoot, "src/db/migrations", seedFile), "utf8"),
+      );
+    }
   } finally {
     await client.end();
   }

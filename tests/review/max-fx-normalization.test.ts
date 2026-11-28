@@ -89,6 +89,59 @@ test("Hateruma USD-section dinner converts with the October monthly average", ()
   assert.equal(getCurrencyNormalizationDisplayState(row).label, "Converted");
 });
 
+test("October 2026 USD-section charges convert with the October monthly average", () => {
+  const usdIls = seededRates("USD", "ILS", "2026-10-01");
+  assert.equal(usdIls, 3.088);
+  const { previewTransactions } = previewWithRates(
+    [
+      ["עסקאות שחויבו בדולר", "", "", "", "", "", ""],
+      ["08-10-2026", "HCM*BROOKLYN BATHHOUSE", 53.81, 53.81, "", "", ""],
+      ["08-10-2026", "SQ *MIDWOOD FLATS", 32.22, 32.22, "", "", ""],
+    ],
+    seededRates,
+  );
+
+  assert.deepEqual(
+    previewTransactions.map((row) => [
+      row.settlementCurrency,
+      row.normalizedAmount,
+      row.normalizationRateSource,
+    ]),
+    [
+      ["USD", Number((53.81 * 3.088).toFixed(2)), "exchange-rate-monthly:seed-boi-monthly-average"],
+      ["USD", Number((32.22 * 3.088).toFixed(2)), "exchange-rate-monthly:seed-boi-monthly-average"],
+    ],
+  );
+  assert.equal(getCurrencyNormalizationDisplayState(previewTransactions[0]).label, "Converted");
+});
+
+test("September 2026 USD-section charges use the September rate, not October", () => {
+  const { previewTransactions } = previewWithRates(
+    [
+      ["עסקאות שחויבו בדולר", "", "", "", "", "", ""],
+      ["29-09-2026", "TST*MOMOFUKU NOODLE BAR", 55.41, 55.41, "", "", ""],
+    ],
+    seededRates,
+  );
+  const row = previewTransactions[0];
+
+  assert.equal(row.normalizationRate, 3.0334);
+  assert.equal(row.normalizedAmount, Number((55.41 * 3.0334).toFixed(2)));
+});
+
+test("September 2026 ILS-section Cursor charge is labeled USD", () => {
+  const { previewTransactions } = previewWithRates(
+    [["28-09-2026", "CURSOR, AI POWERED IDE", 20, 62.05, "", "", ""]],
+    seededRates,
+  );
+  const row = previewTransactions[0];
+
+  assert.equal(row.originalCurrency, "USD");
+  assert.equal(row.settlementCurrency, "ILS");
+  assert.equal(row.normalizedAmount, 62.05);
+  assert.equal(getCurrencyNormalizationDisplayState(row).label, "Foreign settled");
+});
+
 test("Uber USD-section trip behaves like Hateruma", () => {
   const usdIls = seededRates("USD", "ILS", "2025-10-01")!;
   const { previewTransactions } = previewWithRates(

@@ -134,6 +134,13 @@
       "when": 1789900000000,
       "tag": "0018_seed_bank_investment_source",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795852909023,
+      "tag": "0019_seed_boi_monthly_averages_2026_09_10",
+      "breakpoints": true
     }
   ]
 }

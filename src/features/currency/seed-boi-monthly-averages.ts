@@ -13,7 +13,7 @@ export type SeededMonthlyAverageRate = {
  * Bank of Israel representative-rate monthly averages (ILS per 1 unit of base).
  * JPY is stored per 1 yen; BoI publishes yen per 100 units and those series
  * were divided by 100 here. Source: BOI STATISTICS EXR RER_*_ILS, monthly mean
- * of daily representative rates, 2025-01 through 2026-08.
+ * of daily representative rates, 2025-01 through 2026-10.
  */
 export const SEED_BOI_MONTHLY_AVERAGES: SeededMonthlyAverageRate[] = [
   ...seedCurrency("USD", {
@@ -37,6 +37,8 @@ export const SEED_BOI_MONTHLY_AVERAGES: SeededMonthlyAverageRate[] = [
     "2026-06": 2.935954545,
     "2026-07": 3.031363636,
     "2026-08": 2.991952381,
+    "2026-09": 3.0334,
+    "2026-10": 3.088,
   }),
   ...seedCurrency("EUR", {
     "2025-01": 3.742309091,
@@ -59,6 +61,8 @@ export const SEED_BOI_MONTHLY_AVERAGES: SeededMonthlyAverageRate[] = [
     "2026-06": 3.3809,
     "2026-07": 3.462109091,
     "2026-08": 3.468080952,
+    "2026-09": 3.490895,
+    "2026-10": 3.4610619,
   }),
   ...seedCurrency("GBP", {
     "2025-01": 4.460895455,
@@ -81,6 +85,8 @@ export const SEED_BOI_MONTHLY_AVERAGES: SeededMonthlyAverageRate[] = [
     "2026-06": 3.91375,
     "2026-07": 4.053663636,
     "2026-08": 4.051390476,
+    "2026-09": 4.068325,
+    "2026-10": 4.10440952,
   }),
   ...seedCurrency(
     "JPY",
@@ -105,6 +111,8 @@ export const SEED_BOI_MONTHLY_AVERAGES: SeededMonthlyAverageRate[] = [
       "2026-06": 1.826672727,
       "2026-07": 1.866072727,
       "2026-08": 1.883738095,
+      "2026-09": 1.938825,
+      "2026-10": 1.95495714,
     },
     100,
   ),
@@ -129,6 +137,8 @@ export const SEED_BOI_MONTHLY_AVERAGES: SeededMonthlyAverageRate[] = [
     "2026-06": 3.673240909,
     "2026-07": 3.741072727,
     "2026-08": 3.703728571,
+    "2026-09": 3.70247,
+    "2026-10": 3.72678571,
   }),
 ];
 
