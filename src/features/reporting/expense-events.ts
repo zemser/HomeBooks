@@ -500,6 +500,7 @@ export async function syncManualEntryExpenseEvents(
         and(
           eq(manualEntries.workspaceId, context.workspaceId),
           inArray(manualEntries.id, normalizedIds),
+          ne(manualEntries.valuationState, "pending"),
           ne(manualEntries.classificationType, "transfer"),
           ne(manualEntries.classificationType, "ignore"),
         ),

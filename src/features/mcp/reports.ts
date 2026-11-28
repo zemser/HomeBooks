@@ -69,6 +69,7 @@ export function listItems(report: MonthlyReportData, args: z.infer<typeof itemsA
       id: item.id, sourceKind: item.sourceKind, sourceRecordId: item.sourceRecordId,
       title: item.title, date: item.eventDate, sourceDate: item.sourceEventDate,
       amount: item.normalizedAmount, sourceAmount: item.sourceNormalizedAmount, category: getCategoryLabel(item.category),
+      referenceMonth: item.fxDetails?.referenceMonth ?? null,
       scope: item.classificationType, historyPath: buildReportHistoryHref(item),
     })),
   };

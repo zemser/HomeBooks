@@ -1,6 +1,7 @@
 import { formatMoneyNumber } from "@/lib/money/format";
 
 export type CurrencyNormalizationDisplayInput = {
+  referenceMonth?: string | null;
   originalCurrency?: string | null;
   settlementCurrency?: string | null;
   settlementAmount?: number | string | null;
@@ -79,13 +80,14 @@ export function getCurrencyNormalizationDisplayState(
       ? `${settlementAmountLabel} ${settlementCurrency}`
       : settlementCurrency;
 
+    const average = input.referenceMonth ? "the " + input.referenceMonth.slice(0, 7) + " average" : "monthly average";
     return {
       isForeignCurrency,
       usesPlaceholderRate: false,
       label: "Converted",
       tone: "neutral",
-      shortDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at monthly average.`,
-      fullDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at monthly average.`,
+      shortDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at ${average}.`,
+      fullDescription: `Charged ${chargedCopy}, shown in ${workspaceCurrency} at ${average}.`,
     };
   }
 

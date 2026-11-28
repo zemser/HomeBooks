@@ -2,6 +2,7 @@ import { getCategoryLabel, reportCategoryKey, subtractMoney, type ReportingViewM
 export { REPORTING_VIEW_MODES, type ReportingViewMode } from "./report-values";
 import { and, eq, gte, lt, ne, sql } from "drizzle-orm";
 import Big from "big.js";
+import { pendingFxByMonth, type PendingFxAmount } from "./pending-fx";
 
 import { getDb, type DbExecutor } from "@/db";
 import {
@@ -48,6 +49,7 @@ export type MonthlyReportSummary = {
 export type MonthCompletenessStatus = "empty" | "in_progress" | "complete";
 
 export type MonthCompleteness = {
+  pendingFx?: PendingFxAmount[];
   pendingOutflowTotal?: number;
   unresolvedAttributionCount?: number;
   placeholderFxTransactionCount?: number;
@@ -146,6 +148,7 @@ export type MonthlyReportLineItem = {
     originalCurrency: string | null;
     settlementAmount: number | null;
     settlementCurrency: string | null;
+    referenceMonth?: string | null;
     normalizationRateSource: string | null;
   } | null;
 };
@@ -163,6 +166,7 @@ export type MonthlyReportData = {
 };
 
 export type YearMonthSummary = {
+  pendingFx?: PendingFxAmount[];
   month: string;
   status: MonthCompletenessStatus;
   reviewedTransactionCount: number;
@@ -355,7 +359,7 @@ export function buildMonthCompleteness(
   const status: MonthCompletenessStatus =
     counts.importedTransactionCount === 0 && counts.manualEntryCount === 0
       ? "empty"
-      : pendingTransactionCount > 0 || (counts.unresolvedAttributionCount ?? 0) > 0
+      : pendingTransactionCount > 0 || Boolean(counts.pendingFx?.length) || (counts.unresolvedAttributionCount ?? 0) > 0
         ? "in_progress"
         : "complete";
 
@@ -374,7 +378,8 @@ export async function getMonthCompleteness(
 ): Promise<MonthCompleteness> {
   const selectedMonth = normalizeMonthInput(input?.month);
   const { monthStart, nextMonthStart } = buildMonthWindow(selectedMonth);
-  const [transactionCounts, manualEntryCount] = await Promise.all([
+  const [pendingFx, transactionCounts, manualEntryCount] = await Promise.all([
+    pendingFxByMonth(db, context.workspaceId, monthStart, nextMonthStart),
     db
       .select({
         importedTransactionCount: sql<number>`count(${transactions.id})::int`,
@@ -409,6 +414,7 @@ export async function getMonthCompleteness(
   ]);
 
   return buildMonthCompleteness(selectedMonth, {
+    pendingFx: pendingFx.get(selectedMonth) ?? [],
     pendingOutflowTotal: Number(transactionCounts?.pendingOutflowTotal ?? 0),
     unresolvedAttributionCount: Number(transactionCounts?.unresolvedAttributionCount ?? 0),
     placeholderFxTransactionCount: Number(transactionCounts?.placeholderFxTransactionCount ?? 0),
@@ -457,7 +463,8 @@ async function getMonthCompletenessForMonths(
   const { nextMonthStart } = buildMonthWindow(months[months.length - 1]);
   const transactionMonth = sql<string>`date_trunc('month', ${transactions.transactionDate})::date::text`;
   const manualEntryMonth = sql<string>`date_trunc('month', ${manualEntries.eventDate})::date::text`;
-  const [transactionRows, manualEntryRows] = await Promise.all([
+  const [pendingFx, transactionRows, manualEntryRows] = await Promise.all([
+    pendingFxByMonth(db, context.workspaceId, firstMonth, nextMonthStart),
     db
       .select({
         month: transactionMonth,
@@ -506,6 +513,7 @@ async function getMonthCompletenessForMonths(
     const counts = transactionCountsByMonth.get(month);
 
     return buildMonthCompleteness(month, {
+      pendingFx: pendingFx.get(month) ?? [],
       pendingOutflowTotal: Number(counts?.pendingOutflowTotal ?? 0),
       unresolvedAttributionCount: Number(counts?.unresolvedAttributionCount ?? 0),
       placeholderFxTransactionCount: Number(counts?.placeholderFxTransactionCount ?? 0),
@@ -762,6 +770,7 @@ export function buildYearReportData(input: {
     return {
       month,
       status: completeness?.status ?? "empty",
+      pendingFx: completeness?.pendingFx ?? [],
       reviewedTransactionCount: completeness?.reviewedTransactionCount ?? 0,
       totalTransactionCount: completeness?.importedTransactionCount ?? 0,
       incomeTotal,
@@ -1005,6 +1014,7 @@ async function listPaymentDateReportRecordsForRange(
         settlementAmount: transactions.settlementAmount,
         settlementCurrency: transactions.settlementCurrency,
         normalizedAmount: transactions.normalizedAmount,
+        referenceMonth: transactions.referenceMonth,
         normalizationRateSource: transactions.normalizationRateSource,
         classificationType: transactionClassifications.classificationType,
         category: transactionClassifications.category,
@@ -1046,6 +1056,7 @@ async function listPaymentDateReportRecordsForRange(
       .where(
         and(
           eq(manualEntries.workspaceId, context.workspaceId),
+          ne(manualEntries.valuationState, "pending"),
           gte(manualEntries.eventDate, rangeStart),
           lt(manualEntries.eventDate, nextMonthStart),
           ne(manualEntries.classificationType, "transfer"),
@@ -1089,6 +1100,7 @@ async function listPaymentDateReportRecordsForRange(
             ? null
             : toNumber(transaction.settlementAmount),
         settlementCurrency: transaction.settlementCurrency,
+        referenceMonth: transaction.referenceMonth,
         normalizationRateSource: transaction.normalizationRateSource,
       },
     }];
@@ -1149,6 +1161,7 @@ async function listAllocatedPeriodReportRecordsForRange(
       transactionAmount: transactions.normalizedAmount,
       manualEventDate: manualEntries.eventDate,
       manualAmount: manualEntries.normalizedAmount,
+      manualValuationState: manualEntries.valuationState,
       allocatedAmount: expenseAllocations.allocatedAmount,
       eventKind: expenseEvents.eventKind,
       title: expenseEvents.title,
@@ -1162,7 +1175,8 @@ async function listAllocatedPeriodReportRecordsForRange(
       originalCurrency: transactions.originalCurrency,
       settlementAmount: transactions.settlementAmount,
       settlementCurrency: transactions.settlementCurrency,
-      normalizationRateSource: transactions.normalizationRateSource,
+      referenceMonth: transactions.referenceMonth,
+        normalizationRateSource: transactions.normalizationRateSource,
     })
     .from(expenseAllocations)
     .innerJoin(expenseEvents, eq(expenseEvents.id, expenseAllocations.expenseEventId))
@@ -1193,7 +1207,7 @@ async function listAllocatedPeriodReportRecordsForRange(
     );
 
   return allocatedRows
-    .filter((row) => row.sourceType !== "transaction" || isReportableFxNormalizedSpend(row))
+    .filter((row) => row.sourceType === "transaction" ? isReportableFxNormalizedSpend(row) : row.manualValuationState !== "pending")
     .map<ReportRecord>((row) => {
       const attribution = {
         personalOwnerMemberId: row.personalOwnerMemberId,
@@ -1227,6 +1241,7 @@ async function listAllocatedPeriodReportRecordsForRange(
               settlementAmount:
                 row.settlementAmount === null ? null : toNumber(row.settlementAmount),
               settlementCurrency: row.settlementCurrency,
+              referenceMonth: row.referenceMonth,
               normalizationRateSource: row.normalizationRateSource,
             }
           : null,

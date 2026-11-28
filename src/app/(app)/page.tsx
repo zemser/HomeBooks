@@ -1,3 +1,4 @@
+import { describePendingFx } from "@/features/reporting/pending-fx";
 import { buildReportsHref } from "@/features/reporting/line-item-slice";
 import Link from "next/link";
 import { cache, Suspense } from "react";
@@ -96,6 +97,7 @@ async function HomeReporting({ searchParams }: HomePageProps) {
             <h2>Monthly snapshot</h2>
             <p className="muted-text">Income, spending, savings, and who or what benefited.</p>
           </div>
+          {completion.pendingFx?.length ? <p>{describePendingFx(completion.pendingFx)}</p> : null}
           {completion.status === "in_progress" ? (
             <p className="muted-text">Based on reviewed transactions</p>
           ) : null}

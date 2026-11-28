@@ -1,3 +1,4 @@
+import { describePendingFx } from "./pending-fx";
 import { writeWorkbookToBuffer } from "@/lib/excel/write-workbook";
 import { writeCsvBuffer } from "@/lib/tabular/write-csv";
 import {
@@ -153,6 +154,7 @@ function buildYearSummaryTable(yearReport: YearReportData): ExportTable {
     ...scopeColumns(yearReport.totals.scopes),
     { key: "total_spent", label: "Total spent" },
     { key: "savings", label: "Savings" },
+    ...(yearReport.months.some(month => month.pendingFx?.length) ? [{ key: "pending_fx", label: "Awaiting conversion (source currencies)" }] : []),
   ];
 
   return {
@@ -165,6 +167,7 @@ function buildYearSummaryTable(yearReport: YearReportData): ExportTable {
       ...scopeRowValues(month.scopes),
       total_spent: month.expenseTotal,
       savings: month.savingsTotal,
+      pending_fx: describePendingFx(month.pendingFx),
     })),
   };
 }
