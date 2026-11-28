@@ -3,14 +3,14 @@ import { and, eq, or, sql } from "drizzle-orm";
 import type { DbExecutor } from "@/db";
 import { transactions } from "@/db/schema";
 import {
-  collectBackfillYearMonths,
   importedFxNeedsRewrite,
   recomputeImportedFx,
   type ImportedFxRow,
 } from "@/features/currency/recompute-imported-fx";
 import {
   createRateLookupFromMap,
-  loadSeededMonthlyRates,
+  loadAllSeededMonthlyRates,
+  PROVISIONAL_MONTHLY_RATE_SOURCE_PREFIX,
 } from "@/features/currency/monthly-rates";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
 import type { CurrentWorkspaceContext } from "@/features/workspaces/current-context";
@@ -39,6 +39,7 @@ export async function backfillImportedFxForWorkspace(
         eq(transactions.workspaceId, context.workspaceId),
         or(
           sql`coalesce(${transactions.normalizationRateSource}, '') like '%placeholder%'`,
+          sql`coalesce(${transactions.normalizationRateSource}, '') like ${`%${PROVISIONAL_MONTHLY_RATE_SOURCE_PREFIX}%`}`,
           and(
             sql`${transactions.originalCurrency} is not distinct from ${transactions.settlementCurrency}`,
             sql`abs(${transactions.originalAmount} - coalesce(${transactions.settlementAmount}, ${transactions.originalAmount})) > 0.06 * greatest(abs(${transactions.originalAmount}), abs(coalesce(${transactions.settlementAmount}, ${transactions.originalAmount})), 0.000001)`,
@@ -53,9 +54,7 @@ export async function backfillImportedFxForWorkspace(
     return { updatedCount: 0 };
   }
 
-  const rates = createRateLookupFromMap(
-    await loadSeededMonthlyRates(db, collectBackfillYearMonths(candidateRows)),
-  );
+  const rates = createRateLookupFromMap(await loadAllSeededMonthlyRates(db));
   const changedIds: string[] = [];
 
   for (const row of candidateRows) {

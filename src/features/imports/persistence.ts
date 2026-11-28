@@ -21,11 +21,11 @@ import {
   compatibilityMemberOwnerId,
 } from "@/features/expenses/payer";
 import { getSupportedBankImportCatalog } from "@/features/imports/catalog";
-import { parseBankWorkbookToPreview, collectWorkbookRateMonths } from "@/features/imports/parse-bank-workbook";
+import { parseBankWorkbookToPreview } from "@/features/imports/parse-bank-workbook";
 import {
   createMonthlyAverageNormalizer,
   createRateLookupFromMap,
-  loadSeededMonthlyRates,
+  loadAllSeededMonthlyRates,
 } from "@/features/currency/monthly-rates";
 import { backfillImportedFxForWorkspace } from "@/features/currency/backfill-imported-fx";
 import { syncTransactionExpenseEvents } from "@/features/reporting/expense-events";
@@ -593,10 +593,9 @@ export async function persistBankImport(input: {
   }
   const retryImport = duplicateCheck?.retryImport ?? null;
 
-  const yearMonths = collectWorkbookRateMonths(input.workbook);
   const { fxRepair, rateMap } = await withDbTransaction(input.context.userId, async (db) => {
     const fxRepair = await backfillImportedFxForWorkspace(input.context, db);
-    const rateMap = await loadSeededMonthlyRates(db, yearMonths);
+    const rateMap = await loadAllSeededMonthlyRates(db);
     return { fxRepair, rateMap };
   });
   const rates = createRateLookupFromMap(rateMap);

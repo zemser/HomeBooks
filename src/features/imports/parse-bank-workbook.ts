@@ -2,7 +2,7 @@ import {
   collectInferenceYearMonths,
   createMonthlyAverageNormalizer,
   createRateLookupFromMap,
-  loadSeededMonthlyRates,
+  loadAllSeededMonthlyRates,
   type CurrencyRateLookup,
 } from "@/features/currency/monthly-rates";
 import { normalizeAmountToWorkspaceCurrency } from "@/features/currency/normalize";
@@ -110,10 +110,7 @@ export async function parseBankWorkbookWithMonthlyRates(input: {
   workspaceCurrency: string;
   db: DbExecutor;
 }) {
-  const rateMap = await loadSeededMonthlyRates(
-    input.db,
-    collectWorkbookRateMonths(input.workbook),
-  );
+  const rateMap = await loadAllSeededMonthlyRates(input.db);
   const rates = createRateLookupFromMap(rateMap);
 
   return parseBankWorkbookToPreview({
